@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shine Code Submit · 后台原型</title>
+<style>
+/* 配色（VS Code Dark+，与项目一致） */
+:root {
+  --bg:#1e1e1e; --sidebar:#252526; --titlebar:#323233;
+  --border:#2d2d2d; --border-light:#3c3c3c;
+  --text:#cccccc; --muted:#858585;
+  --accent-line:#007acc; --selected:#04395e; --hover:#2a2d2e;
+  --c-session:#4ec9b0; --c-prompt:#569cd6; --c-posttool:#c586c0;
+  --ok:#4ec9b0; --add:#9bcd97; --del:#fc533a; --tok:#9dbefe;
+}
+* { box-sizing:border-box; margin:0; padding:0; }
+html,body { height:100%; }
+body {
+  background:var(--bg); color:var(--text);
+  font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif; font-size:13px;
+  display:flex; flex-direction:column; overflow:hidden;
+}
+header {
+  flex:0 0 36px; display:flex; align-items:center; gap:0.8rem;
+  padding:0 0.8rem; background:var(--titlebar); border-bottom:1px solid var(--border);
+}
+header .title { display:flex; align-items:center; gap:0.4rem; font-weight:600; font-size:12px; }
+header .title svg { color:var(--c-session); }
+.status { margin-left:auto; display:flex; gap:0.6rem; align-items:center; color:var(--muted); font-size:11px; }
+.st-tok { color:var(--tok); font-family:Consolas,monospace; }
+.st-rate { color:var(--ok); }
+.body-middle { flex:1; display:flex; flex-direction:row; min-height:0; }
+
+/* 左导航 */
+#nav-panel { flex:0 0 auto; background:var(--sidebar); border-right:1px solid var(--border); display:flex; flex-direction:column; }
+.nav-list { list-style:none; padding:0.4rem 0; display:flex; flex-direction:column; gap:2px; flex:1; }
+.nav-item {
+  display:flex; align-items:center; gap:0.7rem; padding:0.5rem 0.9rem; margin:0 0.4rem;
+  border:none; border-left:2px solid transparent; border-radius:0 3px 3px 0;
+  background:transparent; color:var(--muted); font-size:12px; cursor:pointer; text-align:left; white-space:nowrap;
+}
+.nav-item:hover { background:var(--hover); color:var(--text); }
+.nav-item.active { color:var(--text); border-left-color:var(--accent-line); background:var(--selected); }
+.nav-item svg { flex:0 0 auto; }
+
+/* 主区 */
+#main { flex:1 1 0; min-width:0; display:flex; flex-direction:column; }
+.module { display:none; flex:1; min-height:0; }
+.module.active { display:flex; flex-direction:column; }
+
+.toolbar { flex:0 0 auto; display:flex; align-items:center; gap:0.8rem; padding:0.5rem 0.8rem; border-bottom:1px solid var(--border); }
+.tabs { display:flex; gap:0.25rem; }
+.tab { background:transparent; color:var(--muted); border:none; border-bottom:2px solid transparent; padding:0.25rem 0.7rem; font-size:12px; cursor:pointer; }
+.tab:hover { background:var(--hover); }
+.tab.active { color:var(--text); border-bottom-color:var(--accent-line); }
+.search-input { background:var(--bg); color:var(--text); border:1px solid var(--border-light); border-radius:3px; padding:0.25rem 0.5rem; font-size:12px; outline:none; flex:1; max-width:360px; }
+
+/* 概览 */
+.overview-view { flex:1; overflow:auto; padding:0.9rem 1.1rem; display:flex; flex-direction:column; gap:1.1rem; }
+.kpi-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:0.7rem; }
+.kpi-card { display:flex; flex-direction:column; gap:0.25rem; padding:0.7rem 0.9rem; background:var(--sidebar); border:1px solid var(--border-light); border-radius:6px; }
+.kpi-label { color:var(--muted); font-size:11px; }
+.kpi-value { color:var(--text); font-size:1.25rem; font-family:Consolas,monospace; }
+.section { border:1px solid var(--border-light); border-radius:6px; overflow:hidden; background:rgba(255,255,255,0.015); }
+.section-head { display:flex; justify-content:space-between; padding:0.45rem 0.8rem; border-bottom:1px solid var(--border); background:var(--sidebar); }
+.section-head h3 { font-size:12px; font-weight:600; }
+.section-head .total { font-size:11px; color:var(--muted); }
+.list { list-style:none; padding:0.25rem 0; max-height:360px; overflow:auto; }
+.list li { display:flex; align-items:baseline; gap:0.6rem; padding:0.2rem 0.8rem; font-size:11px; color:var(--muted); white-space:nowrap; }
+.list li:hover { background:var(--hover); }
+.ts { color:var(--muted); font-family:Consolas,monospace; flex:0 0 auto; }
+.cwd { color:var(--c-session); overflow:hidden; text-overflow:ellipsis; }
+.tok { color:var(--tok); font-family:Consolas,monospace; margin-left:auto; }
+.kind { flex:0 0 auto; padding:0 0.4rem; border-radius:3px; font-size:10px; }
+.kind.event { color:var(--c-posttool); background:rgba(197,134,192,0.12); }
+.kind.commit { color:var(--add); background:rgba(155,205,151,0.12); }
+.subject { color:var(--text); overflow:hidden; text-overflow:ellipsis; flex:1; min-width:0; }
+
+/* 两栏（会话/事件） */
+.with-tree { flex:1; display:flex; flex-direction:row; min-height:0; }
+.tree-panel { flex:0 0 220px; background:var(--sidebar); overflow:auto; border-right:1px solid var(--border); }
+.tree-panel .panel-header { padding:0.45rem 0.8rem; border-bottom:1px solid var(--border); font-size:12px; font-weight:600; }
+.session-tree { list-style:none; padding:0.4rem 0; font-family:Consolas,monospace; font-size:12px; }
+.session-tree .group { color:var(--text); }
+.session-tree .group-head { display:flex; gap:4px; padding:0.3rem 0.8rem; cursor:pointer; font-family:Consolas,monospace; font-size:11px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.session-tree .group-head:hover { background:var(--hover); }
+.session-tree .caret { flex:0 0 auto; }
+.session-tree ul { list-style:none; padding-left:0.6rem; }
+.session-tree ul li { display:flex; flex-direction:column; gap:1px; padding:0.25rem 0.5rem; cursor:pointer; border-radius:3px; }
+.session-tree ul li:hover { background:var(--hover); }
+.session-tree ul li.active { background:var(--selected); }
+.session-tree .row { display:flex; align-items:baseline; gap:0.4rem; }
+.session-tree .time { color:var(--muted); font-size:10px; }
+.session-tree .sid { color:var(--text); font-size:11px; }
+.session-tree .sub { font-size:10px; color:var(--muted); }
+.session-tree .stok { color:var(--tok); margin-left:auto; font-size:10px; }
+.main-side { flex:1 1 0; min-width:0; display:flex; flex-direction:column; }
+.detail-head { display:flex; align-items:center; gap:0.6rem; padding:0.45rem 0.8rem; border-bottom:1px solid var(--border); }
+.detail-head .sid { font-family:Consolas,monospace; color:var(--text); font-size:12px; }
+.detail-head .cwd { color:var(--c-session); font-size:11px; }
+.detail-head .tok { color:var(--tok); font-size:11px; margin-left:auto; font-family:Consolas,monospace; }
+
+/* 对话 */
+.conversation { flex:1; overflow:auto; padding:1.4rem; font-size:13.5px; line-height:1.7; }
+.msg { margin-bottom:1rem; }
+.user { display:flex; justify-content:flex-end; }
+.user .bubble { max-width:80%; background:linear-gradient(135deg,#2c4a7a,#27406e); border:1px solid rgba(120,160,220,0.22); color:#eaf0fb; padding:0.62rem 1rem; border-radius:14px 14px 4px 14px; white-space:pre-wrap; }
+.assistant .role { color:var(--c-session); font-size:11px; font-weight:700; margin-bottom:0.3rem; }
+.assistant .text { color:#d4d4d4; }
+
+/* 事件流 */
+.event-list { flex:1; overflow:auto; font-family:Consolas,monospace; font-size:11.5px; list-style:none; }
+.event-list li { display:grid; grid-template-columns:70px 110px 1fr; gap:0.5rem; padding:0.15rem 0.7rem; border-bottom:1px solid var(--border-light); white-space:nowrap; cursor:pointer; }
+.event-list li:hover { background:var(--hover); }
+.event-list .type { font-weight:600; }
+.event-list .type.UserPromptSubmit { color:var(--c-prompt); }
+.event-list .type.PostToolUse { color:var(--c-posttool); }
+.event-list .type.SessionStart, .event-list .type.SessionEnd { color:var(--c-session); }
+.event-list .type.Stop, .event-list .type.SubagentStop { color:var(--ok); }
+.event-list .summary { color:var(--text); overflow:hidden; text-overflow:ellipsis; }
+
+/* 提交 */
+.commits-view { flex:1; overflow:auto; font-family:Consolas,monospace; font-size:11.5px; list-style:none; }
+.commit { display:flex; flex-direction:column; border-bottom:1px solid var(--border-light); cursor:pointer; }
+.commit:hover { background:var(--hover); }
+.commit-row { display:grid; grid-template-columns:80px 44px 44px 1fr 90px; gap:0.5rem; padding:0.2rem 0.7rem; white-space:nowrap; }
+.commit-add { color:var(--add); text-align:right; }
+.commit-del { color:var(--del); text-align:right; }
+.commit-subject { color:var(--text); overflow:hidden; text-overflow:ellipsis; }
+.commit-author { color:var(--muted); overflow:hidden; text-overflow:ellipsis; }
+
+/* 统计条形 */
+.stats-body { flex:1; overflow:auto; padding:0.9rem 1.1rem; }
+.bar-list { padding:0.5rem 0.8rem; display:flex; flex-direction:column; gap:0.4rem; }
+.bar-row { display:flex; align-items:center; gap:0.6rem; font-size:11px; }
+.bar-label { flex:0 0 110px; color:var(--c-session); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.bar-list.day .bar-label { flex:0 0 56px; color:var(--muted); }
+.bar-track { flex:1; height:16px; background:var(--bg); border-radius:8px; overflow:hidden; min-width:0; }
+.bar-fill { height:100%; border-radius:8px; min-width:2px; }
+.bar-fill.tok { background:linear-gradient(90deg,#2c4a7a,#4a7ac4); }
+.bar-fill.commit { background:linear-gradient(90deg,#2d6a4f,#52b788); }
+.bar-val { flex:0 0 auto; color:var(--muted); font-family:Consolas,monospace; }
+
+/* 系统 */
+.system-view { flex:1; overflow:auto; padding:0.9rem 1.1rem; display:flex; flex-direction:column; gap:1.1rem; }
+.sys-grid { padding:0.3rem 0.8rem; }
+.sys-row { display:flex; justify-content:space-between; padding:0.3rem 0; font-size:11px; border-bottom:1px solid var(--border); }
+.sys-row:last-child { border-bottom:none; }
+.sys-row span { color:var(--muted); }
+.sys-row b { color:var(--text); font-family:Consolas,monospace; }
+.sys-log { margin:0; padding:0.6rem 0.8rem; font-family:Consolas,monospace; font-size:11.5px; color:var(--muted); white-space:pre-wrap; max-height:300px; overflow:auto; }
+</style>
+</head>
+<body>
+<header>
+  <div class="title">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l9 9-9 9-9-9z"/></svg>
+    Shine Code Submit
+  </div>
+  <div class="status">
+    <span class="st-ver">v0.1.3</span>
+    <span class="st-tok" title="近 50 会话累计">↑5.2M ↓1.1M</span>
+    <span class="st-rate">● 3.2/s</span>
+  </div>
+</header>
+<div class="body-middle">
+  <aside id="nav-panel"><ul class="nav-list" id="navList"></ul></aside>
+  <main id="main"></main>
+</div>
+
+<script>
+// ===== 图标 =====
+const ICONS = {
+  home: '<path d="M3 11l9-8 9 8"/><path d="M5 10v10h4v-6h6v6h4V10"/>',
+  sessions: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18"/>',
+  activity: '<path d="M3 12h4l3-8 4 16 3-8h4"/>',
+  git: '<circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="9" r="2"/><path d="M6 8v8M15 9h1"/>',
+  chart: '<path d="M4 20V12M10 20V5M16 20v-8M3 20h17"/>',
+  server: '<rect x="4" y="4" width="16" height="6" rx="1"/><rect x="4" y="14" width="16" height="6" rx="1"/><path d="M8 7h.01M8 17h.01"/>',
+};
+const svg = (name, size = 16) => `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ""}</svg>`;
+
+// ===== Mock 数据 =====
+const SESSIONS = [
+  { sid: "a1b2c3d4", cwd: "C:\\proj\\shine-code-submit", lastType: "PostToolUse", count: 128, time: "07-06 14:30", tok: "↑1.2M ↓340k" },
+  { sid: "e5f6g7h8", cwd: "C:\\proj\\shine-code-submit", lastType: "Stop", count: 86, time: "07-06 13:10", tok: "↑800k ↓210k" },
+  { sid: "i9j0k1l2", cwd: "C:\\proj\\shine-code-submit", lastType: "UserPromptSubmit", count: 42, time: "07-05 18:22", tok: "↑1.0M ↓250k" },
+  { sid: "m3n4o5p6", cwd: "C:\\proj\\livesetting", lastType: "SessionStart", count: 15, time: "07-06 09:45", tok: "↑1.5M ↓210k" },
+  { sid: "q7r8s9t0", cwd: "C:\\proj\\livesetting", lastType: "PostToolUse", count: 67, time: "07-05 16:00", tok: "↑700k ↓90k" },
+  { sid: "u1v2w3x4", cwd: "C:\\proj\\zentaosync", lastType: "Stop", count: 23, time: "07-04 11:20", tok: "↑60k ↓20k" },
+];
+const COMMITS = [
+  { time: "07-06 14:35", added: 120, deleted: 30, subject: "feat(ui): 查看页重构为模块化后台", author: "renguifeng", cwd: "shine-code-submit" },
+  { time: "07-06 14:20", added: 80, deleted: 10, subject: "fix: 视图切换闪烁", author: "renguifeng", cwd: "shine-code-submit" },
+  { time: "07-06 11:00", added: 245, deleted: 12, subject: "feat: 新增 token 用量展示", author: "renguifeng", cwd: "shine-code-submit" },
+  { time: "07-05 18:40", added: 56, deleted: 8, subject: "refactor: 数据下沉到模块", author: "renguifeng", cwd: "shine-code-submit" },
+  { time: "07-05 16:10", added: 18, deleted: 4, subject: "chore: bump version", author: "renguifeng", cwd: "livesetting" },
+  { time: "07-05 10:30", added: 340, deleted: 0, subject: "feat: 初始版本", author: "renguifeng", cwd: "livesetting" },
+  { time: "07-04 15:20", added: 12, deleted: 6, subject: "docs: 更新 README", author: "renguifeng", cwd: "zentaosync" },
+  { time: "07-04 11:05", added: 90, deleted: 22, subject: "feat: 同步逻辑", author: "renguifeng", cwd: "zentaosync" },
+];
+const EVENTS = [
+  { ts: "14:35:20.134", type: "PostToolUse", summary: "Edit ui/components/App.tsx" },
+  { ts: "14:35:18.902", type: "UserPromptSubmit", summary: "继续 Step 2 会话下钻" },
+  { ts: "14:34:55.110", type: "Stop", summary: "主 agent 结束响应" },
+  { ts: "14:30:02.340", type: "SessionStart", summary: "source=resume a1b2c3d4" },
+  { ts: "14:28:11.560", type: "PostToolUse", summary: "Bash bun run build" },
+  { ts: "14:28:09.001", type: "SubagentStop", summary: "Explore agent 完成" },
+  { ts: "14:25:33.220", type: "PostToolUse", summary: "Edit src/daemon/git.ts" },
+  { ts: "14:20:07.880", type: "UserPromptSubmit", summary: "事件模块加会话筛选" },
+  { ts: "14:15:44.000", type: "PreCompact", summary: "上下文压缩前" },
+  { ts: "14:10:19.312", type: "SessionEnd", summary: "logout" },
+];
+const TOKEN_KPI = { input: "5.2M", output: "1.1M", sessions: 6, events: "1.2k", commits: 8 };
+const fmtDir = (p) => { const t = (p || "").replace(/[\\/]+$/, ""); const i = Math.max(t.lastIndexOf("/"), t.lastIndexOf("\\")); return i >= 0 ? t.slice(i + 1) : t; };
+
+// ===== 导航 =====
+const NAV = [
+  { id: "overview", label: "概览", icon: "home" },
+  { id: "sessions", label: "会话", icon: "sessions" },
+  { id: "events", label: "事件", icon: "activity" },
+  { id: "commits", label: "提交", icon: "git" },
+  { id: "stats", label: "统计", icon: "chart" },
+  { id: "system", label: "系统", icon: "server" },
+];
+const navList = document.getElementById("navList");
+NAV.forEach((n) => {
+  const li = document.createElement("li");
+  li.innerHTML = `<button class="nav-item" data-mod="${n.id}">${svg(n.icon, 18)}<span>${n.label}</span></button>`;
+  navList.appendChild(li);
+});
+
+// ===== 会话树（会话/事件模块共用） =====
+function sessionTreeHTML(selectedSid, withAll) {
+  const groups = {};
+  SESSIONS.forEach((s) => { (groups[s.cwd] ||= []).push(s); });
+  let html = '<ul class="session-tree">';
+  if (withAll) html += `<li class="${selectedSid === null ? "active" : ""}" style="padding:.3rem .8rem;cursor:pointer;font-size:12px;border-bottom:1px solid var(--border)" data-sid="">全部会话</li>`;
+  Object.entries(groups).forEach(([cwd, sess]) => {
+    html += `<li class="group"><div class="group-head"><span class="caret">▾</span><span>${cwd}</span></div><ul>`;
+    sess.forEach((s) => {
+      html += `<li class="${selectedSid === s.sid ? "active" : ""}" data-sid="${s.sid}">
+        <div class="row"><span class="time">${s.time}</span><span class="sid">${s.sid}</span><span class="stok">${s.tok.split(" ")[0]}</span></div>
+        <div class="sub">${s.lastType} · ${s.count}</div></li>`;
+    });
+    html += "</ul></li>";
+  });
+  return html + "</ul>";
+}
+
+// ===== 模块渲染 =====
+const main = document.getElementById("main");
+
+function overviewHTML() {
+  const recent = [
+    ...EVENTS.slice(0, 6).map((e) => ({ kind: "event", ts: "07-06 " + e.ts.slice(0, 5), text: e.type + " · " + e.summary, cwd: "shine-code-submit" })),
+    ...COMMITS.slice(0, 4).map((c) => ({ kind: "commit", ts: c.time, text: c.subject, cwd: c.cwd })),
+  ].sort((a, b) => (a.ts < b.ts ? 1 : -1)).slice(0, 10);
+  return `<div class="overview-view">
+    <div class="kpi-grid">
+      <div class="kpi-card"><span class="kpi-label">Token 输入</span><b class="kpi-value">${TOKEN_KPI.input}</b></div>
+      <div class="kpi-card"><span class="kpi-label">Token 输出</span><b class="kpi-value">${TOKEN_KPI.output}</b></div>
+      <div class="kpi-card"><span class="kpi-label">会话数</span><b class="kpi-value">${TOKEN_KPI.sessions}</b></div>
+      <div class="kpi-card"><span class="kpi-label">事件总数</span><b class="kpi-value">${TOKEN_KPI.events}</b></div>
+      <div class="kpi-card"><span class="kpi-label">提交数</span><b class="kpi-value">${TOKEN_KPI.commits}</b></div>
+    </div>
+    <div class="section"><div class="section-head"><h3>近期活动</h3></div>
+      <ul class="list">${recent.map((it) => `<li><span class="ts">${it.ts}</span><span class="kind ${it.kind}">${it.kind === "event" ? "事件" : "提交"}</span><span class="cwd">${it.cwd}</span><span class="subject">${it.text}</span></li>`).join("")}</ul>
+    </div>
+  </div>`;
+}
+
+function sessionsHTML() {
+  const s = SESSIONS[0];
+  return `<div class="with-tree">
+    <aside class="tree-panel"><div class="panel-header">Sessions</div>${sessionTreeHTML(s.sid, false)}</aside>
+    <div class="main-side">
+      <div class="detail-head"><span class="sid">${s.sid}</span><span class="cwd">${fmtDir(s.cwd)}</span><span class="tok">${s.tok}</span></div>
+      <div class="toolbar"><input class="search-input" placeholder="搜索对话…"></div>
+      <div class="conversation">
+        <div class="msg user"><div class="bubble">帮我加一个汇总页，展示 token 消耗和提交行数</div></div>
+        <div class="msg assistant"><div class="role">◆ Claude</div><div class="text">好，我会在主区加第四个 tab「汇总」，按会话展示 token（时间点 + 用量）+ 提交按时间（时间点 + 行数）。</div></div>
+        <div class="msg user"><div class="bubble">事件和会话能不能统一一下？</div></div>
+        <div class="msg assistant"><div class="role">◆ Claude</div><div class="text">事件模块加「按会话筛选」，会话详情专注对话。两边共用 SessionTree 组件。</div></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function eventsHTML() {
+  return `<div class="with-tree">
+    <aside class="tree-panel"><div class="panel-header">会话</div>${sessionTreeHTML(null, true)}</aside>
+    <div class="main-side">
+      <div class="toolbar"><input class="search-input" placeholder="搜索事件…"></div>
+      <ul class="event-list">${EVENTS.map((e) => `<li><span class="ts">${e.ts}</span><span class="type ${e.type}">${e.type}</span><span class="summary">${e.summary}</span></li>`).join("")}</ul>
+    </div>
+  </div>`;
+}
+
+function commitsHTML() {
+  return `<ul class="commits-view">${COMMITS.map((c) => `<li class="commit"><div class="commit-row"><span class="ts">${c.time}</span><span class="commit-add">+${c.added}</span><span class="commit-del">-${c.deleted}</span><span class="commit-subject">${c.subject}</span><span class="commit-author">${c.author}</span></div></li>`).join("")}</ul>`;
+}
+
+function statsHTML() {
+  const byProj = [
+    { name: "shine-code-submit", tok: 3.0, count: 4 },
+    { name: "livesetting", tok: 2.2, count: 2 },
+    { name: "zentaosync", tok: 0.06, count: 2 },
+  ];
+  const maxTok = Math.max(...byProj.map((p) => p.tok));
+  const maxCnt = Math.max(...byProj.map((p) => p.count));
+  const days = [["07-06", 3], ["07-05", 3], ["07-04", 2], ["07-03", 0], ["07-02", 1], ["07-01", 0], ["06-30", 2]];
+  const maxDay = Math.max(...days.map((d) => d[1]));
+  const bars = (rows, cls, valFn, maxFn, fill) => rows.map((r) => `<div class="bar-row"><span class="bar-label">${r[0]}</span><div class="bar-track"><div class="bar-fill ${fill}" style="width:${(valFn(r) / maxFn()) * 100}%"></div></div><span class="bar-val">${valFn(r)}</span></div>`).join("");
+  return `<div class="stats-body" id="statsBody">
+    <div data-stat="token">
+      <div class="section"><div class="section-head"><h3>Token 按项目</h3></div><div class="bar-list">${byProj.map((p) => `<div class="bar-row"><span class="bar-label">${p.name}</span><div class="bar-track"><div class="bar-fill tok" style="width:${(p.tok / maxTok) * 100}%"></div></div><span class="bar-val">↑${p.tok.toFixed(1)}M</span></div>`).join("")}</div></div>
+    </div>
+    <div data-stat="commits" style="display:none">
+      <div class="section"><div class="section-head"><h3>提交次数按项目</h3></div><div class="bar-list">${byProj.map((p) => `<div class="bar-row"><span class="bar-label">${p.name}</span><div class="bar-track"><div class="bar-fill commit" style="width:${(p.count / maxCnt) * 100}%"></div></div><span class="bar-val">${p.count} 次</span></div>`).join("")}</div></div>
+    </div>
+    <div data-stat="day" style="display:none">
+      <div class="section"><div class="section-head"><h3>提交按天（近 7 天）</h3></div><div class="bar-list day">${days.map((d) => `<div class="bar-row"><span class="bar-label">${d[0]}</span><div class="bar-track"><div class="bar-fill commit" style="width:${(d[1] / maxDay) * 100}%"></div></div><span class="bar-val">${d[1]}</span></div>`).join("")}</div></div>
+    </div>
+  </div>`;
+}
+
+function systemHTML() {
+  return `<div class="system-view">
+    <div class="section"><div class="section-head"><h3>Daemon</h3></div><div class="sys-grid">
+      <div class="sys-row"><span>服务</span><b>shine-code-submit</b></div>
+      <div class="sys-row"><span>版本</span><b>v0.1.3</b></div>
+      <div class="sys-row"><span>pid</span><b>12345</b></div>
+      <div class="sys-row"><span>uptime</span><b>3621s</b></div>
+      <div class="sys-row"><span>事件总数</span><b>1284</b></div>
+      <div class="sys-row"><span>事件速率</span><b>3.2 evt/s</b></div>
+      <div class="sys-row"><span>spool 积压</span><b>0</b></div>
+    </div></div>
+  </div>`;
+}
+
+const RENDER = { overview: overviewHTML, sessions: sessionsHTML, events: eventsHTML, commits: commitsHTML, stats: statsHTML, system: systemHTML };
+const TOOLBAR = {
+  overview: null, sessions: null, events: null, commits: null,
+  stats: `<div class="tabs" id="statsTabs">
+    <button class="tab active" data-stat="token">Token 按项目</button>
+    <button class="tab" data-stat="commits">提交按项目</button>
+    <button class="tab" data-stat="day">提交按天</button>
+  </div>`,
+  system: null,
+};
+
+function switchModule(id) {
+  document.querySelectorAll(".nav-item").forEach((b) => b.classList.toggle("active", b.dataset.mod === id));
+  main.innerHTML = "";
+  const mod = document.createElement("div");
+  mod.className = "module active";
+  if (TOOLBAR[id]) {
+    const tb = document.createElement("div");
+    tb.className = "toolbar";
+    tb.innerHTML = TOOLBAR[id];
+    mod.appendChild(tb);
+  }
+  const body = document.createElement("div");
+  body.style.flex = "1";
+  body.style.minHeight = "0";
+  body.style.display = "flex";
+  body.style.flexDirection = "column";
+  body.innerHTML = RENDER[id]();
+  mod.appendChild(body);
+  main.appendChild(mod);
+  bindModule(id);
+}
+
+function bindModule(id) {
+  if (id === "stats") {
+    document.querySelectorAll("#statsTabs .tab").forEach((t) => {
+      t.addEventListener("click", () => {
+        document.querySelectorAll("#statsTabs .tab").forEach((x) => x.classList.toggle("active", x === t));
+        document.querySelectorAll("#statsBody [data-stat]").forEach((d) => (d.style.display = d.dataset.stat === t.dataset.stat ? "" : "none"));
+      });
+    });
+  }
+  if (id === "sessions" || id === "events") {
+    document.querySelectorAll(".tree-panel li[data-sid]").forEach((li) => {
+      li.addEventListener("click", () => {
+        document.querySelectorAll(".tree-panel li[data-sid]").forEach((x) => x.classList.remove("active"));
+        li.classList.add("active");
+      });
+    });
+  }
+}
+
+document.getElementById("navList").addEventListener("click", (e) => {
+  const btn = e.target.closest(".nav-item");
+  if (btn) switchModule(btn.dataset.mod);
+});
+
+switchModule("overview");
+</script>
+</body>
+</html>

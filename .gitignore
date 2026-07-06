@@ -1,0 +1,17 @@
+node_modules/
+*.log
+*.old
+*.bun-build
+/dist/
+/release-assets/
+/.gh-dl/
+
+# 本地运行时数据（不入库）
+# 实际数据在 %LOCALAPPDATA%/shine-code-submit，这里仅排除可能的本地副本
+.local/
+
+# 前端 bundle 中间产物（bun build 生成，由 build.ts 嵌入 ui-assets.ts）
+ui/.build/
+
+# 方案 C：bin/ 只留 launcher.js；平台二进制（bun run build 产物）不入库
+bin/*/

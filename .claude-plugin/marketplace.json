@@ -1,0 +1,13 @@
+{
+  "name": "shine-code-submit",
+  "owner": {
+    "name": "renguifeng"
+  },
+  "plugins": [
+    {
+      "name": "shine-code-submit",
+      "source": "./",
+      "description": "Claude Code Hook → 本地常驻 Daemon 的状态/持久化底座"
+    }
+  ]
+}
