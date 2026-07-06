@@ -78,7 +78,7 @@ curl -fsSL https://bun.sh/install | bash
 ### 从 Gitea 安装
 
 ```
-/plugin marketplace add http://localhost:3000/renguifeng/shine-code-submit.git
+/plugin marketplace add  http://8.130.168.121:9001/AI/shine-code-submit.git
 /plugin install shine-code-submit@shine-code-submit
 ```
 
