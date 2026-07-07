@@ -32,17 +32,35 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 
 VERSION=$(node -p "require('./package.json').version")
+TGZ="shine-code-submit-$VERSION.tgz"
+
 echo ""
-echo "=== 3. 发布 shine-code-submit@$VERSION ==="
-echo "prepublishOnly 会自动 build:dist(生成 dist/install.cjs + ui-assets)。"
+echo "=== 3. build:dist(生成 dist/install.cjs + ui-assets)==="
+bun run build:dist
+
+echo ""
+echo "=== 4. npm pack ==="
+rm -f "$TGZ"
+npm pack
+
+echo ""
+echo "=== 5. 修 tarball 里 dist/install.cjs 的 +x 位(Windows npm pack 不保留可执行位)==="
+echo "    不修的话 Linux 上 npx 经 .bin 符号链接+shebang 执行会 'Permission denied'。"
+PY=""
+for c in py python python3; do command -v "$c" >/dev/null 2>&1 && PY="$c" && break; done
+if [ -z "$PY" ]; then echo "✗ 需要 python(tarfile stdlib)修可执行位,没找到 py/python"; exit 1; fi
+"$PY" scripts/fix-tarball-mode.py "$TGZ"
+
+echo ""
+echo "=== 6. 发布 shine-code-submit@$VERSION(发预打包 tarball,不再 prepublishOnly)==="
 if [ -z "$OTP_ARG" ]; then
   echo "npm 随后会提示输入 2FA 的 OTP —— 打开 authenticator app,输 6 位码。"
 fi
 echo ""
 if [ -n "$OTP_ARG" ]; then
-  npm publish --registry="$REGISTRY" --otp="$OTP_ARG"
+  npm publish "$TGZ" --registry="$REGISTRY" --otp="$OTP_ARG"
 else
-  npm publish --registry="$REGISTRY"
+  npm publish "$TGZ" --registry="$REGISTRY"
 fi
 
 echo ""
