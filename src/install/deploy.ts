@@ -1,5 +1,5 @@
 // 部署 plugin 文件到 claude cache 目录,并跑 bun install 装运行时依赖(marked/react)。
-import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { pluginsRoot } from "./paths";
@@ -15,13 +15,24 @@ export function cacheDir(version: string = SERVICE_VERSION): string {
 
 /** 找 npm 包根:运行入口(dist/install.cjs)所在目录上溯到含 package.json + .claude-plugin 的目录。
  *  不能用 import.meta.url —— Bun 打 cjs 单文件 bundle 时会把它静态固化为构建机的源码绝对路径,
- *  换台机器就指向不存在的目录,部署白名单全拷不到、bun install 必失败。
- *  改用 process.argv[1](node 入口脚本运行时绝对路径),跨机器 / npx / npm-g 全稳定。 */
+ *  换台机器就指向不存在的目录,部署白名单全拷不到、bun install 必失败。改用 process.argv[1]。
+ *
+ *  ⚠️ 必须 realpathSync:npx 下 process.argv[1] 是 node_modules/.bin/<pkg> 符号链接(bundle 带
+ *  #!/usr/bin/env node shebang,内核按原链接路径执行,node 拿到未解析路径)。path.resolve 不跟符号链接,
+ *  会从 .bin 上溯,永远碰不到 sibling 的包根 → 部署源错指到 node_modules、白名单拷空、bun install 崩。
+ *  realpathSync 把符号链接解析到真实 dist/install.cjs,dirname 后上溯即命中包根。 */
 function findPackageRoot(): string {
   const entry = process.argv[1];
-  const start = entry ? dirname(resolve(entry)) : process.cwd();
+  let start = process.cwd();
+  if (entry) {
+    try {
+      start = dirname(realpathSync(resolve(entry)));
+    } catch {
+      start = dirname(resolve(entry)); // entry 不存在等异常时退回普通解析
+    }
+  }
   let dir = start;
-  for (let i = 0; i < 10; i++) {
+  for (let i = 0; i < 12; i++) {
     if (existsSync(join(dir, "package.json")) && existsSync(join(dir, ".claude-plugin"))) return dir;
     const parent = dirname(dir);
     if (parent === dir) break;
