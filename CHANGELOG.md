@@ -2,6 +2,20 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 0.2.7 — 2026-07-07
+
+源码模式自动装 Bun 的 UX 改进：装之前给醒目提示、安装过程逐行流式输出、装完给结果。
+
+### 改进
+- `bin/launcher.cjs` 改异步流式：
+  - 检测不到 Bun 时先打印提示（「未检测到 Bun 运行时，首次自动安装中（约 10-30s）」+ 日志路径，可另开终端 `tail -f` 看实时进度）。
+  - 安装命令（`npm i -g bun` / 官方脚本）的 stdout/stderr 逐行流式 → 同时写 `bun-install.log` 和（仅 SessionStart）hook stdout，安装完成后用户能看到完整进度。
+  - 成功打印「Bun 就绪，继续启动…」；失败打印手装指引。退出码恒 0。
+- 说明：Claude Code 的 hook stdout 是 hook 跑完后整体展示，TUI 内做不到逐行实时刷；要真·实时就 `tail -f` 日志文件。
+
+### 验证
+Kali 实测：临时隐藏 Bun 后跑 SessionStart → 见提示 → npm 流式进度（`changed 5 packages in 8s`）→ ✅ → Dashboard 链接；`bun-install.log` 有完整输出、daemon `ingest`、bun 正常回来。Bun 在时不触发安装（无回归，`bun-install.log` 不生成）。
+
 ## 0.2.6 — 2026-07-07
 
 源码模式（`/plugin install` 或 `/plugin marketplace add`）**自动安装 Bun**：以前没装 Bun 时 launcher 静默退出、daemon 不起；现在首次 SessionStart 检测不到 Bun 就自动装。

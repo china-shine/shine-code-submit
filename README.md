@@ -72,7 +72,7 @@ npx shine-code-submit install
 
 ### 方式二：`/plugin marketplace add`（从 GitHub）
 
-源码直跑，需要 Bun 运行时——**没装也行**：首次 SessionStart 时 `launcher.cjs` 会自动装（`npm i -g bun`，失败回退官方脚本，约 10-30s；SessionStart 已配 200s 超时兜底，进度见 `~/.local/share/shine-code-submit/log/bun-install.log`）。想首次更快可先手装 `npm install -g bun`，或官方脚本——Windows `powershell -c "irm bun.sh/install.ps1 | iex"`，macOS/Linux `curl -fsSL https://bun.sh/install | bash`。
+源码直跑，需要 Bun 运行时——**没装也行**：首次 SessionStart 时 `launcher.cjs` 会自动装：先提示「未检测到 Bun」，再流式显示安装进度，约 10-30s（SessionStart 已配 200s 超时兜底；要真·实时进度另开终端 `tail -f ~/.local/share/shine-code-submit/log/bun-install.log`）。想首次更快可先手装 `npm install -g bun`，或官方脚本——Windows `powershell -c "irm bun.sh/install.ps1 | iex"`，macOS/Linux `curl -fsSL https://bun.sh/install | bash`。
 
 **从 GitHub：**
 
