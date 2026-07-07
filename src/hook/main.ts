@@ -7,7 +7,7 @@ import { ensureDirs } from "../shared/paths";
 import { readToken } from "../shared/pidfile";
 import { writeSpoolFile } from "../shared/spool";
 import { BASE_URL, PUBLIC_BASE_URL, HOOK_POST_TIMEOUT_MS } from "../shared/config";
-import { ensureDaemon } from "../shared/daemonctl";
+import { ensureDaemon, openBrowser } from "../shared/daemonctl";
 import type { HookEvent, HookEventType } from "../shared/types";
 
 const VALID_TYPES: HookEventType[] = [
@@ -57,9 +57,11 @@ async function main(): Promise<void> {
     if (source === "startup") {
       const token = readToken();
       if (token) {
-        process.stdout.write(
-          JSON.stringify({ systemMessage: `Shine Dashboard: ${PUBLIC_BASE_URL}/ui?t=${token}` }),
-        );
+        const url = `${PUBLIC_BASE_URL}/ui?t=${token}`;
+        // systemMessage 仍打印 URL（Claude Code 当前不渲染可点击链接，作为可复制备份）
+        process.stdout.write(JSON.stringify({ systemMessage: `Shine Dashboard: ${url}` }));
+        // 自动打开浏览器（免复制免点击）；失败静默，不阻断 Claude Code
+        openBrowser(url);
       }
     }
   }

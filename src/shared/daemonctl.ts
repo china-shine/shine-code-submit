@@ -1,7 +1,7 @@
 // 跨进程 daemon 控制：探活（认自己人）、拉起、等待 ready、开浏览器。
 // Hook 与 CLI 共用。
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BASE_URL, HEALTH_POLL_TIMEOUT_MS, HEALTH_POLL_INTERVAL_MS, SERVICE_NAME } from "./config";
@@ -65,7 +65,7 @@ export async function ensureDaemon(): Promise<boolean> {
   return false;
 }
 
-/** 跨平台打开浏览器。 */
+/** 跨平台打开浏览器。WSL 走 Windows interop（cmd.exe start）比 xdg-open 稳。 */
 export function openBrowser(url: string): void {
   const platform = process.platform;
   let cmd: string;
@@ -76,6 +76,9 @@ export function openBrowser(url: string): void {
   } else if (platform === "darwin") {
     cmd = "open";
     args = [url];
+  } else if (isWsl()) {
+    cmd = "cmd.exe";
+    args = ["/c", "start", "", url];
   } else {
     cmd = "xdg-open";
     args = [url];
@@ -84,6 +87,16 @@ export function openBrowser(url: string): void {
     spawn(cmd, args, { detached: true, stdio: "ignore" }).unref();
   } catch {
     /* ignore */
+  }
+}
+
+/** 是否跑在 WSL（Linux 内核版本字符串含 microsoft）。用于 openBrowser 选 interop 路径。 */
+function isWsl(): boolean {
+  if (process.platform !== "linux") return false;
+  try {
+    return readFileSync("/proc/version", "utf8").toLowerCase().includes("microsoft");
+  } catch {
+    return false;
   }
 }
 
