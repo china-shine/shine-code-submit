@@ -16,3 +16,5 @@ ui/.build/
 
 # 方案 C：bin/ 只留 launcher.js；平台二进制（bun run build 产物）不入库
 bin/*/
+
+tmp.txt
