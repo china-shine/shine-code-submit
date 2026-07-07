@@ -1,7 +1,6 @@
 // 部署 plugin 文件到 claude cache 目录,并跑 bun install 装运行时依赖(marked/react)。
 import { cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { pluginsRoot } from "./paths";
 import { SERVICE_VERSION } from "../shared/config";
@@ -14,17 +13,21 @@ export function cacheDir(version: string = SERVICE_VERSION): string {
   return join(pluginsRoot(), "cache", MARKETPLACE_NAME, PLUGIN_NAME, version);
 }
 
-/** 找 npm 包根:从本文件(dist/install.cjs)上溯到含 package.json + .claude-plugin 的目录。 */
+/** 找 npm 包根:运行入口(dist/install.cjs)所在目录上溯到含 package.json + .claude-plugin 的目录。
+ *  不能用 import.meta.url —— Bun 打 cjs 单文件 bundle 时会把它静态固化为构建机的源码绝对路径,
+ *  换台机器就指向不存在的目录,部署白名单全拷不到、bun install 必失败。
+ *  改用 process.argv[1](node 入口脚本运行时绝对路径),跨机器 / npx / npm-g 全稳定。 */
 function findPackageRoot(): string {
-  const here = dirname(fileURLToPath(import.meta.url));
-  let dir = here;
+  const entry = process.argv[1];
+  const start = entry ? dirname(resolve(entry)) : process.cwd();
+  let dir = start;
   for (let i = 0; i < 10; i++) {
     if (existsSync(join(dir, "package.json")) && existsSync(join(dir, ".claude-plugin"))) return dir;
     const parent = dirname(dir);
     if (parent === dir) break;
     dir = parent;
   }
-  return here;
+  return dirname(start);
 }
 
 /** 要部署的文件/目录白名单(plugin 运行必需;不含 dist/install.cjs——install CLI 本身不进 plugin)。 */
