@@ -19,6 +19,7 @@ import { checkToken } from "./auth";
 import { parseTranscript, sumUsage } from "./transcript";
 import { getSessionTokenTotal } from "./token-cache";
 import { getCommits, getGitUser } from "./git";
+import { readSettings, writeSettings } from "./settings";
 import type { Store } from "./store";
 import type { EventBus } from "./bus";
 import type { Stats } from "./stats";
@@ -172,6 +173,24 @@ export function startServer(deps: ServerDeps) {
       if (path === "/api/report" && req.method === "GET") {
         const since = num(url.searchParams.get("since")) ?? 0;
         return json(await buildReport(store, since));
+      }
+
+      // 用户设置:GET 读、PUT 写(字段级合并)。目前只有 reportUrl(上报地址)。
+      if (path === "/api/settings" && req.method === "GET") {
+        return json(readSettings());
+      }
+      if (path === "/api/settings" && req.method === "PUT") {
+        let body: unknown;
+        try {
+          body = await req.json();
+        } catch {
+          return json({ error: "bad json" }, 400);
+        }
+        const cur = readSettings();
+        const b = (body ?? {}) as Record<string, unknown>;
+        if (typeof b.reportUrl === "string") cur.reportUrl = b.reportUrl.trim() || null;
+        writeSettings(cur);
+        return json(cur);
       }
 
       if (path === "/api/shutdown" && req.method === "POST") {

@@ -7,6 +7,7 @@ import { CommitsModule } from "./CommitsModule";
 import { OverviewModule } from "./OverviewModule";
 import { StatsModule } from "./StatsModule";
 import { ReportModule } from "./ReportModule";
+import { SettingsModule } from "./SettingsModule";
 import { SystemModule } from "./SystemModule";
 
 /** 模块路由：按 activeModule 渲染对应模块。 */
@@ -25,6 +26,8 @@ function ModuleRouter() {
     //   return <StatsModule />;        // 暂时屏蔽
     case "report":
       return <ReportModule />;
+    case "settings":
+      return <SettingsModule />;
     case "system":
       return <SystemModule />;
     default:
