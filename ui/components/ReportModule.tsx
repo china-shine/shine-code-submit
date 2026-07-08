@@ -7,7 +7,7 @@ import { useApp } from "../state/AppContext";
 import { Icon } from "./Icon";
 import { Splitter } from "./Splitter";
 import type { ReportProject, ReportResponse } from "../types";
-import { fmtDateTime, fmtTokens, fmtUsageFull, realInput, shortDir } from "../lib/util";
+import { fmtDateTime, fmtTokens, fmtUsageFull, fmtUsageLabeled, realInput, shortDir } from "../lib/util";
 
 const PAGE = 20; // 每页 session 数
 
@@ -111,8 +111,12 @@ export function ReportModule() {
                   className={p.cwd === selCwd ? "active" : undefined}
                   title={p.cwd}
                   onClick={() => setSelCwd(p.cwd)}
+                  style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "0.5rem" }}
                 >
-                  {shortDir(p.cwd) || p.cwd}
+                  <span>{shortDir(p.cwd) || p.cwd}</span>
+                  <span className="nav-tokens" title={fmtUsageFull(p.totalTokens)}>
+                    {fmtTokens(realInput(p.totalTokens) + p.totalTokens.output)}
+                  </span>
                 </li>
               ))}
             </ul>
@@ -150,15 +154,21 @@ function ProjectDetail({ p }: { p: ReportProject }) {
     <>
       <div className="report-title">
         {p.gitRemote && (
-          <span className="rt-sum" title={p.gitRemote}>
-            🔗 {p.gitRemote.length > 50 ? p.gitRemote.slice(0, 50) + "…" : p.gitRemote}
+          <span
+            className="rt-sum"
+            title={p.gitRemote}
+            style={{
+              flex: "0 0 60ch",
+              whiteSpace: "nowrap",
+              overflow: "hidden",
+              textOverflow: "ellipsis",
+            }}
+          >
+            🔗 {p.gitRemote}
           </span>
         )}
-        <span className="rt-sum">
-          👤 {p.gitUser ?? "—"}
-        </span>
-        <span className="rt-sum" title={fmtUsageFull(p.totalTokens)} style={{ marginLeft: "auto" }}>
-          token {fmtTokens(realInput(p.totalTokens) + p.totalTokens.output)}
+        <span className="rt-sum" title={fmtUsageFull(p.totalTokens)} style={{ marginLeft: "auto", color: "#9dbefe" }}>
+          {fmtUsageLabeled(p.totalTokens)}
         </span>
       </div>
 
@@ -171,6 +181,7 @@ function ProjectDetail({ p }: { p: ReportProject }) {
               <th>时间</th>
               <th className="rt-num">输入 token</th>
               <th className="rt-num">输出 token</th>
+              <th className="rt-num">总数</th>
             </tr>
           </thead>
           <tbody>
@@ -183,6 +194,7 @@ function ProjectDetail({ p }: { p: ReportProject }) {
                 <td>{fmtDateTime(s.lastActive)}</td>
                 <td className="rt-num">{fmtTokens(realInput(s.tokenTotal!))}</td>
                 <td className="rt-num">{fmtTokens(s.tokenTotal!.output)}</td>
+                <td className="rt-num">{fmtTokens(realInput(s.tokenTotal!) + s.tokenTotal!.output)}</td>
               </tr>
             ))}
           </tbody>

@@ -63,10 +63,22 @@ export function fmtUsage(u?: TokenUsage | null): string {
   return `↑${fmtTokens(realInput(u))} ↓${fmtTokens(u.output)}`;
 }
 
+/** token 用量三段式：↑真实输入 ↓输出 · 总数(真实输入+输出)。报表/会话导航与详情用。 */
+export function fmtUsageTotal(u?: TokenUsage | null): string {
+  if (!u) return "";
+  return `↑${fmtTokens(realInput(u))} ↓${fmtTokens(u.output)} · ${fmtTokens(realInput(u) + u.output)}`;
+}
+
 /** 完整 token 用量，用于 title 提示：真实输入合计 + 输出 + 四字段明细（均原始值，不加权）。 */
 export function fmtUsageFull(u?: TokenUsage | null): string {
   if (!u) return "";
   return `真实输入 ${realInput(u)} · 输出 ${u.output} · (未缓存 ${u.input} · 缓存写 ${u.cacheCreation} · 缓存读 ${u.cacheRead})`;
+}
+
+/** token 用量带标签：输入 X · 输出 Y · 总数 Z(真实输入+输出)。会话详情/报表标题用。 */
+export function fmtUsageLabeled(u?: TokenUsage | null): string {
+  if (!u) return "";
+  return `输入 ${fmtTokens(realInput(u))} · 输出 ${fmtTokens(u.output)} · 总数 ${fmtTokens(realInput(u) + u.output)}`;
 }
 
 function trimZero(s: string): string {
