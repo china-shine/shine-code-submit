@@ -129,7 +129,6 @@ function ProjectDetail({ p }: { p: ReportProject }) {
   return (
     <>
       <div className="report-title">
-        <h2 title={p.cwd}>{shortDir(p.cwd) || p.cwd}</h2>
         <span className="rt-sum" title={fmtUsageFull(p.totalTokens)}>
           输入 token <b>{fmtTokens(p.totalTokens.input)}</b>
         </span>
@@ -146,6 +145,7 @@ function ProjectDetail({ p }: { p: ReportProject }) {
         <table className="report-table">
           <thead>
             <tr>
+              <th className="rt-idx">#</th>
               <th>Session</th>
               <th>时间</th>
               <th className="rt-num">输入 token</th>
@@ -153,8 +153,9 @@ function ProjectDetail({ p }: { p: ReportProject }) {
             </tr>
           </thead>
           <tbody>
-            {pageRows.map((s) => (
+            {pageRows.map((s, idx) => (
               <tr key={s.sessionId}>
+                <td className="rt-idx">{(cur - 1) * PAGE + idx + 1}</td>
                 <td className="rt-sid" title={s.sessionId}>
                   {s.sessionId.slice(0, 8)}
                 </td>

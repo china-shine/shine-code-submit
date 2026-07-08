@@ -858,6 +858,7 @@ ul { list-style: none; margin: 0; padding: 0; }
 .report-table td { padding: 0.32rem 0.6rem; border-bottom: 1px solid var(--border); color: var(--text); white-space: nowrap; }
 .report-table th.rt-num, .report-table td.rt-num { text-align: right; font-family: Consolas, "Courier New", monospace; font-variant-numeric: tabular-nums; color: var(--muted); }
 .report-table td.rt-sid { font-family: Consolas, "Courier New", monospace; color: var(--c-session); }
+.report-table th.rt-idx, .report-table td.rt-idx { text-align: center; width: 3rem; color: var(--muted); }
 .report-table tr:hover td { background: var(--hover); }
 .report-nav { list-style: none; margin: 0; padding: 0.3rem; }
 .report-nav li { padding: 0.45rem 0.7rem; border-radius: 4px; cursor: pointer; color: var(--text); font-size: var(--fs-sm); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
