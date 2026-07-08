@@ -9,6 +9,7 @@ const ITEMS: Array<{ id: ModuleId; label: string; icon: IconName }> = [
   // { id: "events", label: "事件", icon: "activity" },   // 暂时屏蔽，恢复取消注释即可
   // { id: "commits", label: "提交", icon: "git" },        // 暂时屏蔽，恢复取消注释即可
   { id: "stats", label: "统计", icon: "chart" },
+  { id: "report", label: "数据上报", icon: "log" },
   { id: "system", label: "系统", icon: "server" },
 ];
 

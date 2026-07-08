@@ -2,6 +2,20 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 0.2.11 — 2026-07-08
+
+新增「数据上报」dashboard 页：跨项目聚合（版本 / git 用户 / 每项目会话数+每会话 token / 提交次数+行数+时间）。后期接服务器上报，现留占位按钮。
+
+### 新增
+- `GET /api/report?since=<ms>`（token 鉴权）：按项目(cwd)聚合——每会话 `tokenTotal`（transcript 汇总，带 mtime 缓存）、提交 `count/+added/-deleted/lastTime`、`git config user.name`、全局 `version`。返回 `{version, gitUser, projects[], totals}`。
+- `src/daemon/git.ts`：`getGitUser(cwd)`。
+- UI「数据上报」模块（`ReportModule.tsx`）：汇总卡 + 每项目卡（会话/token/提交/最近提交时间），展开看每会话 token 明细 + 最近 5 条提交；时间范围选择（全部 / 近 7 天 / 近 30 天）。底部「上报到服务器」**占位按钮**（禁用，后期接远端时启用）。
+- 接线：`ModuleId` 加 `"report"`、SideNav「数据上报」、ModuleRouter。
+- 数据大多复用现有采集（events/sessions/transcript/commits），无新 DB schema、无新依赖。
+
+### 验证
+本机 `/api/report?since=0`：6 项目 / 35 会话 / token 合计（↑27.9M ↓12M）/ 62 提交 / +17508/-993，结构与字段正确。
+
 ## 0.2.10 — 2026-07-08
 
 暂时关闭「自动弹浏览器」——Dashboard 链接照常打印，用户自行点开。

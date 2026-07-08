@@ -31,6 +31,17 @@ export async function getCommits(cwd: string, limit = 200): Promise<CommitsRespo
   return { cwd, commits: parseLog(stdout) };
 }
 
+/** 取 cwd 配置的 git 用户名（user.name）；未配置 / git 不可用返回 null。
+ *  git config 即使在非 git 目录也能读全局 user.name，故正常会返回全局用户名；都没配则 null。 */
+export async function getGitUser(cwd: string): Promise<string | null> {
+  try {
+    const name = (await runGit(cwd, ["config", "user.name"])).trim();
+    return name || null;
+  } catch {
+    return null;
+  }
+}
+
 /** 跑 git 子进程，超时或非 0 退出 reject；stdout 文本 resolve。 */
 function runGit(cwd: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {

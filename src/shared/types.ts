@@ -114,3 +114,53 @@ export interface CommitsResponse {
   commits: CommitLog[];
   error?: string;
 }
+
+// ---- GET /api/report:数据上报页用的跨项目聚合 ----
+
+/** 报告里单个会话的 token 明细。tokenTotal 读不到 transcript 为 null。 */
+export interface ReportSession {
+  sessionId: string;
+  lastActive: number;
+  tokenTotal: TokenUsage | null;
+}
+
+/** 报告里单项目的提交汇总(窗口内)。 */
+export interface ReportProjectCommits {
+  count: number;
+  added: number;
+  deleted: number;
+  lastTime: number | null; // 最近提交时间(ms),无提交 null
+}
+
+/** 报告里单个项目(=cwd)的聚合行。 */
+export interface ReportProject {
+  cwd: string;
+  name: string; // shortDir(cwd),展示用
+  gitUser: string | null; // git config user.name
+  sessionCount: number;
+  sessions: ReportSession[]; // 每会话 token 明细
+  totalTokens: TokenUsage; // 该项目 token 合计
+  commits: ReportProjectCommits;
+  recentCommits: CommitLog[]; // 最近若干条(展示用,限 5)
+  gitError?: string;
+}
+
+/** 报告全局合计。 */
+export interface ReportTotals {
+  projects: number;
+  sessions: number;
+  tokens: TokenUsage;
+  commitCount: number;
+  added: number;
+  deleted: number;
+}
+
+/** GET /api/report 响应。 */
+export interface ReportResponse {
+  version: string;
+  generatedAt: number;
+  since: number; // 统计窗口起点(ms),0=全部
+  gitUser: string | null; // 全局代表(首个有 user.name 的项目)
+  projects: ReportProject[];
+  totals: ReportTotals;
+}

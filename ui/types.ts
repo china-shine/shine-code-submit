@@ -5,6 +5,9 @@ import type {
   CommitsResponse,
   EventsResponse,
   HookEvent,
+  ReportProject,
+  ReportResponse,
+  ReportSession,
   SessionSummary,
   StatsResponse,
   TokenUsage,
@@ -18,6 +21,9 @@ export type {
   CommitsResponse,
   EventsResponse,
   HookEvent,
+  ReportProject,
+  ReportResponse,
+  ReportSession,
   SessionSummary,
   StatsResponse,
   TokenUsage,
@@ -43,4 +49,4 @@ export type Payload = Record<string, unknown>;
 export type ViewMode = "events" | "conversation" | "commits" | "summary";
 
 /** 左侧导航模块（渐进重构：Step 1 起与 viewMode 并存，selectModule 经映射驱动 viewMode）。 */
-export type ModuleId = "overview" | "sessions" | "events" | "commits" | "stats" | "system";
+export type ModuleId = "overview" | "sessions" | "events" | "commits" | "stats" | "report" | "system";
