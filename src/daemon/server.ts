@@ -300,9 +300,15 @@ function findTranscriptPath(store: Store, sessionId: string): string | null {
 
 /** 构建 /api/report：按项目(cwd)聚合会话/token + git 用户 + 仓库地址 + 版本。窗口 since(ms，0=全部)。 */
 async function buildReport(store: Store, since: number): Promise<ReportResponse> {
-  const sessions = store.sessions().filter((s) => s.lastActive >= since);
+  // 去重:同 sessionId 跨 cwd(store.sessions 按 session_id+cwd 分组,会话期间 cd 会导致同 session 多行)
+  // 只保留 lastActive 最大的一条(归最近 cwd),避免 totals/项目合计重复累加
+  const seen = new Map<string, SessionSummary>();
+  for (const s of store.sessions().filter((s) => s.lastActive >= since)) {
+    const ex = seen.get(s.sessionId);
+    if (!ex || s.lastActive > ex.lastActive) seen.set(s.sessionId, s);
+  }
   const byCwd = new Map<string, SessionSummary[]>();
-  for (const s of sessions) {
+  for (const s of seen.values()) {
     const arr = byCwd.get(s.cwd);
     if (arr) arr.push(s);
     else byCwd.set(s.cwd, [s]);
@@ -348,7 +354,7 @@ async function buildReport(store: Store, since: number): Promise<ReportResponse>
 
   const totals: ReportTotals = {
     projects: projects.length,
-    sessions: sessions.length,
+    sessions: seen.size,
     tokens: sumTokens(projects.map((p) => p.totalTokens)),
     lines: sumLines(projects.map((p) => p.totalLines)),
   };

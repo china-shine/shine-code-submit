@@ -1,10 +1,10 @@
-// token 格式化（与 shine-code-submit ui/lib/util.ts 同口径,真实输入 + B 级两位小数）。
+// token 格式化（与 shine-code-submit ui/lib/util.ts 同口径,计费输入 + B 级两位小数）。
 import type { TokenUsage } from "../types";
 
-/** 真实输入 = input + cacheCreation + cacheRead（不加权）。 */
+/** 计费输入 = input + cacheCreation×1.25 + cacheRead×0.1(Anthropic 计费口径,对齐官方/智谱后台)。 */
 export function realInput(u?: TokenUsage | null): number {
   if (!u) return 0;
-  return u.input + u.cacheCreation + u.cacheRead;
+  return Math.round(u.input + u.cacheCreation * 1.25 + u.cacheRead * 0.1);
 }
 
 function trimZero(s: string): string {

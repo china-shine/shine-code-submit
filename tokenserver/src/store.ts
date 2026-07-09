@@ -87,7 +87,7 @@ const ZERO: TokenUsage = { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 }
 const ZERO_LINES: LinesStat = { added: 0, deleted: 0, modified: 0 };
 
 function realInput(u: TokenUsage): number {
-  return u.input + u.cacheCreation + u.cacheRead;
+  return Math.round(u.input + u.cacheCreation * 1.25 + u.cacheRead * 0.1);
 }
 function sumTokens(a: TokenUsage, b: TokenUsage): TokenUsage {
   return {

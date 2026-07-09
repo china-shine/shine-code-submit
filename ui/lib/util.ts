@@ -50,11 +50,11 @@ export function fmtTokens(n: number): string {
   return trimZero((n / 1_000_000_000_000).toFixed(2)) + "T";
 }
 
-/** 真实输入 token = 未缓存输入 + 缓存写 + 缓存读（每次 API 请求的完整 prompt 上下文）。
- *  直接累加 Anthropic API 返回的原始字段，不乘任何系数。 */
+/** 计费输入 token = 未缓存输入 + 缓存写×1.25 + 缓存读×0.1(Anthropic 计费口径,对齐官方/智谱后台)。
+ *  cache_creation 加价 1.25x,cache_read 命中折扣 0.1x;Math.round 避免浮点。 */
 export function realInput(u?: TokenUsage | null): number {
   if (!u) return 0;
-  return u.input + u.cacheCreation + u.cacheRead;
+  return Math.round(u.input + u.cacheCreation * 1.25 + u.cacheRead * 0.1);
 }
 
 /** token 用量简写：↑真实输入 ↓输出（真实输入 = 未缓存 + 缓存写 + 缓存读）。无值返回空串。 */

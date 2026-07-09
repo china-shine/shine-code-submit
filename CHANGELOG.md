@@ -2,6 +2,14 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.0.9 — 2026-07-09
+
+token 统计改计费口径 + 修报表 session 重复。
+
+### 改动
+- **计费口径**:`realInput` 改为 `input + cacheCreation×1.25 + cacheRead×0.1`(Anthropic 计费口径,对齐官方/智谱后台)。之前 cacheRead 全量计入(真实处理量),比计费高约 7 倍。
+- **修重复**:`buildReport` 同 sessionId 跨 cwd 只算一次(归最近 cwd),避免 totals/项目合计重复累加(会话期间 cd 导致同 session 在多个 cwd 出现)。
+
 ## 1.0.8 — 2026-07-09
 
 Dashboard 数据上报页 session 表格增加代码变更列。
