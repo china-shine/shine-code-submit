@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { useApp } from "../state/AppContext";
-import { fmtDateTime, fmtTokens, fmtUsageFull, realInput } from "../lib/util";
+import { fmtDateTime, fmtTokens, fmtUsageFull, rawTotal } from "../lib/util";
 import type { SessionSummary } from "../types";
 
 /** 会话树（按 cwd 分组、可折叠、token 角标、时间点）。纯展示 + onSelect 回调。
@@ -72,9 +72,9 @@ export function SessionTree({
                       <div className="sess-row">
                         <span className="sess-time">{fmtDateTime(s.lastActive)}</span>
                         <span className="sess-sid">{s.sessionId.slice(0, 8)}</span>
-                        {s.tokenTotal && (realInput(s.tokenTotal) > 0 || s.tokenTotal.output > 0) && (
+                        {s.tokenTotal && rawTotal(s.tokenTotal) > 0 && (
                           <span className="sess-tokens" title={fmtUsageFull(s.tokenTotal)}>
-                            {fmtTokens(realInput(s.tokenTotal) + s.tokenTotal.output)}
+                            {fmtTokens(rawTotal(s.tokenTotal))}
                           </span>
                         )}
                       </div>

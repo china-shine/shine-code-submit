@@ -17,6 +17,7 @@ import { deriveStableEventId } from "../shared/id";
 import { checkToken } from "./auth";
 import { parseTranscript, sumUsage } from "./transcript";
 import { getSessionTokenTotal } from "./token-cache";
+import { scanSessions, type ScannedSession } from "./claude-scan";
 import { getCommits, getGitUser, getGitRemote } from "./git";
 import { getSessionLines, sumLines } from "./lines";
 import { readSettings, writeSettings } from "./settings";
@@ -298,35 +299,48 @@ function findTranscriptPath(store: Store, sessionId: string): string | null {
   return null;
 }
 
-/** 构建 /api/report：按项目(cwd)聚合会话/token + git 用户 + 仓库地址 + 版本。窗口 since(ms，0=全部)。 */
+/** 解码 Claude 项目目录名 → 真实 cwd：':' '\' '/' 都被编码成 '-'。
+ *  Windows 盘符 C--… → C:\…（其余 - → \）；无盘符时原样返回（posix 情形，少見）。 */
+function decodeProjectCwd(project: string): string {
+  const m = /^([A-Za-z])--(.*)$/.exec(project);
+  if (m && m[1] && m[2]) return `${m[1]}:\\${m[2].replace(/-/g, "\\")}`;
+  return project;
+}
+
+/** 构建 /api/report：token 直接扫所有 transcript（ccusage 口径，与 `ccusage claude session` 的 totals 逐字段相等），
+ *  按项目(projects/<project>)聚合；cwd/git/代码行数尽量按 sessionId 匹配 hook session 取真实值，匹配不上则解码项目名。
+ *  窗口 since(ms，0=全部)；since>0 时按 session 文件 mtime(session 级)过滤。 */
 async function buildReport(store: Store, since: number): Promise<ReportResponse> {
-  // 去重:同 sessionId 跨 cwd(store.sessions 按 session_id+cwd 分组,会话期间 cd 会导致同 session 多行)
-  // 只保留 lastActive 最大的一条(归最近 cwd),避免 totals/项目合计重复累加
-  const seen = new Map<string, SessionSummary>();
-  for (const s of store.sessions().filter((s) => s.lastActive >= since)) {
-    const ex = seen.get(s.sessionId);
-    if (!ex || s.lastActive > ex.lastActive) seen.set(s.sessionId, s);
+  // hook session 的 sessionId → 真实 cwd，用于给 scan session 补 cwd/git/行数
+  const hookCwd = new Map<string, string>();
+  for (const s of store.sessions()) {
+    if (!hookCwd.has(s.sessionId)) hookCwd.set(s.sessionId, s.cwd);
   }
-  const byCwd = new Map<string, SessionSummary[]>();
-  for (const s of seen.values()) {
-    const arr = byCwd.get(s.cwd);
+
+  // 扫描所有 transcript（ccusage 口径，含子代理），按 since 过滤
+  const scanned = scanSessions().filter((s) => since <= 0 || s.lastActivity >= since);
+
+  // 按编码项目名分组
+  const byProject = new Map<string, ScannedSession[]>();
+  for (const s of scanned) {
+    const arr = byProject.get(s.project);
     if (arr) arr.push(s);
-    else byCwd.set(s.cwd, [s]);
+    else byProject.set(s.project, [s]);
   }
 
   const projects = await Promise.all(
-    [...byCwd.keys()].map(
-      async (cwd): Promise<ReportProject> => {
-        const ss = byCwd.get(cwd) ?? [];
-        const rs: ReportSession[] = ss.map((s) => {
-          const tp = findTranscriptPath(store, s.sessionId);
-          return {
-            sessionId: s.sessionId,
-            lastActive: s.lastActive,
-            tokenTotal: tp ? getSessionTokenTotal(tp) : null,
-            linesTotal: getSessionLines(store, s.sessionId, s.lastActive),
-          };
-        });
+    [...byProject.keys()].map(
+      async (project): Promise<ReportProject> => {
+        const ss = byProject.get(project) ?? [];
+        // cwd：优先 hook 匹配的真实 cwd，否则解码项目名
+        const cwd =
+          ss.map((s) => hookCwd.get(s.sessionId)).find((c) => !!c) ?? decodeProjectCwd(project);
+        const rs: ReportSession[] = ss.map((s) => ({
+          sessionId: s.sessionId,
+          lastActive: s.lastActivity,
+          tokenTotal: s.tokenTotal,
+          linesTotal: getSessionLines(store, s.sessionId, s.lastActivity),
+        }));
         const totalTokens = sumTokens(rs.map((r) => r.tokenTotal));
         const totalLines = sumLines(rs.map((r) => r.linesTotal));
 
@@ -354,7 +368,7 @@ async function buildReport(store: Store, since: number): Promise<ReportResponse>
 
   const totals: ReportTotals = {
     projects: projects.length,
-    sessions: seen.size,
+    sessions: scanned.length,
     tokens: sumTokens(projects.map((p) => p.totalTokens)),
     lines: sumLines(projects.map((p) => p.totalLines)),
   };

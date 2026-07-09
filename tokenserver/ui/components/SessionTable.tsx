@@ -1,7 +1,7 @@
 // 三级内容:选中项目的 session 表格（与报表表格结构一致）。
 // 列:# / Session / 时间 / 输入 token / 输出 token / 总数。隐藏 0 token 会话。
 import type { ProjectAgg } from "../types";
-import { fmtDate, fmtLabeled, fmtTokens, fmtTotal, realInput } from "../lib/util";
+import { fmtDate, fmtLabeled, fmtTokens, fmtTotal, rawTotal } from "../lib/util";
 
 export function SessionTable({ project }: { project: ProjectAgg | null }) {
   if (!project) {
@@ -11,9 +11,7 @@ export function SessionTable({ project }: { project: ProjectAgg | null }) {
       </main>
     );
   }
-  const rows = project.sessions.filter(
-    (s) => s.tokenTotal && (realInput(s.tokenTotal) > 0 || s.tokenTotal.output > 0),
-  );
+  const rows = project.sessions.filter((s) => s.tokenTotal && rawTotal(s.tokenTotal) > 0);
   return (
     <main className="main">
       <div className="main-head">
@@ -48,7 +46,7 @@ export function SessionTable({ project }: { project: ProjectAgg | null }) {
                   <td className="rt-idx">{i + 1}</td>
                   <td className="sid" title={s.sessionId}>{s.sessionId.slice(0, 8)}</td>
                   <td>{fmtDate(s.lastActive)}</td>
-                  <td className="num">{fmtTokens(realInput(s.tokenTotal))}</td>
+                  <td className="num">{fmtTokens(s.tokenTotal!.input)}</td>
                   <td className="num">{fmtTokens(s.tokenTotal!.output)}</td>
                   <td className="num">{fmtTotal(s.tokenTotal)}</td>
                   <td className="num" title={s.linesTotal ? `+${s.linesTotal.added} -${s.linesTotal.deleted} M${s.linesTotal.modified}` : ""}>

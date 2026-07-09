@@ -1,10 +1,10 @@
-// token 格式化（与 shine-code-submit ui/lib/util.ts 同口径,计费输入 + B 级两位小数）。
+// token 格式化（与 shine-code-submit ui/lib/util.ts 同口径,原始总量 + B 级两位小数）。
 import type { TokenUsage } from "../types";
 
-/** 计费输入 = input + cacheCreation×1.25 + cacheRead×0.1(Anthropic 计费口径,对齐官方/智谱后台)。 */
-export function realInput(u?: TokenUsage | null): number {
+/** 原始 token 总量 = input + output + cacheCreation + cacheRead（= ccusage totalTokens，四字段原始全量）。 */
+export function rawTotal(u?: TokenUsage | null): number {
   if (!u) return 0;
-  return Math.round(u.input + u.cacheCreation * 1.25 + u.cacheRead * 0.1);
+  return u.input + u.output + u.cacheCreation + u.cacheRead;
 }
 
 function trimZero(s: string): string {
@@ -20,14 +20,14 @@ export function fmtTokens(n: number): string {
   return trimZero((n / 1e12).toFixed(2)) + "T";
 }
 
-/** 带标签三段式:输入 X · 输出 Y · 总数 Z。 */
+/** 带标签三段式:输入 X · 输出 Y · 总数 Z(原始四字段和)。 */
 export function fmtLabeled(u?: TokenUsage | null): string {
   if (!u) return "—";
-  return `输入 ${fmtTokens(realInput(u))} · 输出 ${fmtTokens(u.output)} · 总数 ${fmtTokens(realInput(u) + u.output)}`;
+  return `输入 ${fmtTokens(u.input)} · 输出 ${fmtTokens(u.output)} · 总数 ${fmtTokens(rawTotal(u))}`;
 }
 
 export function fmtTotal(u?: TokenUsage | null): string {
-  return u ? fmtTokens(realInput(u) + u.output) : "0";
+  return u ? fmtTokens(rawTotal(u)) : "0";
 }
 
 export function fmtDate(ts: number): string {

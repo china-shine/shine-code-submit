@@ -2,6 +2,16 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.0.12 — 2026-07-09
+
+token 统计完全对齐 ccusage（显示改原始总量 + 扫描所有 transcript）。
+
+### 改动
+- **显示口径**：移除 realInput 计费代理（缓存读×0.1 缩水），前端 + tokenserver 全部改显示原始总量 rawTotal（input+output+缓存写+缓存读 = ccusage totalTokens）。
+- **session 扫描**：新增 `claude-scan`，直接扫 `~/.claude/projects` 下所有 transcript（不再只统计 hook 抓到的 session），按 session 归组；`/api/report` 的 token 来源改为扫描结果，与 `ccusage claude session` 的 `totals` 逐字段相等。
+- **Overview**：Token 总量 KPI 改读 `/api/report` 扫描总量（ccusage 口径）。
+- **验证**：scanSessions 全局总量与 ccusage 字节级一致（1,506,182,124 tokens，四字段全等）。
+
 ## 1.0.11 — 2026-07-09
 
 session token 汇总进一步对齐 ccusage session 口径(逐行校验 + 去重 + 子代理归并)。

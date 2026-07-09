@@ -7,7 +7,7 @@ import { useApp } from "../state/AppContext";
 import { Icon } from "./Icon";
 import { Splitter } from "./Splitter";
 import type { ReportProject, ReportResponse } from "../types";
-import { fmtDateTime, fmtTokens, fmtUsageFull, fmtUsageLabeled, realInput, shortDir } from "../lib/util";
+import { fmtDateTime, fmtTokens, fmtUsageFull, fmtUsageLabeled, rawTotal, shortDir } from "../lib/util";
 
 const PAGE = 20; // 每页 session 数
 
@@ -117,7 +117,7 @@ export function ReportModule() {
                 >
                   <span>{shortDir(p.cwd) || p.cwd}</span>
                   <span className="nav-tokens" title={fmtUsageFull(p.totalTokens)}>
-                    {fmtTokens(realInput(p.totalTokens) + p.totalTokens.output)}
+                    {fmtTokens(rawTotal(p.totalTokens))}
                   </span>
                 </li>
               ))}
@@ -147,7 +147,7 @@ export function ReportModule() {
 function ProjectDetail({ p }: { p: ReportProject }) {
   const [page, setPage] = useState(1);
   // 过滤掉 0 token 的 session(tokenTotal 为 null 或 真实输入+输出=0)
-  const rows = p.sessions.filter((s) => s.tokenTotal && realInput(s.tokenTotal) + s.tokenTotal.output > 0);
+  const rows = p.sessions.filter((s) => s.tokenTotal && rawTotal(s.tokenTotal) > 0);
   const pageCount = Math.max(1, Math.ceil(rows.length / PAGE));
   const cur = Math.min(page, pageCount);
   const pageRows = rows.slice((cur - 1) * PAGE, cur * PAGE);
@@ -198,9 +198,9 @@ function ProjectDetail({ p }: { p: ReportProject }) {
                   {s.sessionId.slice(0, 8)}
                 </td>
                 <td>{fmtDateTime(s.lastActive)}</td>
-                <td className="rt-num">{fmtTokens(realInput(s.tokenTotal!))}</td>
+                <td className="rt-num">{fmtTokens(s.tokenTotal!.input)}</td>
                 <td className="rt-num">{fmtTokens(s.tokenTotal!.output)}</td>
-                <td className="rt-num">{fmtTokens(realInput(s.tokenTotal!) + s.tokenTotal!.output)}</td>
+                <td className="rt-num">{fmtTokens(rawTotal(s.tokenTotal!))}</td>
                 <td className="rt-num" title={s.linesTotal ? `+${s.linesTotal.added} -${s.linesTotal.deleted} M${s.linesTotal.modified}` : ""}>
                   {s.linesTotal ? `+${s.linesTotal.added} -${s.linesTotal.deleted} M${s.linesTotal.modified}` : "-"}
                 </td>

@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useApi } from "../hooks/useApi";
 import { useAllCommits } from "../hooks/useAllCommits";
 import { useApp } from "../state/AppContext";
-import { fmtDateTime, fmtUsage, fmtUsageFull, realInput, shortDir, sumTokenUsage } from "../lib/util";
+import { fmtDateTime, fmtUsage, fmtUsageFull, rawTotal, shortDir, sumTokenUsage } from "../lib/util";
 
 /** 汇总视图（system 模块临时占位，Step 5 替换为 SystemModule）：
  *  Token 按会话 + 代码提交按时间。提交拉取改用 useAllCommits（与 Overview/Stats 共用）。 */
@@ -13,7 +13,7 @@ export function SummaryView() {
   const tokenRows = useMemo(
     () =>
       sessions
-        .filter((s) => s.tokenTotal && (realInput(s.tokenTotal) > 0 || s.tokenTotal.output > 0))
+        .filter((s) => s.tokenTotal && rawTotal(s.tokenTotal) > 0)
         .slice()
         .sort((a, b) => b.lastActive - a.lastActive),
     [sessions],
@@ -24,7 +24,7 @@ export function SummaryView() {
   const commitCount = commits.length;
   const added = commits.reduce((n, c) => n + (c.added || 0), 0);
   const deleted = commits.reduce((n, c) => n + (c.deleted || 0), 0);
-  const hasTokens = realInput(tokenSum.total) > 0 || tokenSum.total.output > 0;
+  const hasTokens = rawTotal(tokenSum.total) > 0;
 
   return (
     <div id="summary-view" className="summary-view">

@@ -2,7 +2,7 @@ import { useState } from "react";
 import { useApi } from "../hooks/useApi";
 import { useConversation } from "../hooks/useConversation";
 import { useApp } from "../state/AppContext";
-import { fmtUsageFull, fmtUsageLabeled, realInput, shortDir } from "../lib/util";
+import { fmtUsageFull, fmtUsageLabeled, rawTotal, shortDir } from "../lib/util";
 import { Conversation } from "./Conversation";
 
 /** 会话详情（右侧）：顶部摘要（sid/cwd/token）+ 该会话对话。
@@ -27,7 +27,7 @@ export function SessionDetail({ sessionId }: { sessionId: string }) {
             {shortDir(session.cwd)}
           </span>
         )}
-        {tokenTotal && (realInput(tokenTotal) > 0 || tokenTotal.output > 0) && (
+        {tokenTotal && rawTotal(tokenTotal) > 0 && (
           <span className="detail-token" title={fmtUsageFull(tokenTotal)}>
             {fmtUsageLabeled(tokenTotal)}
           </span>

@@ -86,8 +86,8 @@ export interface UserAgg {
 const ZERO: TokenUsage = { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 };
 const ZERO_LINES: LinesStat = { added: 0, deleted: 0, modified: 0 };
 
-function realInput(u: TokenUsage): number {
-  return Math.round(u.input + u.cacheCreation * 1.25 + u.cacheRead * 0.1);
+function rawTotal(u: TokenUsage): number {
+  return u.input + u.output + u.cacheCreation + u.cacheRead;
 }
 function sumTokens(a: TokenUsage, b: TokenUsage): TokenUsage {
   return {
@@ -245,10 +245,7 @@ export function aggregate(): UserAgg[] {
     });
   }
   for (const arr of projByUser.values()) {
-    arr.sort(
-      (a, b) =>
-        realInput(b.totalTokens) + b.totalTokens.output - (realInput(a.totalTokens) + a.totalTokens.output),
-    );
+    arr.sort((a, b) => rawTotal(b.totalTokens) - rawTotal(a.totalTokens));
   }
 
   const users: UserAgg[] = [];
@@ -273,10 +270,7 @@ export function aggregate(): UserAgg[] {
       projects,
     });
   }
-  users.sort(
-    (a, b) =>
-      realInput(b.totalTokens) + b.totalTokens.output - (realInput(a.totalTokens) + a.totalTokens.output),
-  );
+  users.sort((a, b) => rawTotal(b.totalTokens) - rawTotal(a.totalTokens));
   cachedUsers = users;
   return users;
 }

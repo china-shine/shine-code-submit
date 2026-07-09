@@ -50,35 +50,34 @@ export function fmtTokens(n: number): string {
   return trimZero((n / 1_000_000_000_000).toFixed(2)) + "T";
 }
 
-/** 计费输入 token = 未缓存输入 + 缓存写×1.25 + 缓存读×0.1(Anthropic 计费口径,对齐官方/智谱后台)。
- *  cache_creation 加价 1.25x,cache_read 命中折扣 0.1x;Math.round 避免浮点。 */
-export function realInput(u?: TokenUsage | null): number {
+/** 原始 token 总量 = input + output + cacheCreation + cacheRead（= ccusage totalTokens，四字段原始全量，不加权）。 */
+export function rawTotal(u?: TokenUsage | null): number {
   if (!u) return 0;
-  return Math.round(u.input + u.cacheCreation * 1.25 + u.cacheRead * 0.1);
+  return u.input + u.output + u.cacheCreation + u.cacheRead;
 }
 
-/** token 用量简写：↑真实输入 ↓输出（真实输入 = 未缓存 + 缓存写 + 缓存读）。无值返回空串。 */
+/** token 用量简写：↑输入 ↓输出（原始值）。无值返回空串。 */
 export function fmtUsage(u?: TokenUsage | null): string {
   if (!u) return "";
-  return `↑${fmtTokens(realInput(u))} ↓${fmtTokens(u.output)}`;
+  return `↑${fmtTokens(u.input)} ↓${fmtTokens(u.output)}`;
 }
 
-/** token 用量三段式：↑真实输入 ↓输出 · 总数(真实输入+输出)。报表/会话导航与详情用。 */
+/** token 用量三段式：↑输入 ↓输出 · 总数(原始四字段和)。报表/会话导航与详情用。 */
 export function fmtUsageTotal(u?: TokenUsage | null): string {
   if (!u) return "";
-  return `↑${fmtTokens(realInput(u))} ↓${fmtTokens(u.output)} · ${fmtTokens(realInput(u) + u.output)}`;
+  return `↑${fmtTokens(u.input)} ↓${fmtTokens(u.output)} · ${fmtTokens(rawTotal(u))}`;
 }
 
-/** 完整 token 用量，用于 title 提示：真实输入合计 + 输出 + 四字段明细（均原始值，不加权）。 */
+/** 完整 token 用量，用于 title 提示：总数 + 输入/输出 + 缓存写/缓存读（均原始值）。 */
 export function fmtUsageFull(u?: TokenUsage | null): string {
   if (!u) return "";
-  return `真实输入 ${realInput(u)} · 输出 ${u.output} · (未缓存 ${u.input} · 缓存写 ${u.cacheCreation} · 缓存读 ${u.cacheRead})`;
+  return `总数 ${rawTotal(u)} · 输入 ${u.input} · 输出 ${u.output} · 缓存写 ${u.cacheCreation} · 缓存读 ${u.cacheRead}`;
 }
 
-/** token 用量带标签：输入 X · 输出 Y · 总数 Z(真实输入+输出)。会话详情/报表标题用。 */
+/** token 用量带标签：输入 X · 输出 Y · 总数 Z(原始四字段和)。会话详情/报表标题用。 */
 export function fmtUsageLabeled(u?: TokenUsage | null): string {
   if (!u) return "";
-  return `输入 ${fmtTokens(realInput(u))} · 输出 ${fmtTokens(u.output)} · 总数 ${fmtTokens(realInput(u) + u.output)}`;
+  return `输入 ${fmtTokens(u.input)} · 输出 ${fmtTokens(u.output)} · 总数 ${fmtTokens(rawTotal(u))}`;
 }
 
 function trimZero(s: string): string {

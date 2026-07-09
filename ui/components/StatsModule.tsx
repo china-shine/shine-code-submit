@@ -3,7 +3,7 @@ import { useApi } from "../hooks/useApi";
 import { useAllCommits } from "../hooks/useAllCommits";
 import { useApp } from "../state/AppContext";
 import { aggregateCommitsByProject, aggregateTokenByProject, bucketByDay } from "../lib/aggregate";
-import { fmtUsage, realInput, shortDir } from "../lib/util";
+import { fmtUsage, rawTotal, shortDir } from "../lib/util";
 
 type StatTab = "token" | "commits" | "day";
 
@@ -18,7 +18,7 @@ export function StatsModule() {
   const projCommits = useMemo(() => aggregateCommitsByProject(commits), [commits]);
   const commitsByDay = useMemo(() => bucketByDay(commits.map((c) => c.time), 7), [commits]);
 
-  const maxToken = Math.max(1, ...projTokens.map((r) => realInput(r.token) + r.token.output));
+  const maxToken = Math.max(1, ...projTokens.map((r) => rawTotal(r.token)));
   const maxCommitCount = Math.max(1, ...projCommits.map((r) => r.count));
   const maxDayCount = Math.max(1, ...commitsByDay.map((b) => b.count));
 
@@ -60,7 +60,7 @@ export function StatsModule() {
             ) : (
               <div className="bar-list">
                 {projTokens.map((r) => {
-                  const v = realInput(r.token) + r.token.output;
+                  const v = rawTotal(r.token);
                   return (
                     <div className="bar-row" key={r.cwd}>
                       <span className="bar-label" title={r.cwd}>
