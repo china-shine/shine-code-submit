@@ -77,7 +77,7 @@ npx shine-code-submit install
 **从 GitHub：**
 
 ```
-/plugin marketplace add  renguifeng/shine-code-submit
+/plugin marketplace add  china-shine/shine-code-submit
 /plugin install shine-code-submit@shine-code-submit
 ```
 
@@ -164,6 +164,12 @@ log/daemon.log    日志（按大小轮转）
 db/events.sqlite  事件库（按 cwd 隔离，幂等去重）
 settings.json     上报配置（reportUrl/reportIntervalMin;默认 http://47.98.221.20:36667/api/report,10 分钟）
 ```
+
+## 报表上报
+
+daemon 默认每 10 分钟（`reportIntervalMin`）或手动（Dashboard「上报」按钮）把会话/token 聚合报表 POST 到 `reportUrl`（默认 `http://47.98.221.20:36667/api/report`，可在「设置」页改）。接收端 [`tokenserver/`](./tokenserver/README.md) 按 **用户 → 项目 → token** 三级展示。
+
+**上报身份 = `git config user.name`**：采集不到（机器未配 `user.name`，如部分 CI/容器/新机）时**跳过本次上报**，不再以「未知用户」上传；手动上报按钮会提示「已跳过：未采集到 git user.name」。配置 `git config --global user.name <名字>` 后即恢复上报。
 
 ## 关键设计点
 
