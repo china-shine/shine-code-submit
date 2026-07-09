@@ -2,6 +2,17 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.0.6 — 2026-07-09
+
+自动更新:daemon 后台定时检测 npm 新版本并自动升级。
+
+### 改动
+- **自动更新**:daemon 启动时 + 每 `autoUpdateIntervalMin`(默认 60)分钟查 npm registry latest,有新版(versionGt 语义比较,只升不降)→ spawn detached `npx shine-code-submit@latest install` 后台升级。默认开启。
+- **settings**:加 `autoUpdate`/`autoUpdateIntervalMin`/`latestVersion` 字段。
+- **cli update 命令**:手动触发检测+升级(force,忽略 autoUpdate 开关)。
+- **dashboard 设置页**:加自动更新开关 + 间隔 + 当前/最新版本显示。
+- **降级保护**:`versionGt` 语义比较,本地比 npm 新(如发版前 build)时不误降级。
+
 ## 1.0.5 — 2026-07-09
 
 升级后自动切换 daemon 到最新版本。

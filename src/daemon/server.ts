@@ -19,6 +19,7 @@ import { parseTranscript, sumUsage } from "./transcript";
 import { getSessionTokenTotal } from "./token-cache";
 import { getCommits, getGitUser, getGitRemote } from "./git";
 import { readSettings, writeSettings } from "./settings";
+import { autoUpdateIfNeeded } from "../shared/updater";
 import type { Store } from "./store";
 import type { EventBus } from "./bus";
 import type { Stats } from "./stats";
@@ -71,6 +72,31 @@ export function startServer(deps: ServerDeps) {
       log.info(`auto report upload failed: ${e instanceof Error ? e.message : String(e)}`);
     }
   }, 60_000);
+
+  // 自动更新:启动时检测一次 + 每 autoUpdateIntervalMin 分钟复查(每分钟 tick 节流,配置实时读 settings)。
+  // 用户开 Claude → hook 拉起 daemon → daemon 启动检测 → 有新版 spawn npx install(1.0.5 自动重启接管)。
+  let lastUpdateAt = 0;
+  const updateTick = async (): Promise<void> => {
+    let intervalMin: number;
+    try {
+      const s = readSettings();
+      if (s.autoUpdate === false) return;
+      intervalMin = typeof s.autoUpdateIntervalMin === "number" ? s.autoUpdateIntervalMin : 60;
+    } catch {
+      return;
+    }
+    if (!intervalMin || intervalMin <= 0) return;
+    if (Date.now() - lastUpdateAt < intervalMin * 60_000) return;
+    lastUpdateAt = Date.now();
+    try {
+      const r = await autoUpdateIfNeeded();
+      if (r.updated) log.info(`auto update: new version ${r.latest} available, spawning npx install`);
+    } catch (e) {
+      log.info(`auto update check failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+  void updateTick(); // 启动即检测一次(覆盖"每次打开 Claude")
+  setInterval(updateTick, 60_000);
 
   return Bun.serve({
     hostname: LISTEN_HOST,
@@ -226,6 +252,12 @@ export function startServer(deps: ServerDeps) {
         if (typeof b.reportIntervalMin === "number") {
           cur.reportIntervalMin = Number.isFinite(b.reportIntervalMin) && b.reportIntervalMin > 0
             ? Math.floor(b.reportIntervalMin)
+            : null;
+        }
+        if (typeof b.autoUpdate === "boolean") cur.autoUpdate = b.autoUpdate;
+        if (typeof b.autoUpdateIntervalMin === "number") {
+          cur.autoUpdateIntervalMin = Number.isFinite(b.autoUpdateIntervalMin) && b.autoUpdateIntervalMin > 0
+            ? Math.floor(b.autoUpdateIntervalMin)
             : null;
         }
         writeSettings(cur);

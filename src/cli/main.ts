@@ -3,6 +3,7 @@
 import { BASE_URL, PUBLIC_BASE_URL } from "../shared/config";
 import { readPidFile } from "../shared/pidfile";
 import { ensureDaemon, isOursAlive, openBrowser, spawnDaemon, stopDaemon } from "../shared/daemonctl";
+import { autoUpdateIfNeeded } from "../shared/updater";
 
 const [cmd] = process.argv.slice(2);
 
@@ -21,6 +22,9 @@ switch (cmd) {
     break;
   case "ui":
     void cmdUi();
+    break;
+  case "update":
+    void cmdUpdate();
     break;
   default:
     printHelp();
@@ -72,6 +76,16 @@ async function cmdUi(): Promise<void> {
   openBrowser(url);
 }
 
+async function cmdUpdate(): Promise<void> {
+  console.log("checking for update...");
+  const r = await autoUpdateIfNeeded(true);
+  if (r.updated) {
+    console.log(`daemon: new version ${r.latest} available, spawning npx install in background`);
+  } else {
+    console.log(r.latest ? `daemon: already up to date (latest ${r.latest})` : "daemon: update check failed");
+  }
+}
+
 async function waitReady(): Promise<boolean> {
   return ensureDaemon();
 }
@@ -84,6 +98,7 @@ function printHelp(): void {
   stop     优雅停止 daemon
   restart  重启 daemon
   ui       打开查看页（必要时先启动 daemon）
+  update   检测并自动升级到 npm 最新版
 
 发布态下 hook/cli/daemon 同目录，daemon 由同目录二进制拉起；
 开发期可用环境变量覆盖：
