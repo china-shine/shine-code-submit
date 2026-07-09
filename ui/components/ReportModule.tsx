@@ -172,6 +172,9 @@ function ProjectDetail({ p }: { p: ReportProject }) {
         <span className="rt-sum" title={fmtUsageFull(p.totalTokens)} style={{ marginLeft: "auto", color: "#9dbefe" }}>
           {fmtUsageLabeled(p.totalTokens)}
         </span>
+        <span className="rt-sum" title={`代码变更 +${p.totalLines.added} -${p.totalLines.deleted} M${p.totalLines.modified}`} style={{ color: "#9aa" }}>
+          +{p.totalLines.added} -{p.totalLines.deleted} M{p.totalLines.modified}
+        </span>
       </div>
 
       <div style={{ overflow: "auto", flex: "1 1 0", minHeight: 0 }}>
@@ -184,6 +187,7 @@ function ProjectDetail({ p }: { p: ReportProject }) {
               <th className="rt-num">输入 token</th>
               <th className="rt-num">输出 token</th>
               <th className="rt-num">总数</th>
+              <th className="rt-num">代码变更</th>
             </tr>
           </thead>
           <tbody>
@@ -197,6 +201,9 @@ function ProjectDetail({ p }: { p: ReportProject }) {
                 <td className="rt-num">{fmtTokens(realInput(s.tokenTotal!))}</td>
                 <td className="rt-num">{fmtTokens(s.tokenTotal!.output)}</td>
                 <td className="rt-num">{fmtTokens(realInput(s.tokenTotal!) + s.tokenTotal!.output)}</td>
+                <td className="rt-num" title={s.linesTotal ? `+${s.linesTotal.added} -${s.linesTotal.deleted} M${s.linesTotal.modified}` : ""}>
+                  {s.linesTotal ? `+${s.linesTotal.added} -${s.linesTotal.deleted} M${s.linesTotal.modified}` : "-"}
+                </td>
               </tr>
             ))}
           </tbody>

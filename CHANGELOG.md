@@ -2,6 +2,13 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.0.8 — 2026-07-09
+
+Dashboard 数据上报页 session 表格增加代码变更列。
+
+### 改动
+- **Dashboard**:数据上报页(ReportModule)session 表格加「代码变更」列(+A -D M);项目标题加行数汇总。1.0.7 漏了 daemon Dashboard(只加了 tokenserver),此版补上。
+
 ## 1.0.7 — 2026-07-09
 
 报表 session 增加代码变更行数(添加/删除/修改分开统计)。
