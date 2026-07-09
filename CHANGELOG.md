@@ -2,6 +2,17 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.0.11 — 2026-07-09
+
+session token 汇总进一步对齐 ccusage session 口径(逐行校验 + 去重 + 子代理归并)。
+
+### 改动
+- **去重**:新增 `message.id`+`requestId` 全局去重(含 sidechain 重放兜底),偏好非 sidechain → total 更大 → 带 speed。避免同条 usage 被重放/跨文件重复累加。
+- **子代理归并**:`sessionTranscriptFiles` 把同目录 `subagents/*.jsonl` 归并到父 session,`sumSessionUsage` 跨文件去重求和,对齐 ccusage session 口径;`token-cache` 改用之,缓存 key 改为父+子代理复合 mtime。
+- **校验门**:逐行复刻 ccusage 的 `usage` 标记检测、null 黑名单字段丢弃、非 semver `version` 丢弃、严格 ISO8601 时间戳、字段非空校验。
+- **cache_creation 细分**:有 `cache_creation.{ephemeral_5m,ephemeral_1h}_input_tokens` 时用 5m+1h 求和,否则回退扁平 `cache_creation_input_tokens`。
+- **验证**:新增 `scripts/verify-transcript-parity.ts`(复刻 ccusage 测试用例 + 细分/校验/归并门,10 例全过)。
+
 ## 1.0.10 — 2026-07-09
 
 修 transcript usage 漏算(对齐 ccusage)。

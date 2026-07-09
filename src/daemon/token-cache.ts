@@ -1,33 +1,36 @@
 // 会话级 token 总量的 mtime 缓存。
 // /api/sessions 每 2s 被查看页轮询，逐 session 读 transcript 汇总 usage 会很重。
-// 这里按 transcriptPath 缓存「mtime → tokenTotal」：文件没变就直接返回，变了才重读重算。
-// 冷启动逐步填充，稳态全命中。任何异常返回 null（不影响 sessions 列表渲染）。
+// 这里按 transcriptPath 缓存「复合 mtime → tokenTotal」：父 transcript + 同目录 subagents/*.jsonl
+// 任一文件没变就直接返回，变了才重读重算。冷启动逐步填充，稳态全命中。异常返回 null。
 import { statSync } from "node:fs";
 import { homedir } from "node:os";
-import { sumTranscriptUsage } from "./transcript";
+import { sumSessionUsage, sessionTranscriptFiles } from "./transcript";
 import type { TokenUsage } from "../shared/types";
 
 interface Entry {
-  mtimeMs: number;
+  mtimeKey: string;
   total: TokenUsage;
 }
 
 const cache = new Map<string, Entry>();
 
-/** 返回某 transcript 的会话级 token 总量（带 mtime 缓存）；读不到/解析失败返回 null。 */
+/** 返回某 transcript 的会话级 token 总量（父 + subagents/*.jsonl 归并，对齐 ccusage session 口径）；
+ *  带复合 mtime 缓存；读不到/解析失败返回 null。 */
 export function getSessionTokenTotal(transcriptPath: string): TokenUsage | null {
   const realPath = transcriptPath.replace(/^~/, homedir());
-  let mtimeMs: number;
+  const files = sessionTranscriptFiles(realPath);
+  if (files.length === 0) return null;
+  let mtimeKey: string;
   try {
-    mtimeMs = statSync(realPath).mtimeMs;
+    mtimeKey = files.map((file) => `${file}:${statSync(file).mtimeMs}`).join("|");
   } catch {
     return null;
   }
   const hit = cache.get(transcriptPath);
-  if (hit && hit.mtimeMs === mtimeMs) return hit.total;
+  if (hit && hit.mtimeKey === mtimeKey) return hit.total;
   try {
-    const total = sumTranscriptUsage(transcriptPath);
-    cache.set(transcriptPath, { mtimeMs, total });
+    const total = sumSessionUsage(realPath);
+    cache.set(transcriptPath, { mtimeKey, total });
     return total;
   } catch {
     return null;

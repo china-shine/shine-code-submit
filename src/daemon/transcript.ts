@@ -2,8 +2,9 @@
 // 用于「对话视图」：完整还原用户提问 + Claude 回复 + 工具调用。
 // （事件流里若 Stop 未采集，这里仍能拿到完整记录，因为 transcript 由 Claude Code 自己持续写入。）
 // assistant 消息额外提取 message.usage（token 用量），供对话明细与会话级汇总。
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
+import { join } from "node:path";
 import type { TokenUsage, TranscriptMessage } from "../shared/types";
 
 // TranscriptMessage 已移至 shared/types（前端 React 也复用同一契约）；此处 re-export 保持向后兼容。
@@ -129,29 +130,256 @@ export function sumUsage(messages: TranscriptMessage[]): TokenUsage {
   return total;
 }
 
-/** 直接扫 transcript jsonl 每行的 message.usage 累加(对齐 ccusage:不依赖对话解析,
- *  避免漏掉无 text/thinking/tool_use 的 assistant 行,或 content 非 array 的 usage)。 */
-export function sumTranscriptUsage(transcriptPath: string): TokenUsage {
-  const total: TokenUsage = { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 };
+// ---- 对齐 ccusage 的逐行 token 统计（校验 + message.id/requestId 去重 + cache_creation 细分归并）----
+// 参考 ccusage rust/crates/ccusage/src/adapter/claude/mod.rs: read_usage_file 及配套校验/去重函数。
+
+/** ccusage is_unsupported_nullable_field 的等价黑名单：行内这些字段若为 null，整行丢弃。 */
+const UNSUPPORTED_NULLABLE_FIELDS = new Set([
+  "id",
+  "cwd",
+  "model",
+  "speed",
+  "costUSD",
+  "version",
+  "sessionId",
+  "requestId",
+  "isApiErrorMessage",
+  "cache_read_input_tokens",
+  "cache_creation_input_tokens",
+]);
+
+/** 等价 ccusage has_unsupported_null_field：行内出现 `"字段":null`（允许 " 与 : 间空白）且字段在黑名单 → true。 */
+function hasUnsupportedNullField(line: string): boolean {
+  const re = /"([^"]*)"\s*:null/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(line)) !== null) {
+    const field = m[1];
+    if (field != null && UNSUPPORTED_NULLABLE_FIELDS.has(field)) return true;
+  }
+  return false;
+}
+
+/** 等价 ccusage is_semver_prefix：必须是 `数字.数字.数字` 前缀（第二点后至少一位数字）。 */
+function isSemverPrefix(value: string): boolean {
+  return /^\d+\.\d+\.\d/.test(value);
+}
+
+/** 等价 ccusage parse_ts_timestamp 的接受判定：仅接受严格 ISO8601
+ * (YYYY-MM-DDTHH:MM:SS[Z|±HH:MM]，或带 .sss 毫秒)，且时分秒范围与日历日合法。
+ * 比 Date.parse 严格，避免接受 ccusage 会丢弃的时间戳导致计数分歧。 */
+function isValidCcusageTimestamp(value: string): boolean {
+  const m =
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(\.\d{3})?(Z|[+-]\d{2}:\d{2})$/.exec(value);
+  if (!m) return false;
+  const year = Number(m[1]);
+  const month = Number(m[2]);
+  const day = Number(m[3]);
+  const hour = Number(m[4]);
+  const minute = Number(m[5]);
+  const second = Number(m[6]);
+  if (hour > 23 || minute > 59 || second > 59) return false;
+  const dt = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+  return (
+    dt.getUTCFullYear() === year &&
+    dt.getUTCMonth() === month - 1 &&
+    dt.getUTCDate() === day
+  );
+}
+
+/** 等价 ccusage is_valid_usage_entry：version 非 semver、或 sessionId/requestId/messageId/model 存在且为空串 → false。 */
+function isValidUsageEntry(obj: Record<string, unknown>, message: Record<string, unknown>): boolean {
+  const version = obj.version;
+  if (version != null && !isSemverPrefix(String(version))) return false;
+  if (obj.sessionId != null && obj.sessionId === "") return false;
+  if (obj.requestId != null && obj.requestId === "") return false;
+  if (message.id != null && message.id === "") return false;
+  if (message.model != null && message.model === "") return false;
+  return true;
+}
+
+function numField(v: unknown): number {
+  return typeof v === "number" && Number.isFinite(v) ? v : 0;
+}
+
+interface UsageDedupeEntry {
+  messageId?: string;
+  requestId?: string;
+  isSidechain: boolean;
+  hasSpeed: boolean;
+  total: number;
+  input: number;
+  output: number;
+  cacheCreation: number;
+  cacheRead: number;
+}
+
+function matchesExactKey(
+  e: UsageDedupeEntry,
+  messageId: string,
+  requestId: string | undefined,
+): boolean {
+  return e.messageId === messageId && e.requestId === requestId;
+}
+
+function matchesSidechainKey(
+  e: UsageDedupeEntry,
+  messageId: string,
+  candidateIsSidechain: boolean,
+): boolean {
+  return e.messageId === messageId && (candidateIsSidechain || e.isSidechain);
+}
+
+function addDedupeIndex(map: Map<string, number[]>, key: string, idx: number): void {
+  const arr = map.get(key);
+  if (arr) {
+    if (!arr.includes(idx)) arr.push(idx);
+  } else {
+    map.set(key, [idx]);
+  }
+}
+
+/** 等价 ccusage should_replace_deduped_entry：非 sidechain 优先 → total 更大 → 带 speed。 */
+function shouldReplaceDedupedEntry(candidate: UsageDedupeEntry, existing: UsageDedupeEntry): boolean {
+  if (candidate.isSidechain !== existing.isSidechain) return existing.isSidechain;
+  if (candidate.total !== existing.total) return candidate.total > existing.total;
+  return candidate.hasSpeed && !existing.hasSpeed;
+}
+
+/** 等价 ccusage push_deduped_entry：按 messageId+requestId 精确键去重，sidechain 重放兜底；无 messageId 不去重。 */
+function pushDedupedEntry(
+  entry: UsageDedupeEntry,
+  survivors: UsageDedupeEntry[],
+  byExact: Map<string, number[]>,
+  byMessage: Map<string, number[]>,
+): void {
+  const messageId = entry.messageId;
+  if (!messageId) {
+    survivors.push(entry);
+    return;
+  }
+  const exactKey = messageId + " " + (entry.requestId ?? "");
+
+  let idx = (byExact.get(exactKey) ?? []).find((i) =>
+    matchesExactKey(survivors[i]!, messageId, entry.requestId),
+  );
+  if (idx === undefined) {
+    idx = (byMessage.get(messageId) ?? []).find((i) =>
+      matchesSidechainKey(survivors[i]!, messageId, entry.isSidechain),
+    );
+  }
+
+  if (idx !== undefined) {
+    if (shouldReplaceDedupedEntry(entry, survivors[idx]!)) {
+      survivors[idx] = entry;
+      addDedupeIndex(byExact, exactKey, idx);
+      addDedupeIndex(byMessage, messageId, idx);
+    }
+    return;
+  }
+
+  const newIdx = survivors.length;
+  survivors.push(entry);
+  addDedupeIndex(byExact, exactKey, newIdx);
+  addDedupeIndex(byMessage, messageId, newIdx);
+}
+
+/** 读单个 transcript 文件，返回通过 ccusage 全部门（usage 标记 / null 黑名单 / 解析 /
+ * 严格时间戳 / 字段校验 / cache_creation 5m+1h 归并）的条目；未去重。 */
+function readUsageEntries(transcriptPath: string): UsageDedupeEntry[] {
   const path = transcriptPath.replace(/^~/, homedir());
-  if (!existsSync(path)) return total;
+  if (!existsSync(path)) return [];
   const lines = readFileSync(path, "utf8").split("\n").filter(Boolean);
+  const entries: UsageDedupeEntry[] = [];
   for (const line of lines) {
+    if (!line.includes('"usage":{')) continue;
+    if (hasUnsupportedNullField(line)) continue;
     let obj: Record<string, unknown>;
     try {
-      obj = JSON.parse(line);
+      obj = JSON.parse(line) as Record<string, unknown>;
     } catch {
       continue;
     }
     const message = obj.message as Record<string, unknown> | undefined;
-    if (!message) continue;
-    const u = readUsage(message.usage);
-    if (u) {
-      total.input += u.input;
-      total.output += u.output;
-      total.cacheCreation += u.cacheCreation;
-      total.cacheRead += u.cacheRead;
-    }
+    const usage = message?.usage as Record<string, unknown> | undefined;
+    if (!message || !usage) continue;
+    if (typeof obj.timestamp !== "string" || !isValidCcusageTimestamp(obj.timestamp)) continue;
+    if (!isValidUsageEntry(obj, message)) continue;
+
+    const breakdown = usage.cache_creation as Record<string, unknown> | undefined;
+    const cacheCreation = breakdown
+      ? numField(breakdown.ephemeral_5m_input_tokens) + numField(breakdown.ephemeral_1h_input_tokens)
+      : numField(usage.cache_creation_input_tokens);
+    const input = numField(usage.input_tokens);
+    const output = numField(usage.output_tokens);
+    const cacheRead = numField(usage.cache_read_input_tokens);
+
+    entries.push({
+      messageId: typeof message.id === "string" ? message.id : undefined,
+      requestId: typeof obj.requestId === "string" ? obj.requestId : undefined,
+      isSidechain: obj.isSidechain === true,
+      hasSpeed: usage.speed != null,
+      total: input + output + cacheCreation + cacheRead,
+      input,
+      output,
+      cacheCreation,
+      cacheRead,
+    });
+  }
+  return entries;
+}
+
+/** 对条目集合做 ccusage 全局去重（message.id+requestId，含 sidechain 重放兜底）后求和。
+ *  去重结果与插入顺序无关（偏好：非 sidechain → total 更大 → 带 speed）。 */
+function dedupeAndSum(entries: UsageDedupeEntry[]): TokenUsage {
+  const survivors: UsageDedupeEntry[] = [];
+  const byExact = new Map<string, number[]>();
+  const byMessage = new Map<string, number[]>();
+  for (const entry of entries) pushDedupedEntry(entry, survivors, byExact, byMessage);
+  const total: TokenUsage = { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 };
+  for (const e of survivors) {
+    total.input += e.input;
+    total.output += e.output;
+    total.cacheCreation += e.cacheCreation;
+    total.cacheRead += e.cacheRead;
   }
   return total;
+}
+
+/**
+ * 单个 transcript 文件的 token 总量（去重发生在该文件内）。
+ * 对齐 ccusage 逐行逻辑；不依赖对话解析，避免漏掉无 text/thinking/tool_use 的 usage 行。
+ */
+export function sumTranscriptUsage(transcriptPath: string): TokenUsage {
+  return dedupeAndSum(readUsageEntries(transcriptPath));
+}
+
+/** 给定父 transcript 路径，返回实际存在的 [父文件, ...同目录 subagents/*.jsonl]
+ *  （对齐 ccusage：subagents/ 下的 jsonl 归并到父 session）。 */
+export function sessionTranscriptFiles(parentPath: string): string[] {
+  const real = parentPath.replace(/^~/, homedir());
+  const files: string[] = [];
+  if (existsSync(real)) files.push(real);
+  const subagentsDir = join(real.replace(/\.jsonl$/, ""), "subagents");
+  if (existsSync(subagentsDir)) {
+    let names: string[] = [];
+    try {
+      names = readdirSync(subagentsDir);
+    } catch {
+      names = [];
+    }
+    for (const name of names) {
+      if (name.endsWith(".jsonl")) files.push(join(subagentsDir, name));
+    }
+  }
+  return files;
+}
+
+/** 父 session 的 token 总量：父 transcript + 全部 subagents/*.jsonl，跨文件全局去重后求和。
+ *  对齐 ccusage 的 session 口径（子代理 transcript 归并到父 session）。 */
+export function sumSessionUsage(parentPath: string): TokenUsage {
+  const entries: UsageDedupeEntry[] = [];
+  for (const file of sessionTranscriptFiles(parentPath)) {
+    for (const entry of readUsageEntries(file)) entries.push(entry);
+  }
+  return dedupeAndSum(entries);
 }
