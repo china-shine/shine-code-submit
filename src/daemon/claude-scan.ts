@@ -130,3 +130,20 @@ export function scanSessions(): ScannedSession[] {
   out.sort((a, b) => b.lastActivity - a.lastActivity);
   return out;
 }
+
+/** 按 sessionId 在 projects/ 下找父 transcript 路径（不算 token，轻量）。
+ *  供对话视图在 hook 未提供 transcript_path 时回退，使报表里所有 session 都能点开。 */
+export function findTranscriptPathByScan(sessionId: string): string | null {
+  for (const root of claudeProjectsRoots()) {
+    const files: string[] = [];
+    collectJsonl(join(root, "projects"), files);
+    for (const file of files) {
+      const parts = file.split(/[/\\]/);
+      const projectsIndex = parts.lastIndexOf("projects");
+      if (projectsIndex < 0) continue;
+      const info = parentSessionInfo(parts, projectsIndex);
+      if (info && info.sessionId === sessionId) return file;
+    }
+  }
+  return null;
+}

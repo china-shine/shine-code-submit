@@ -17,7 +17,7 @@ import { deriveStableEventId } from "../shared/id";
 import { checkToken } from "./auth";
 import { parseTranscript, sumUsage } from "./transcript";
 import { getSessionTokenTotal } from "./token-cache";
-import { scanSessions, type ScannedSession } from "./claude-scan";
+import { scanSessions, findTranscriptPathByScan, type ScannedSession } from "./claude-scan";
 import { getCommits, getGitUser, getGitRemote } from "./git";
 import { getSessionLines, sumLines } from "./lines";
 import { readSettings, writeSettings } from "./settings";
@@ -296,7 +296,8 @@ function findTranscriptPath(store: Store, sessionId: string): string | null {
     const p = e.payload as Record<string, unknown> | null;
     if (p && typeof p.transcript_path === "string") return p.transcript_path;
   }
-  return null;
+  // hook 未提供 transcript_path 时回退扫描 projects/（保证对话视图能打开报表里的所有 session）
+  return findTranscriptPathByScan(sessionId);
 }
 
 /** 解码 Claude 项目目录名 → 真实 cwd：':' '\' '/' 都被编码成 '-'。

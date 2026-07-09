@@ -2,6 +2,15 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.0.15 — 2026-07-09
+
+对话视图与报表统一 transcript 来源。
+
+### 改动
+- **对话视图回退扫描**：`/api/transcript` 在 hook 未提供 `transcript_path` 时，回退按 sessionId 扫描 `projects/` 找 transcript（新增 `findTranscriptPathByScan`）。
+- 效果：报表里的所有 session（含 daemon 未捕获 hook 的旧/外部 session）都能点开看对话，不再「找不到 transcript_path」。
+- 验证：scan-only session（hook 无）现可打开（345 条消息）；hook session（b97b7212）1130 条消息正常。
+
 ## 1.0.14 — 2026-07-09
 
 报表项目导航去重。
