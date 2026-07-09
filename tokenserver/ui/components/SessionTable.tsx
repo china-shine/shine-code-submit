@@ -39,6 +39,7 @@ export function SessionTable({ project }: { project: ProjectAgg | null }) {
                 <th className="num">输入 token</th>
                 <th className="num">输出 token</th>
                 <th className="num">总数</th>
+                <th className="num">代码变更</th>
               </tr>
             </thead>
             <tbody>
@@ -50,6 +51,9 @@ export function SessionTable({ project }: { project: ProjectAgg | null }) {
                   <td className="num">{fmtTokens(realInput(s.tokenTotal))}</td>
                   <td className="num">{fmtTokens(s.tokenTotal!.output)}</td>
                   <td className="num">{fmtTotal(s.tokenTotal)}</td>
+                  <td className="num" title={s.linesTotal ? `+${s.linesTotal.added} -${s.linesTotal.deleted} M${s.linesTotal.modified}` : ""}>
+                    {s.linesTotal ? `+${s.linesTotal.added} -${s.linesTotal.deleted} M${s.linesTotal.modified}` : "-"}
+                  </td>
                 </tr>
               ))}
             </tbody>

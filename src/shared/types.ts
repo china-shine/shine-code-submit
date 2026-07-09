@@ -118,10 +118,18 @@ export interface CommitsResponse {
 // ---- GET /api/report:数据上报页用的跨项目聚合 ----
 
 /** 报告里单个会话的 token 明细。tokenTotal 读不到 transcript 为 null。 */
+/** 代码变更行数(分开统计,三者不重复:added 纯增 / deleted 纯删 / modified 一删一加配对)。 */
+export interface LinesStat {
+  added: number;
+  deleted: number;
+  modified: number;
+}
+
 export interface ReportSession {
   sessionId: string;
   lastActive: number;
   tokenTotal: TokenUsage | null;
+  linesTotal: LinesStat | null;
 }
 
 /** 报告里单个项目(=cwd)的聚合行。 */
@@ -133,6 +141,7 @@ export interface ReportProject {
   sessionCount: number;
   sessions: ReportSession[]; // 每会话 token 明细
   totalTokens: TokenUsage; // 该项目 token 合计
+  totalLines: LinesStat; // 该项目代码变更行数合计
   gitError?: string;
 }
 
@@ -141,6 +150,7 @@ export interface ReportTotals {
   projects: number;
   sessions: number;
   tokens: TokenUsage;
+  lines: LinesStat;
 }
 
 /** GET /api/report 响应。 */

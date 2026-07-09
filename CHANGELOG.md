@@ -2,6 +2,16 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.0.7 — 2026-07-09
+
+报表 session 增加代码变更行数(添加/删除/修改分开统计)。
+
+### 改动
+- **报表行数**:session 维度增加代码变更行数(added 纯增 / deleted 纯删 / modified 一删一加配对),三者不重复。
+- **数据来源**:PostToolUse 事件的 `tool_response.structuredPatch`(JSdiff,+/- 前缀),无需引入 diff 库;仅 Edit/Write/MultiEdit/NotebookEdit。新建文件回退 content 行数。
+- **daemon**:`ReportSession.linesTotal` + `ReportProject.totalLines` + `ReportTotals.lines`;按 sessionId+lastActive 缓存。
+- **tokenserver**:sessions 表加 added/deleted/modified 列 + ALTER 迁移(旧库兼容);aggregate 累加 project/user 级合计;UI session 表加「代码变更」列(`+A -D M`)。
+
 ## 1.0.6 — 2026-07-09
 
 自动更新:daemon 后台定时检测 npm 新版本并自动升级。

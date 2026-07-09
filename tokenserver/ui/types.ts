@@ -7,10 +7,17 @@ export interface TokenUsage {
   cacheRead: number;
 }
 
+export interface LinesStat {
+  added: number;
+  deleted: number;
+  modified: number;
+}
+
 export interface SessionAgg {
   sessionId: string;
   lastActive: number;
   tokenTotal: TokenUsage | null;
+  linesTotal: LinesStat | null;
 }
 
 export interface ProjectAgg {
@@ -20,6 +27,7 @@ export interface ProjectAgg {
   lastActive: number;
   sessionCount: number;
   totalTokens: TokenUsage;
+  totalLines: LinesStat;
   sessions: SessionAgg[];
 }
 
@@ -29,6 +37,7 @@ export interface UserAgg {
   projectCount: number;
   sessionCount: number;
   totalTokens: TokenUsage;
+  totalLines: LinesStat;
   projects: ProjectAgg[];
 }
 

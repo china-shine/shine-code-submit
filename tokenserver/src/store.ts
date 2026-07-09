@@ -4,7 +4,7 @@
 import { Database } from "bun:sqlite";
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { ReportResponse, TokenUsage } from "./types";
+import type { LinesStat, ReportResponse, TokenUsage } from "./types";
 
 function resolveDataDir(): string {
   if (process.env.TOKENSERVER_DATA_DIR) return process.env.TOKENSERVER_DATA_DIR;
@@ -39,16 +39,29 @@ db.exec(`
     output INTEGER DEFAULT 0,
     cacheCreation INTEGER DEFAULT 0,
     cacheRead INTEGER DEFAULT 0,
+    added INTEGER DEFAULT 0,
+    deleted INTEGER DEFAULT 0,
+    modified INTEGER DEFAULT 0,
     updatedAt INTEGER DEFAULT 0
   );
   CREATE INDEX IF NOT EXISTS idx_sessions_user_cwd ON sessions(gitUser, cwd);
   CREATE INDEX IF NOT EXISTS idx_projects_gitUser ON projects(gitUser);
 `);
 
+// 旧库迁移:sessions 加 added/deleted/modified 列(无迁移机制,PRAGMA 检查 + ADD COLUMN)
+{
+  const cols = db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>;
+  const have = new Set(cols.map((c) => c.name));
+  for (const c of ["added", "deleted", "modified"]) {
+    if (!have.has(c)) db.exec(`ALTER TABLE sessions ADD COLUMN ${c} INTEGER DEFAULT 0`);
+  }
+}
+
 export interface SessionAgg {
   sessionId: string;
   lastActive: number;
   tokenTotal: TokenUsage | null;
+  linesTotal: LinesStat | null;
 }
 export interface ProjectAgg {
   cwd: string;
@@ -57,6 +70,7 @@ export interface ProjectAgg {
   lastActive: number;
   sessionCount: number;
   totalTokens: TokenUsage;
+  totalLines: LinesStat;
   sessions: SessionAgg[];
 }
 export interface UserAgg {
@@ -65,10 +79,12 @@ export interface UserAgg {
   projectCount: number;
   sessionCount: number;
   totalTokens: TokenUsage;
+  totalLines: LinesStat;
   projects: ProjectAgg[];
 }
 
 const ZERO: TokenUsage = { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 };
+const ZERO_LINES: LinesStat = { added: 0, deleted: 0, modified: 0 };
 
 function realInput(u: TokenUsage): number {
   return u.input + u.cacheCreation + u.cacheRead;
@@ -79,6 +95,13 @@ function sumTokens(a: TokenUsage, b: TokenUsage): TokenUsage {
     output: a.output + b.output,
     cacheCreation: a.cacheCreation + b.cacheCreation,
     cacheRead: a.cacheRead + b.cacheRead,
+  };
+}
+function sumLines(a: LinesStat, b: LinesStat): LinesStat {
+  return {
+    added: a.added + b.added,
+    deleted: a.deleted + b.deleted,
+    modified: a.modified + b.modified,
   };
 }
 
@@ -98,6 +121,9 @@ interface SessionRow {
   output: number;
   cacheCreation: number;
   cacheRead: number;
+  added: number;
+  deleted: number;
+  modified: number;
 }
 
 const upsertProject = db.query(`
@@ -110,8 +136,8 @@ const upsertProject = db.query(`
     updatedAt = excluded.updatedAt
 `);
 const upsertSession = db.query(`
-  INSERT INTO sessions (sessionId, gitUser, cwd, lastActive, input, output, cacheCreation, cacheRead, updatedAt)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO sessions (sessionId, gitUser, cwd, lastActive, input, output, cacheCreation, cacheRead, added, deleted, modified, updatedAt)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(sessionId) DO UPDATE SET
     gitUser = excluded.gitUser,
     cwd = excluded.cwd,
@@ -120,6 +146,9 @@ const upsertSession = db.query(`
     output = excluded.output,
     cacheCreation = excluded.cacheCreation,
     cacheRead = excluded.cacheRead,
+    added = excluded.added,
+    deleted = excluded.deleted,
+    modified = excluded.modified,
     updatedAt = excluded.updatedAt
   WHERE excluded.lastActive >= sessions.lastActive
 `);
@@ -138,9 +167,11 @@ export function saveReport(raw: ReportResponse): void {
       upsertProject.run(gitUser, p.cwd, p.name ?? null, p.gitRemote ?? null, projLastActive, now);
       for (const s of p.sessions ?? []) {
         const t = s.tokenTotal ?? ZERO;
+        const l = s.linesTotal ?? ZERO_LINES;
         upsertSession.run(
           s.sessionId, gitUser, p.cwd, s.lastActive,
-          t.input, t.output, t.cacheCreation, t.cacheRead, now,
+          t.input, t.output, t.cacheCreation, t.cacheRead,
+          l.added, l.deleted, l.modified, now,
         );
       }
     }
@@ -160,7 +191,7 @@ export function aggregate(): UserAgg[] {
     .all();
   const sess = db
     .query<SessionRow>(
-      "SELECT sessionId, gitUser, cwd, lastActive, input, output, cacheCreation, cacheRead FROM sessions",
+      "SELECT sessionId, gitUser, cwd, lastActive, input, output, cacheCreation, cacheRead, added, deleted, modified FROM sessions",
     )
     .all();
 
@@ -181,6 +212,7 @@ export function aggregate(): UserAgg[] {
         cacheCreation: s.cacheCreation,
         cacheRead: s.cacheRead,
       },
+      linesTotal: { added: s.added, deleted: s.deleted, modified: s.modified },
     });
   }
   for (const arr of sessByProj.values()) arr.sort((a, b) => b.lastActive - a.lastActive);
@@ -197,6 +229,10 @@ export function aggregate(): UserAgg[] {
       (acc, s) => sumTokens(acc, s.tokenTotal ?? ZERO),
       { ...ZERO },
     );
+    const totalLines = sessions.reduce(
+      (acc, s) => sumLines(acc, s.linesTotal ?? ZERO_LINES),
+      { ...ZERO_LINES },
+    );
     arr.push({
       cwd: p.cwd,
       name: p.name ?? p.cwd,
@@ -204,6 +240,7 @@ export function aggregate(): UserAgg[] {
       lastActive: p.lastActive,
       sessionCount: sessions.length,
       totalTokens,
+      totalLines,
       sessions,
     });
   }
@@ -220,6 +257,10 @@ export function aggregate(): UserAgg[] {
       (acc, p) => sumTokens(acc, p.totalTokens),
       { ...ZERO },
     );
+    const totalLines = projects.reduce(
+      (acc, p) => sumLines(acc, p.totalLines),
+      { ...ZERO_LINES },
+    );
     const sessionCount = projects.reduce((a, p) => a + p.sessionCount, 0);
     const lastActive = projects.reduce((a, p) => Math.max(a, p.lastActive), 0);
     users.push({
@@ -228,6 +269,7 @@ export function aggregate(): UserAgg[] {
       projectCount: projects.length,
       sessionCount,
       totalTokens,
+      totalLines,
       projects,
     });
   }

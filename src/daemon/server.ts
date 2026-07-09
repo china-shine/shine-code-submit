@@ -18,6 +18,7 @@ import { checkToken } from "./auth";
 import { parseTranscript, sumUsage } from "./transcript";
 import { getSessionTokenTotal } from "./token-cache";
 import { getCommits, getGitUser, getGitRemote } from "./git";
+import { getSessionLines, sumLines } from "./lines";
 import { readSettings, writeSettings } from "./settings";
 import { autoUpdateIfNeeded } from "../shared/updater";
 import type { Store } from "./store";
@@ -317,9 +318,11 @@ async function buildReport(store: Store, since: number): Promise<ReportResponse>
             sessionId: s.sessionId,
             lastActive: s.lastActive,
             tokenTotal: tp ? getSessionTokenTotal(tp) : null,
+            linesTotal: getSessionLines(store, s.sessionId, s.lastActive),
           };
         });
         const totalTokens = sumTokens(rs.map((r) => r.tokenTotal));
+        const totalLines = sumLines(rs.map((r) => r.linesTotal));
 
         const [gitUser, gitRemote] = await Promise.all([getGitUser(cwd), getGitRemote(cwd)]);
 
@@ -331,6 +334,7 @@ async function buildReport(store: Store, since: number): Promise<ReportResponse>
           sessionCount: ss.length,
           sessions: rs,
           totalTokens,
+          totalLines,
         };
       },
     ),
@@ -346,6 +350,7 @@ async function buildReport(store: Store, since: number): Promise<ReportResponse>
     projects: projects.length,
     sessions: sessions.length,
     tokens: sumTokens(projects.map((p) => p.totalTokens)),
+    lines: sumLines(projects.map((p) => p.totalLines)),
   };
 
   return {

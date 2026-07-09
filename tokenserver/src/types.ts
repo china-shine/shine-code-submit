@@ -8,10 +8,17 @@ export interface TokenUsage {
   cacheRead: number;
 }
 
+export interface LinesStat {
+  added: number;
+  deleted: number;
+  modified: number;
+}
+
 export interface ReportSession {
   sessionId: string;
   lastActive: number;
   tokenTotal: TokenUsage | null;
+  linesTotal: LinesStat | null;
 }
 
 export interface ReportProject {
@@ -22,6 +29,7 @@ export interface ReportProject {
   sessionCount: number;
   sessions: ReportSession[];
   totalTokens: TokenUsage;
+  totalLines: LinesStat;
   gitError?: string;
 }
 
@@ -29,6 +37,7 @@ export interface ReportTotals {
   projects: number;
   sessions: number;
   tokens: TokenUsage;
+  lines: LinesStat;
 }
 
 export interface ReportResponse {
