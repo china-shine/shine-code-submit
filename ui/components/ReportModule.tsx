@@ -67,10 +67,12 @@ export function ReportModule() {
                     method: "POST",
                     headers: { Authorization: `Bearer ${token}` },
                   });
-                  if (r.ok) {
+                  const j = await r.json().catch(() => ({}));
+                  if (r.ok && j.status === "ok") {
                     setUploadResult({ ok: true, text: "上报成功" });
+                  } else if (r.ok && j.status === "skipped") {
+                    setUploadResult({ ok: false, text: `已跳过：${j.reason ?? "无 git 身份"}` });
                   } else {
-                    const j = await r.json().catch(() => ({}));
                     setUploadResult({ ok: false, text: j.error ?? `HTTP ${r.status}` });
                   }
                 } catch (e) {

@@ -17,7 +17,7 @@
   --c-prompt: #569cd6;
   --c-posttool: #c586c0;
   --c-pretool: #ce9178;
-  --nav-w: 200px;
+  --nav-w: 98px;
   --tree-w: 200px;
   --footer-h: 170px;
   /* 设计 token：间距 / 字号 / 圆角 / 图标尺寸 */
@@ -170,7 +170,10 @@ h2 {
 }
 ul { list-style: none; margin: 0; padding: 0; }
 
-#nav-panel { flex: 0 0 auto; background: var(--sidebar); overflow: hidden; border-right: 1px solid var(--border); }
+/* 固定宽度而非 flex: 0 0 auto：basis auto 取 content max-content，
+   超长会话触发大规模 reflow 时 Chromium 会重算 nav-item padding 导致 content 收缩，
+   进而让整个导航栏/会话树左移错位。固定值消除对 reflow 的依赖。 */
+#nav-panel { flex: 0 0 var(--nav-w); background: var(--sidebar); overflow: hidden; border-right: 1px solid var(--border); }
 #sessions-panel ul { flex: 1; overflow: auto; }
 #events-panel { flex: 1 1 0; overflow: hidden; }
 

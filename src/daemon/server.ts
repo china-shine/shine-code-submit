@@ -65,8 +65,8 @@ export function startServer(deps: ServerDeps) {
     if (Date.now() - lastReportAt < intervalMin * 60_000) return;
     lastReportAt = Date.now();
     try {
-      await uploadReport(store);
-      log.info(`auto report uploaded to ${url}`);
+      const r = await uploadReport(store);
+      log.info(r.uploaded ? `auto report uploaded to ${url}` : `auto report skipped: ${r.reason}`);
     } catch (e) {
       log.info(`auto report upload failed: ${e instanceof Error ? e.message : String(e)}`);
     }
@@ -201,8 +201,8 @@ export function startServer(deps: ServerDeps) {
       // 手动上报:构建报表并 POST 到 settings.reportUrl(与定时器同一逻辑)。
       if (path === "/api/report/upload" && req.method === "POST") {
         try {
-          await uploadReport(store);
-          return json({ status: "ok" });
+          const r = await uploadReport(store);
+          return json(r.uploaded ? { status: "ok" } : { status: "skipped", reason: r.reason });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           return json({ error: msg }, 500);
@@ -348,18 +348,26 @@ function shortName(p: string): string {
   return i >= 0 ? t.slice(i + 1) : t;
 }
 
-/** 构建 report 并 POST 到 settings.reportUrl(自动上报用)。URL 未配置则不报;失败抛错由调用方记日志。 */
-async function uploadReport(store: Store): Promise<void> {
+/** 上报结果:uploaded=true 已 POST;false=主动跳过(附 reason);抛错=网络/服务端失败。 */
+type UploadOutcome = { uploaded: boolean; reason?: string };
+
+/** 构建 report 并 POST 到 settings.reportUrl(自动/手动上报共用)。
+ *  无 reportUrl,或采集不到 git user.name(上报身份缺失,tokenserver 只会落「未知用户」) 则跳过不报,返回原因由调用方记日志/回前端;失败抛错。 */
+async function uploadReport(store: Store): Promise<UploadOutcome> {
   const s = readSettings();
   const url = s.reportUrl;
-  if (!url) return;
-  const body = JSON.stringify(await buildReport(store, 0));
+  if (!url) return { uploaded: false, reason: "reportUrl 未配置" };
+  const report = await buildReport(store, 0);
+  if (!report.gitUser) {
+    return { uploaded: false, reason: "未采集到 git user.name,跳过上报(无上报身份)" };
+  }
   await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body,
+    body: JSON.stringify(report),
     signal: AbortSignal.timeout(15000),
   });
+  return { uploaded: true };
 }
 
 function normalizeEvent(type: HookEventType, body: unknown): HookEvent | null {

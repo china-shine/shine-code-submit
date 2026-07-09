@@ -2,6 +2,15 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.0.3 — 2026-07-09
+
+上报身份校验 + 仓库迁移至 china-shine。
+
+### 改动
+- **上报身份校验**：采集不到 `git config user.name`（上报身份）时跳过本次上报，不再以「未知用户」上传到 tokenserver；自动上报记 `skipped` 日志，手动上报按钮区分「上报成功 / 已跳过：未采集到 git user.name / 失败」。
+- **GitHub 仓库迁移**：remote 及 package.json / plugin.json / 部署说明 中的 GitHub 链接迁至 `china-shine/shine-code-submit`。
+- **UI**：导航栏改固定宽度（`--nav-w` 98px），修复超长会话触发大规模 reflow 时导航栏/会话树左移错位。
+
 ## 1.0.2 — 2026-07-08
 
 token 显示修正 + 报表重构 + 默认上报配置。
