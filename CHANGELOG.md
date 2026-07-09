@@ -2,6 +2,14 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.0.10 — 2026-07-09
+
+修 transcript usage 漏算(对齐 ccusage)。
+
+### 改动
+- **sumTranscriptUsage**:新增直接扫 JSONL 每行 `message.usage` 累加(对齐 ccusage),不依赖对话解析。`token-cache` 改用之。
+- **修复**:`parseTranscript` 只 push 有 text/thinking/tool_use 的 assistant 消息,漏掉纯 usage 行(无文本内容但带 usage 的 API 响应);新方法扫每行 usage 不漏。
+
 ## 1.0.9 — 2026-07-09
 
 token 统计改计费口径 + 修报表 session 重复。

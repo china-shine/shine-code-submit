@@ -128,3 +128,30 @@ export function sumUsage(messages: TranscriptMessage[]): TokenUsage {
   }
   return total;
 }
+
+/** 直接扫 transcript jsonl 每行的 message.usage 累加(对齐 ccusage:不依赖对话解析,
+ *  避免漏掉无 text/thinking/tool_use 的 assistant 行,或 content 非 array 的 usage)。 */
+export function sumTranscriptUsage(transcriptPath: string): TokenUsage {
+  const total: TokenUsage = { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 };
+  const path = transcriptPath.replace(/^~/, homedir());
+  if (!existsSync(path)) return total;
+  const lines = readFileSync(path, "utf8").split("\n").filter(Boolean);
+  for (const line of lines) {
+    let obj: Record<string, unknown>;
+    try {
+      obj = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const message = obj.message as Record<string, unknown> | undefined;
+    if (!message) continue;
+    const u = readUsage(message.usage);
+    if (u) {
+      total.input += u.input;
+      total.output += u.output;
+      total.cacheCreation += u.cacheCreation;
+      total.cacheRead += u.cacheRead;
+    }
+  }
+  return total;
+}

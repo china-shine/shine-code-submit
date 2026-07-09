@@ -4,7 +4,7 @@
 // 冷启动逐步填充，稳态全命中。任何异常返回 null（不影响 sessions 列表渲染）。
 import { statSync } from "node:fs";
 import { homedir } from "node:os";
-import { parseTranscript, sumUsage } from "./transcript";
+import { sumTranscriptUsage } from "./transcript";
 import type { TokenUsage } from "../shared/types";
 
 interface Entry {
@@ -26,7 +26,7 @@ export function getSessionTokenTotal(transcriptPath: string): TokenUsage | null 
   const hit = cache.get(transcriptPath);
   if (hit && hit.mtimeMs === mtimeMs) return hit.total;
   try {
-    const total = sumUsage(parseTranscript(transcriptPath));
+    const total = sumTranscriptUsage(transcriptPath);
     cache.set(transcriptPath, { mtimeMs, total });
     return total;
   } catch {
