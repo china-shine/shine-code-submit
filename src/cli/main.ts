@@ -1,8 +1,8 @@
 // shine-code-submit CLI：status / start / stop / restart / ui。
 // 用户侧管理命令。token 从 pid 文件读取。
 import { BASE_URL, PUBLIC_BASE_URL } from "../shared/config";
-import { readPidFile, removePidFile } from "../shared/pidfile";
-import { ensureDaemon, isOursAlive, openBrowser, spawnDaemon } from "../shared/daemonctl";
+import { readPidFile } from "../shared/pidfile";
+import { ensureDaemon, isOursAlive, openBrowser, spawnDaemon, stopDaemon } from "../shared/daemonctl";
 
 const [cmd] = process.argv.slice(2);
 
@@ -38,51 +38,19 @@ async function cmdStatus(): Promise<void> {
 }
 
 async function cmdStart(): Promise<void> {
-  if (await isOursAlive()) {
-    console.log("daemon: already running");
-    return;
-  }
-  spawnDaemon();
-  const ok = await waitReady();
-  console.log(ok ? "daemon: started" : "daemon: start failed (check %LOCALAPPDATA%/shine-code-submit/log/daemon.log)");
+  // ensureDaemon 版本感知:已是最新复用,旧版在跑则停旧启新,没跑则拉起
+  const ok = await ensureDaemon();
+  console.log(ok ? "daemon: running" : "daemon: start failed (check %LOCALAPPDATA%/shine-code-submit/log/daemon.log)");
 }
 
 async function cmdStop(): Promise<void> {
-  const pid = readPidFile();
-  if (!pid) {
-    console.log("daemon: not running (no pid file)");
-    return;
-  }
-  if (!(await isOursAlive())) {
-    console.log("daemon: not running (stale pid file)");
-    removePidFile();
-    return;
-  }
-  // 优雅停止：调用 /api/shutdown
-  try {
-    await fetch(`${BASE_URL}/api/shutdown`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${pid.token}` },
-    });
-  } catch {
-    /* ignore */
-  }
-  await sleep(1000);
-  if (await isOursAlive()) {
-    try {
-      process.kill(pid.pid); // 兜底强杀
-    } catch {
-      /* ignore */
-    }
-    removePidFile();
-    console.log("daemon: force-stopped");
-  } else {
-    console.log("daemon: stopped");
-  }
+  const wasAlive = await isOursAlive();
+  await stopDaemon();
+  console.log(wasAlive ? "daemon: stopped" : "daemon: not running");
 }
 
 async function cmdRestart(): Promise<void> {
-  await cmdStop();
+  await stopDaemon();
   spawnDaemon();
   const ok = await waitReady();
   console.log(ok ? "daemon: restarted" : "daemon: restart failed");
@@ -106,10 +74,6 @@ async function cmdUi(): Promise<void> {
 
 async function waitReady(): Promise<boolean> {
   return ensureDaemon();
-}
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
 }
 
 function printHelp(): void {

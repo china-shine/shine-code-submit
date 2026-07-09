@@ -6,8 +6,8 @@
 import { ensureDirs } from "../shared/paths";
 import { readToken } from "../shared/pidfile";
 import { writeSpoolFile } from "../shared/spool";
-import { BASE_URL, PUBLIC_BASE_URL, HOOK_POST_TIMEOUT_MS } from "../shared/config";
-import { ensureDaemon, openBrowser } from "../shared/daemonctl";
+import { BASE_URL, PUBLIC_BASE_URL, HOOK_POST_TIMEOUT_MS, SERVICE_VERSION } from "../shared/config";
+import { ensureDaemon, openBrowser, spawnDaemon, stopDaemon } from "../shared/daemonctl";
 import type { HookEvent, HookEventType } from "../shared/types";
 
 const VALID_TYPES: HookEventType[] = [
@@ -122,16 +122,24 @@ async function readStdin(): Promise<unknown> {
 async function forward(event: HookEvent): Promise<void> {
   const token = readToken();
   const url = `${BASE_URL}/api/hook/${event.type}`;
-  if (await postOnce(url, event, token)) return;
+  const r = await postOnce(url, event, token);
+  if (r.ok) {
+    // 升级检测:daemon 版本旧 → 停旧启新(不等 ready;本次事件已入库 + 已落 spool,新 daemon 起来后回捞后续)
+    if (r.version && r.version !== SERVICE_VERSION) {
+      await stopDaemon();
+      spawnDaemon();
+    }
+    return;
+  }
   // 热转发失败 → 故障路径
   await ensureDaemon();
-  // 重读 token（拉起后 pid 文件已更新）
+  // 重读 token(拉起后 pid 文件已更新)
   await postOnce(url, event, readToken() ?? token);
 }
 
-async function postOnce(url: string, event: HookEvent, token: string | null): Promise<boolean> {
+async function postOnce(url: string, event: HookEvent, token: string | null): Promise<{ ok: boolean; version?: string }> {
   try {
-    await fetch(url, {
+    const res = await fetch(url, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -140,9 +148,10 @@ async function postOnce(url: string, event: HookEvent, token: string | null): Pr
       body: JSON.stringify(event),
       signal: AbortSignal.timeout(HOOK_POST_TIMEOUT_MS),
     });
-    return true; // 到达 daemon 即视为成功（事件也已落盘，回捞兜底）
+    const data = (await res.json().catch(() => ({}))) as { version?: string };
+    return { ok: true, version: data.version }; // 到达 daemon 即视为成功(事件也已落盘,回捞兜底);顺带读 version
   } catch {
-    return false;
+    return { ok: false };
   }
 }
 

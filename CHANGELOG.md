@@ -2,6 +2,16 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.0.5 — 2026-07-09
+
+升级后自动切换 daemon 到最新版本。
+
+### 改动
+- **版本感知探活**：`isOursAlive` 升级为 `probeDaemon`(返回 alive+version);复用 daemon 前比较运行中版本与当前 `SERVICE_VERSION`,不一致则停旧启新。
+- **方式1 `npx install`**:`startDaemonWithBun` 检测旧版 daemon → 自动停旧启新(不再「跳过启动」导致版本停滞)。
+- **方式2 `/plugin update`**:hook `postOnce` 读 `/api/hook` 响应 version,版本旧则停旧启新(`/api/hook` 响应加 version)。
+- **重构**:`stopDaemon` 抽到 `daemonctl.ts` 复用(cli/install/hook 共用);`ensureDaemon` 改版本感知。
+
 ## 1.0.4 — 2026-07-09
 
 文档同步（无功能改动）。

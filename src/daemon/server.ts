@@ -126,7 +126,7 @@ export function startServer(deps: ServerDeps) {
           stats.recordEvent();
           log.info(`ingest http ${event.type}`);
         }
-        return json({ status: "ok", inserted });
+        return json({ status: "ok", inserted, version: SERVICE_VERSION });
       }
 
       if (path === "/api/stats" && req.method === "GET") {

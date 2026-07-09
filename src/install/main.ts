@@ -7,8 +7,8 @@ import { spawn } from "node:child_process";
 import { ensureBun } from "./bun";
 import { cacheDir, deployPlugin } from "./deploy";
 import { enablePlugin, registerMarketplace, registerPlugin, unregisterAll } from "./register";
-import { BASE_URL, PUBLIC_BASE_URL, SERVICE_VERSION } from "../shared/config";
-import { isOursAlive, openBrowser } from "../shared/daemonctl";
+import { PUBLIC_BASE_URL, SERVICE_VERSION } from "../shared/config";
+import { isOursAlive, openBrowser, probeDaemon, stopDaemon } from "../shared/daemonctl";
 import { ensureDirs } from "../shared/paths";
 import { readPidFile } from "../shared/pidfile";
 
@@ -78,14 +78,21 @@ async function runStatus(): Promise<void> {
   }
 }
 
-/** 用显式 bunPath 拉 daemon。不调 daemonctl.spawnDaemon——它用 process.execPath,install 场景是 node 会出错。 */
+/** 用显式 bunPath 拉 daemon。不调 daemonctl.spawnDaemon——它用 process.execPath,install 场景是 node 会出错。
+ *  版本感知:已是当前 SERVICE_VERSION 则复用;旧版在跑则停旧启新(daemon 自守,必须先停后启);没跑则直接启。 */
 async function startDaemonWithBun(bunPath: string, cachePath: string): Promise<void> {
-  if (await isOursAlive()) {
-    console.log("[shine-code-submit] daemon 已在运行,跳过启动");
+  const probe = await probeDaemon();
+  if (probe.alive && probe.version === SERVICE_VERSION) {
+    console.log(`[shine-code-submit] daemon 已是最新 v${SERVICE_VERSION},跳过启动`);
     return;
   }
+  if (probe.alive) {
+    console.log(`[shine-code-submit] daemon 旧版 v${probe.version} 运行中,重启到 v${SERVICE_VERSION}...`);
+    await stopDaemon();
+  } else {
+    console.log("[shine-code-submit] 启动 daemon...");
+  }
   const daemonSrc = join(cachePath, "src", "daemon", "main.ts");
-  console.log("[shine-code-submit] 启动 daemon...");
   try {
     const child = spawn(bunPath, ["run", daemonSrc], {
       detached: true,
@@ -103,7 +110,8 @@ async function startDaemonWithBun(bunPath: string, cachePath: string): Promise<v
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
     await sleep(200);
-    if (await isOursAlive()) {
+    const p = await probeDaemon();
+    if (p.alive && p.version === SERVICE_VERSION) {
       console.log("[shine-code-submit] daemon 已就绪");
       return;
     }
@@ -111,33 +119,6 @@ async function startDaemonWithBun(bunPath: string, cachePath: string): Promise<v
   console.error(
     "[shine-code-submit] daemon 启动超时(10s)。plugin 已注册,可稍后手动 `shine-code-submit start` 或重启 claude。",
   );
-}
-
-async function stopDaemon(): Promise<void> {
-  const pid = readPidFile();
-  if (!pid) {
-    console.log("[shine-code-submit] daemon 未运行(无 pid 文件)");
-    return;
-  }
-  if (await isOursAlive()) {
-    try {
-      await fetch(`${BASE_URL}/api/shutdown`, {
-        method: "POST",
-        headers: { authorization: `Bearer ${pid.token}` },
-      });
-    } catch {
-      /* ignore */
-    }
-    await sleep(1000);
-    if (await isOursAlive()) {
-      try {
-        process.kill(pid.pid);
-      } catch {
-        /* ignore */
-      }
-    }
-  }
-  console.log("[shine-code-submit] daemon 已停止");
 }
 
 function openDashboard(): void {

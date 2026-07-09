@@ -4,18 +4,25 @@ import { spawn } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { BASE_URL, HEALTH_POLL_TIMEOUT_MS, HEALTH_POLL_INTERVAL_MS, SERVICE_NAME } from "./config";
+import { BASE_URL, HEALTH_POLL_TIMEOUT_MS, HEALTH_POLL_INTERVAL_MS, SERVICE_NAME, SERVICE_VERSION } from "./config";
+import { readPidFile, removePidFile } from "./pidfile";
 
-/** 探活 + 认自己人：service 字段必须匹配，防端口被无关程序占用误判。 */
-export async function isOursAlive(timeoutMs = 400): Promise<boolean> {
+/** 探活 + 认自己人 + 取版本:service 必须匹配(防端口被无关程序占用误判),顺便读 version。 */
+export async function probeDaemon(timeoutMs = 400): Promise<{ alive: boolean; version?: string }> {
   try {
     const res = await fetch(`${BASE_URL}/api/health`, { signal: AbortSignal.timeout(timeoutMs) });
-    if (!res.ok) return false;
-    const data = (await res.json()) as { service?: string };
-    return data?.service === SERVICE_NAME;
+    if (!res.ok) return { alive: false };
+    const data = (await res.json()) as { service?: string; version?: string };
+    if (data?.service !== SERVICE_NAME) return { alive: false };
+    return { alive: true, version: data.version };
   } catch {
-    return false;
+    return { alive: false };
   }
+}
+
+/** 探活 + 认自己人(只看存活,不比版本)。向后兼容;需比版本用 probeDaemon。 */
+export async function isOursAlive(timeoutMs = 400): Promise<boolean> {
+  return (await probeDaemon(timeoutMs)).alive;
 }
 
 /**
@@ -55,14 +62,42 @@ export function spawnDaemon(): void {
   }
 }
 
-/** 确保 daemon 就绪：不在则拉起并轮询至 ready（或超时）。 */
+/** 停 daemon:POST /api/shutdown(优雅) → sleep 1s → 仍活强杀 → 清 stale pid 文件。 */
+export async function stopDaemon(): Promise<void> {
+  const pid = readPidFile();
+  if (!pid) return;
+  if (await isOursAlive()) {
+    try {
+      await fetch(`${BASE_URL}/api/shutdown`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${pid.token}` },
+      });
+    } catch {
+      /* ignore */
+    }
+    await sleep(1000);
+    if (await isOursAlive()) {
+      try {
+        process.kill(pid.pid);
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+  removePidFile();
+}
+
+/** 确保 daemon 就绪且版本 == 当前 SERVICE_VERSION:没跑则拉起;旧版在跑则停旧启新(daemon 自守,必须先停后启)。 */
 export async function ensureDaemon(): Promise<boolean> {
-  if (await isOursAlive()) return true;
+  const probe = await probeDaemon();
+  if (probe.alive && probe.version === SERVICE_VERSION) return true;
+  if (probe.alive) await stopDaemon(); // 旧版:先停,新的才起得来
   spawnDaemon();
   const deadline = Date.now() + HEALTH_POLL_TIMEOUT_MS;
   while (Date.now() < deadline) {
     await sleep(HEALTH_POLL_INTERVAL_MS);
-    if (await isOursAlive()) return true;
+    const p = await probeDaemon();
+    if (p.alive && p.version === SERVICE_VERSION) return true;
   }
   return false;
 }
