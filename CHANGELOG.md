@@ -2,6 +2,13 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.0.4 — 2026-07-09
+
+文档同步（无功能改动）。
+
+### 改动
+- **README**：`/plugin marketplace add` 命令 owner 迁至 `china-shine`；新增「报表上报」段（上报身份 = `git config user.name`，采集不到则跳过）。
+
 ## 1.0.3 — 2026-07-09
 
 上报身份校验 + 仓库迁移至 china-shine。
