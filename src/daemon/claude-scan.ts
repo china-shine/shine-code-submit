@@ -94,9 +94,20 @@ function parentSessionInfo(
   return { project, sessionId };
 }
 
+let scanCache: { at: number; data: ScannedSession[] } | null = null;
+const SCAN_CACHE_TTL_MS = 2000;
+
 /** 扫描所有 Claude transcript，按 session 归组并算 token（ccusage 口径，含子代理）。
- *  贵的汇总走 getSessionTokenTotal 的 mtime 缓存，遍历只列文件。 */
+ *  贵的汇总走 getSessionTokenTotal 的 mtime 缓存，遍历只列文件。带 2s TTL 缓存（/api/sessions 每 2s 轮询）。 */
 export function scanSessions(): ScannedSession[] {
+  const now = Date.now();
+  if (scanCache && now - scanCache.at < SCAN_CACHE_TTL_MS) return scanCache.data;
+  const data = collectScannedSessions();
+  scanCache = { at: now, data };
+  return data;
+}
+
+function collectScannedSessions(): ScannedSession[] {
   const out: ScannedSession[] = [];
   for (const root of claudeProjectsRoots()) {
     const projectsDir = join(root, "projects");

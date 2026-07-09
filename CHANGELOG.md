@@ -2,6 +2,16 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.0.16 — 2026-07-09
+
+会话树与报表统一数据源（修复两边项目/session 不一致）。
+
+### 改动
+- **/api/sessions 改 scan 驱动**：会话树改用扫描 transcript 的 session 集合（与报表同源），不再只显示 hook 抓到的 session；scan session 用 hook 信息补 cwd/eventCount/lastType。
+- **hook cwd 一致解析**：会话树与报表对「跨 cwd 的 session」都取最新 hook cwd（首个，按 last_active DESC），不再被分到不同项目。
+- scanSessions 加 2s TTL 缓存（会话树每 2s 轮询，避免每次全扫）。
+- 验证：会话树与报表的 session 集合（104）、每个 session 的 cwd、项目数（31）完全一致。
+
 ## 1.0.15 — 2026-07-09
 
 对话视图与报表统一 transcript 来源。

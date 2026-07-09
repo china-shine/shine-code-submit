@@ -1,7 +1,7 @@
 // HTTP/WS 路由与鉴权。组装 Bun.serve。
 // 健康端点与静态页不鉴权；其余端点（事件接收、stats、events、sessions、ws、shutdown）需 token。
 import type { ServerWebSocket } from "bun";
-import { LISTEN_HOST, PORT, SERVICE_NAME, SERVICE_VERSION, LOG_TAIL_LINES, SESSION_TOKEN_ENRICH_LIMIT } from "../shared/config";
+import { LISTEN_HOST, PORT, SERVICE_NAME, SERVICE_VERSION, LOG_TAIL_LINES } from "../shared/config";
 import type {
   HookEvent,
   HookEventType,
@@ -16,7 +16,6 @@ import type {
 import { deriveStableEventId } from "../shared/id";
 import { checkToken } from "./auth";
 import { parseTranscript, sumUsage } from "./transcript";
-import { getSessionTokenTotal } from "./token-cache";
 import { scanSessions, findTranscriptPathByScan, type ScannedSession } from "./claude-scan";
 import { getCommits, getGitUser, getGitRemote } from "./git";
 import { getSessionLines, sumLines } from "./lines";
@@ -185,15 +184,28 @@ export function startServer(deps: ServerDeps) {
       }
 
       if (path === "/api/sessions" && req.method === "GET") {
-        const sessions = store.sessions();
-        // 仅对最近 N 个 session enrich tokenTotal（读 transcript 较重，走 mtime 缓存）；
-        // 更老的留 undefined，避免每 2s 轮询时重读大量旧 transcript。
-        for (let i = 0; i < Math.min(sessions.length, SESSION_TOKEN_ENRICH_LIMIT); i++) {
-          const s = sessions[i];
-          if (!s) continue;
-          const tp = findTranscriptPath(store, s.sessionId);
-          s.tokenTotal = tp ? getSessionTokenTotal(tp) : null;
+        // 扫描所有 transcript（ccusage 口径）与 hook 事件信息合并，
+        // 保证「会话树」与「报表」是同一批 session / 同一套项目分组。
+        const hookSessions = store.sessions();
+        // 与 buildReport 一致：每个 session 取最新的 hook cwd（store.sessions 按 last_active DESC，首个即最新），
+        // 否则跨 cwd 的 session 会在「会话树」和「报表」被分到不同项目。
+        const hookMap = new Map<string, SessionSummary>();
+        for (const s of hookSessions) {
+          if (!hookMap.has(s.sessionId)) hookMap.set(s.sessionId, s);
         }
+        // 只用 scan 的 session（与报表同源），用 hook 信息补 cwd/eventCount/lastType
+        const sessions: SessionSummary[] = scanSessions().map((sc) => {
+          const h = hookMap.get(sc.sessionId);
+          return {
+            sessionId: sc.sessionId,
+            cwd: h?.cwd ?? decodeProjectCwd(sc.project),
+            lastActive: Math.max(sc.lastActivity, h?.lastActive ?? 0),
+            eventCount: h?.eventCount ?? 0,
+            lastType: h?.lastType ?? null,
+            tokenTotal: sc.tokenTotal,
+          };
+        });
+        sessions.sort((a, b) => b.lastActive - a.lastActive);
         return json({ sessions });
       }
 
