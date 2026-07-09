@@ -115,6 +115,8 @@ export function scanSessions(): ScannedSession[] {
         continue;
       }
       const tokenTotal = getSessionTokenTotal(file) ?? ZERO;
+      // 0-token 的空 transcript（ccusage 不计入 session 数），跳过以对齐 ccusage 的 session 计数
+      if (tokenTotal.input + tokenTotal.output + tokenTotal.cacheCreation + tokenTotal.cacheRead === 0) continue;
       out.push({
         project: info.project,
         sessionId: info.sessionId,
@@ -124,5 +126,7 @@ export function scanSessions(): ScannedSession[] {
       });
     }
   }
+  // 按最近活跃倒序（最新在前），分组到各 project 后仍保持组内倒序
+  out.sort((a, b) => b.lastActivity - a.lastActivity);
   return out;
 }

@@ -2,6 +2,15 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.0.13 — 2026-07-09
+
+报表 session 列表对齐 ccusage 细节。
+
+### 改动
+- **排序**：报表页 session 按 lastActivity 倒序（最新在前），不再随文件系统乱序。
+- **过滤空 session**：跳过 0-token 的空 transcript，session 计数对齐 ccusage（如 116 → 104）。
+- **验证**：daemon `/api/report` 与 `ccusage claude session` 在 session 数与 token 总量上逐字段相等（104 session / 1,518,197,992 tokens）。
+
 ## 1.0.12 — 2026-07-09
 
 token 统计完全对齐 ccusage（显示改原始总量 + 扫描所有 transcript）。
