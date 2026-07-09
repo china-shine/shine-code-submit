@@ -320,21 +320,20 @@ async function buildReport(store: Store, since: number): Promise<ReportResponse>
   // 扫描所有 transcript（ccusage 口径，含子代理），按 since 过滤
   const scanned = scanSessions().filter((s) => since <= 0 || s.lastActivity >= since);
 
-  // 按编码项目名分组
-  const byProject = new Map<string, ScannedSession[]>();
+  // 按真实 cwd 分组（hook 捕获的 cwd 优先；无 hook 则解码项目名）。
+  // 同 cwd 的 session 合并到一个项目，避免导航栏因「同一 cwd 对应多个编码项目」而重复。
+  const byCwd = new Map<string, ScannedSession[]>();
   for (const s of scanned) {
-    const arr = byProject.get(s.project);
+    const cwd = hookCwd.get(s.sessionId) ?? decodeProjectCwd(s.project);
+    const arr = byCwd.get(cwd);
     if (arr) arr.push(s);
-    else byProject.set(s.project, [s]);
+    else byCwd.set(cwd, [s]);
   }
 
   const projects = await Promise.all(
-    [...byProject.keys()].map(
-      async (project): Promise<ReportProject> => {
-        const ss = byProject.get(project) ?? [];
-        // cwd：优先 hook 匹配的真实 cwd，否则解码项目名
-        const cwd =
-          ss.map((s) => hookCwd.get(s.sessionId)).find((c) => !!c) ?? decodeProjectCwd(project);
+    [...byCwd.keys()].map(
+      async (cwd): Promise<ReportProject> => {
+        const ss = byCwd.get(cwd) ?? [];
         const rs: ReportSession[] = ss.map((s) => ({
           sessionId: s.sessionId,
           lastActive: s.lastActivity,
@@ -359,6 +358,17 @@ async function buildReport(store: Store, since: number): Promise<ReportResponse>
       },
     ),
   );
+
+  // 同名项目消歧：用「父目录/项目名」区分（如两个 test → workspace/test、ai/test）
+  const nameCount: Record<string, number> = {};
+  for (const p of projects) nameCount[p.name] = (nameCount[p.name] ?? 0) + 1;
+  for (const p of projects) {
+    if ((nameCount[p.name] ?? 0) > 1) {
+      const segs = p.cwd.split(/[\\/]+/).filter(Boolean);
+      const prev = segs[segs.length - 2];
+      if (prev) p.name = `${prev}/${p.name}`;
+    }
+  }
 
   projects.sort(
     (a, b) =>

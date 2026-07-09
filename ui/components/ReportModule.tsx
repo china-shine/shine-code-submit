@@ -115,7 +115,7 @@ export function ReportModule() {
                   onClick={() => setSelCwd(p.cwd)}
                   style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: "0.5rem" }}
                 >
-                  <span>{shortDir(p.cwd) || p.cwd}</span>
+                  <span>{p.name || shortDir(p.cwd) || p.cwd}</span>
                   <span className="nav-tokens" title={fmtUsageFull(p.totalTokens)}>
                     {fmtTokens(rawTotal(p.totalTokens))}
                   </span>
