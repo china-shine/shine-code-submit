@@ -7,11 +7,18 @@
   "scripts": {
     "dev": "bun run src/main.ts",
     "start": "bun run src/main.ts",
+    "build:css": "bunx @tailwindcss/cli -i ui/styles/index.css -o ui/.build/style.css --minify",
     "build:ui": "bun run scripts/build-ui.ts",
     "build": "bun run scripts/build.ts"
   },
   "dependencies": {
+    "lucide-react": "^0.487.0",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "recharts": "^2.15.2"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.1.12",
+    "tailwindcss": "^4.1.12"
   }
 }

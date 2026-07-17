@@ -1,5 +1,6 @@
 #!/usr/bin/env bun
 // 打包 Linux x64 单文件二进制:
+// 0. 编译 tailwind css -> ui/.build/style.css
 // 1. bundle ui/app.tsx -> ui/.build/app.js
 // 2. 生成 src/ui-assets.ts(INDEX_HTML/APP_JS/STYLE_CSS 字符串,编译时内联)
 // 3. bun build --compile --target bun-linux-x64 src/main.ts -> bin/tokenserver-linux-x64
@@ -11,6 +12,10 @@ const TS_ROOT = join(import.meta.dir, "..");
 const UI_DIR = join(TS_ROOT, "ui");
 const BUILD_DIR = join(UI_DIR, ".build");
 mkdirSync(BUILD_DIR, { recursive: true });
+
+// 0. 编译 tailwind css
+console.log("0. compiling tailwind css");
+await $`bunx @tailwindcss/cli -i ${join(UI_DIR, "styles", "index.css")} -o ${join(BUILD_DIR, "style.css")} --minify`;
 
 // 1. bundle UI
 const uiBuild = await Bun.build({
@@ -30,7 +35,7 @@ console.log("1. ui bundled -> " + join(BUILD_DIR, "app.js"));
 const [html, js, css] = await Promise.all([
   Bun.file(join(UI_DIR, "index.html")).text(),
   Bun.file(join(BUILD_DIR, "app.js")).text(),
-  Bun.file(join(UI_DIR, "style.css")).text(),
+  Bun.file(join(BUILD_DIR, "style.css")).text(),
 ]);
 await Bun.write(
   join(TS_ROOT, "src", "ui-assets.ts"),

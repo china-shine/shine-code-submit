@@ -16,7 +16,7 @@ const ASSETS: Record<string, { file: string; inline: string; type: string }> = {
   "/": { file: "index.html", inline: INDEX_HTML, type: "text/html; charset=utf-8" },
   "/index.html": { file: "index.html", inline: INDEX_HTML, type: "text/html; charset=utf-8" },
   "/ui/app.js": { file: ".build/app.js", inline: APP_JS, type: "application/javascript; charset=utf-8" },
-  "/ui/style.css": { file: "style.css", inline: STYLE_CSS, type: "text/css; charset=utf-8" },
+  "/ui/style.css": { file: ".build/style.css", inline: STYLE_CSS, type: "text/css; charset=utf-8" },
 };
 
 function json(body: unknown, status = 200): Response {

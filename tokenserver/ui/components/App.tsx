@@ -1,24 +1,35 @@
-// 主组件:state(users/selUser/selProj) + 三栏布局(用户导航 | 项目导航 | 表格)。
-// 每 10s 轮询 /api/reports。默认选第一个用户;项目用 fallback(未选或失效取第一个)。
-import { useEffect, useState } from "react";
+// 主组件:数据加载(10s 轮询 /api/reports) + dark wrapper + 侧栏/顶栏 + 视图路由。
+// 全局过滤(时间范围+成员多选)在 App 层做,viewUsers 下传给所有页面/图表,保证口径一致。
+// 过滤后 user/project 的 totalTokens 等全量快照不准,filterUsersByRange 会从 session 重算。
+import { useEffect, useMemo, useState } from "react";
 import type { UserAgg } from "../types";
 import { fetchReports } from "../lib/api";
 import { fmtDate } from "../lib/util";
-import { UserList } from "./UserList";
-import { ProjectList } from "./ProjectList";
-import { SessionTable } from "./SessionTable";
+import { filterUsersByRange, activeRange } from "../lib/derive";
+import { Sidebar, type PageId } from "./shell/Sidebar";
+import { TopBar, type Granularity, type RangeKey } from "./shell/TopBar";
+import { OverviewPage } from "./overview/OverviewPage";
+import { MemberPage } from "./member/MemberPage";
+
+const DAY_MS = 86_400_000;
+const RANGE_DAYS: Record<RangeKey, number> = { "7d": 7, "15d": 15, "30d": 30, all: 0 };
 
 export function App() {
   const [users, setUsers] = useState<UserAgg[]>([]);
-  const [selUser, setSelUser] = useState<string | null>(null);
-  const [selProj, setSelProj] = useState<string | null>(null);
+  const [page, setPage] = useState<PageId>("overview");
+  const [dark, setDark] = useState(false); // 默认亮色(与 TokenWeb 参考页一致:亮主体 + 深色侧栏)
+  const [selMember, setSelMember] = useState<string | null>(null); // 成员详情所选 gitUser
   const [meta, setMeta] = useState("加载中…");
+
+  // 顶栏查询控件
+  const [granularity, setGranularity] = useState<Granularity>("day");
+  const [range, setRange] = useState<RangeKey>("all");
+  const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
 
   const load = async () => {
     try {
       const d = await fetchReports();
       setUsers(d.users);
-      setSelUser((cur) => cur ?? d.users[0]?.gitUser ?? null);
       const totalSessions = d.users.reduce((a, u) => a + u.sessionCount, 0);
       setMeta(`${d.users.length} 用户 · ${totalSessions} 会话 · 更新于 ${fmtDate(Date.now())}`);
     } catch (e) {
@@ -32,34 +43,70 @@ export function App() {
     return () => clearInterval(t);
   }, []);
 
-  const currentUser = users.find((u) => u.gitUser === selUser) ?? null;
-  const projects = currentUser?.projects ?? [];
-  // selProj 失效(切用户后旧 cwd)时 fallback 到第一个,避免 useEffect 选默认导致渲染循环
-  const currentProject = projects.find((p) => p.cwd === selProj) ?? projects[0] ?? null;
+  // 全局过滤:时间范围(重聚合 totals) + 成员多选
+  const viewUsers = useMemo(() => {
+    const days = RANGE_DAYS[range];
+    const from = days > 0 ? Date.now() - days * DAY_MS : 0;
+    let r = filterUsersByRange(users, from);
+    if (selectedMembers.length > 0) r = r.filter((u) => selectedMembers.includes(u.gitUser));
+    return r;
+  }, [users, range, selectedMembers]);
+
+  // 成员下拉用全量用户名(非 viewUsers,否则选中后自己会从列表消失)
+  const allGitUsers = useMemo(() => users.map((u) => u.gitUser), [users]);
+
+  const ar = activeRange(viewUsers);
+  const rangeText = ar.max > 0 ? `${fmtDate(ar.min)} — ${fmtDate(ar.max)}` : "无数据";
+
+  const pageTitle = page === "overview" ? "数据总览" : "成员分析";
+  const toggleMember = (g: string) =>
+    setSelectedMembers((prev) => (prev.includes(g) ? prev.filter((x) => x !== g) : [...prev, g]));
 
   return (
-    <>
-      <div className="header">
-        <h1>Token 上报</h1>
-        <span className="hint">{meta}</span>
-        <button style={{ marginLeft: "auto" }} onClick={load}>刷新</button>
+    <div
+      className={dark ? "dark" : ""}
+      style={{ fontFamily: "'Inter', system-ui, -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif" }}
+    >
+      <div className="min-h-screen bg-background flex text-foreground" style={{ minWidth: 1100 }}>
+        <Sidebar page={page} dark={dark} onNav={(p) => setPage(p)} onToggleDark={() => setDark((d) => !d)} />
+
+        <div className="flex-1 flex flex-col min-w-0">
+          <TopBar
+            granularity={granularity}
+            onGranularity={setGranularity}
+            range={range}
+            onRange={setRange}
+            members={allGitUsers}
+            selectedMembers={selectedMembers}
+            onToggleMember={toggleMember}
+            onClearMembers={() => setSelectedMembers([])}
+            rangeText={rangeText}
+            onRefresh={load}
+          />
+
+          <main className="flex-1 p-5 overflow-y-auto">
+            <div className="mb-5">
+              <h1 className="text-lg font-semibold text-foreground">{pageTitle}</h1>
+              <p className="text-xs text-muted-foreground mt-0.5">{meta}</p>
+            </div>
+
+            {page === "overview" && (
+              <OverviewPage
+                users={viewUsers}
+                dark={dark}
+                granularity={granularity}
+                onSelectMember={(u) => {
+                  setSelMember(u);
+                  setPage("member");
+                }}
+              />
+            )}
+            {page === "member" && (
+              <MemberPage users={viewUsers} dark={dark} selected={selMember} setSelected={setSelMember} />
+            )}
+          </main>
+        </div>
       </div>
-      <div className="layout">
-        <UserList
-          users={users}
-          selUser={selUser}
-          onSelect={(u) => {
-            setSelUser(u);
-            setSelProj(null);
-          }}
-        />
-        <ProjectList
-          projects={projects}
-          selectedCwd={currentProject?.cwd ?? null}
-          onSelect={setSelProj}
-        />
-        <SessionTable project={currentProject} />
-      </div>
-    </>
+    </div>
   );
 }
