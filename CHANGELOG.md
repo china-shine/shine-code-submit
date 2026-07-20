@@ -2,9 +2,11 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## 1.0.19 — 2026-07-20
+## 1.0.20 — 2026-07-20
 
 修复 daemon cwd 反斜杠转义脏数据 + tokenserver 前端会话表增强。
+
+> 1.0.19 因发版时绕过 `scripts/publish.sh`、漏跑 fix-tarball-mode,导致 `dist/install.cjs` 无 +x 位(Linux `npx` Permission denied)作废;1.0.20 为修复重发,内容相同。
 
 ### 改动
 - **cwd 转义脏数据修复**:无 hook 的 session 此前用 `decodeProjectCwd` 反推 Claude Code 的有损编码目录名(中文/空格/括号编码成 `-`),反推出大量连续反斜杠(如 `ai数据同步平台\game` 显示成 `ai\\\\game`),导致 tokenserver 同项目拆多行、项目数虚高(34→实际 27)。改为扫描时直接读 transcript jsonl 首条 `cwd` 字段(无编码损失),`decodeProjectCwd` 仅极端兜底:`transcript.ts` 加 `readFirstCwd`、`token-cache.ts` 加 `getSessionCwd`(mtime 缓存)、`ScannedSession` 加 cwd 字段、`server.ts` 两处(/api/sessions + buildReport)接入三级兜底(hook cwd ?? jsonl cwd ?? decode)。
