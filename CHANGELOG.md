@@ -2,6 +2,17 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.0.18 — 2026-07-20
+
+新增「对话总时长」(gap-aware 活跃时间估算),补全 KPI / 会话表 / 成员列表 / 成员详情四处时长展示。
+
+### 改动
+- **对话总时长(gap-aware)**:`transcript.ts` 新增 `sessionActiveMs` —— 收集 session(父 transcript + `subagents/*.jsonl`)所有经 messageId 去重的合法 timestamp,1h 间隙截断视为离开、每段 burst +10min buffer(单点 burst 也给 10min,避免「只发一条=0 时长」)。复用 ccusage 的严格 timestamp 校验与 `pushDedupedEntry` 去重,口径与 token 一致;`cost.total_duration_ms` 是运行时字段不落盘,用不了。
+- **activeMs 贯穿全链路**:`ScannedSession`/`ReportSession` 加 `activeMs`(`token-cache` 带 mtime 缓存);tokenserver `sessions` 表加列 + ALTER 自动迁移(旧库兼容,历史行 DEFAULT 0,旧 daemon 上报 `?? 0` 兜底);前端 `derive` 加 `globalTotals.activeMs`/`flattenSessions`/`dailyStats.dur` + `fmtDuration`(`<1m`/`Xm`/`Xh Ym`)。
+- **四处时长展示**(同一 gap-aware 口径):overview「对话总时长」KPI + 按日 sparkline、最近会话表时长列、成员列表时长列、成员详情时长 KPI。
+- **最近会话表**:删「路径」列(项目名已在「项目」列,完整 cwd 冗余占宽),9 列。
+- **验证**:当前对话 session 算出 ~57min;89 个历史 session 全部立即算出 activeMs(基于 transcript,无需累积);daemon `buildReport` → POST tokenserver 200 ok → `/api/reports` 透传 activeMs。
+
 ## 1.0.17 — 2026-07-20
 
 上报新增「会话标题」字段（来自 transcript 首条 user 提问）。
