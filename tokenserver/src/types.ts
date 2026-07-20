@@ -20,6 +20,7 @@ export interface ReportSession {
   tokenTotal: TokenUsage | null;
   linesTotal: LinesStat | null;
   title?: string | null;
+  activeMs?: number; // gap-aware 活跃时长(ms);旧 daemon 上报可能缺失
 }
 
 export interface ReportProject {

@@ -5,7 +5,7 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 
-import { getSessionTokenTotal, getSessionTitle } from "./token-cache";
+import { getSessionTokenTotal, getSessionTitle, getSessionActiveMs } from "./token-cache";
 import type { TokenUsage } from "../shared/types";
 
 export interface ScannedSession {
@@ -17,6 +17,8 @@ export interface ScannedSession {
   /** 父文件 mtime（session 级活跃时间，用于 since 过滤）。 */
   lastActivity: number;
   tokenTotal: TokenUsage;
+  /** gap-aware 活跃时长(ms):父+子代理合并,messageId 去重,1h gap 截断。 */
+  activeMs: number;
   /** 首条 user 消息(会话标题);读不到为 null。 */
   title: string | null;
 }
@@ -136,6 +138,7 @@ function collectScannedSessions(): ScannedSession[] {
         transcriptPath: file,
         lastActivity: mtimeMs,
         tokenTotal,
+        activeMs: getSessionActiveMs(file),
         title: getSessionTitle(file),
       });
     }

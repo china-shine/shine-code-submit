@@ -1,8 +1,8 @@
-// 成员列表表。原 TokenWeb 10 列,删「对话时长」「环比」(tokenserver 无 duration/历史)。
-// 效率 = 行/M Token(代码行 / 总Token * 1e6)。整行点击或「详情」按钮进详情。
+// 成员列表表(9 列)。效率 = 行/M Token(代码行 / 总Token * 1e6)。整行点击或「详情」按钮进详情。
+// 列:成员/最后同步/活跃项目/对话次数/对话时长/总Token/代码行/效率/操作。
 import { Eye } from "lucide-react";
 import type { UserAgg } from "../../types";
-import { rawTotal, lineTotal, fmtK, fmtFull, countRealProjects, inoutTokens } from "../../lib/derive";
+import { rawTotal, lineTotal, fmtK, fmtFull, fmtDuration, countRealProjects, flattenSessions, inoutTokens } from "../../lib/derive";
 import { fmtDate } from "../../lib/util";
 import { Avatar } from "../common/Avatar";
 
@@ -18,7 +18,7 @@ export function MemberListPage({
       <table className="w-full text-xs">
         <thead className="border-b border-border">
           <tr>
-            {["成员", "最后同步", "活跃项目", "对话次数", "总 Token", "代码行", "效率 (行/M)", "操作"].map((h) => (
+            {["成员", "最后同步", "活跃项目", "对话次数", "对话时长", "总 Token", "代码行", "效率 (行/M)", "操作"].map((h) => (
               <th key={h} className="text-left py-3 px-4 font-medium text-muted-foreground whitespace-nowrap">
                 {h}
               </th>
@@ -28,7 +28,7 @@ export function MemberListPage({
         <tbody>
           {users.length === 0 ? (
             <tr>
-              <td colSpan={8} className="py-6 text-center text-muted-foreground">
+              <td colSpan={9} className="py-6 text-center text-muted-foreground">
                 暂无成员数据
               </td>
             </tr>
@@ -38,6 +38,7 @@ export function MemberListPage({
               const token = rawTotal(u.totalTokens);
               const inout = inoutTokens(u.totalTokens);
               const eff = inout > 0 ? Math.round((lines / inout) * 1_000_000) : 0;
+              const activeMs = flattenSessions([u]).reduce((a, s) => a + (s.activeMs ?? 0), 0);
               return (
                 <tr
                   key={u.gitUser || "?"}
@@ -53,6 +54,7 @@ export function MemberListPage({
                   <td className="py-3 px-4 font-mono text-muted-foreground whitespace-nowrap">{fmtDate(u.lastActive)}</td>
                   <td className="py-3 px-4 font-mono text-foreground text-center">{countRealProjects(u)}</td>
                   <td className="py-3 px-4 font-mono text-indigo-600 dark:text-indigo-400">{u.sessionCount}</td>
+                  <td className="py-3 px-4 font-mono text-orange-600 dark:text-orange-400 whitespace-nowrap">{fmtDuration(activeMs)}</td>
                   <td className="py-3 px-4 font-mono font-medium text-foreground">{fmtK(token)}</td>
                   <td className="py-3 px-4 font-mono text-teal-600 dark:text-teal-400">{fmtFull(lines)}</td>
                   <td className="py-3 px-4 font-mono text-muted-foreground">{eff}</td>

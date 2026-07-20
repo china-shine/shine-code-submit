@@ -131,6 +131,7 @@ export interface ReportSession {
   tokenTotal: TokenUsage | null;
   linesTotal: LinesStat | null;
   title?: string | null; // 首条 user 消息(会话标题),读不到为 null
+  activeMs?: number; // gap-aware 活跃时长(ms):messageId 去重 + 1h gap 截断 + 10min buffer;旧 daemon 上报可能缺失
 }
 
 /** 报告里单个项目(=cwd)的聚合行。 */

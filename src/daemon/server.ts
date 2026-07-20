@@ -351,6 +351,7 @@ async function buildReport(store: Store, since: number): Promise<ReportResponse>
           sessionId: s.sessionId,
           lastActive: s.lastActivity,
           tokenTotal: s.tokenTotal,
+          activeMs: s.activeMs,
           linesTotal: getSessionLines(store, s.sessionId, s.lastActivity),
           title: s.title,
         }));

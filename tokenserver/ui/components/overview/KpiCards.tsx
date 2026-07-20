@@ -1,8 +1,8 @@
-// 6 KPI 卡。总Token/对话次数/代码行 三卡带 sparkline(按日序列);时长卡占位(无 duration)。
+// 6 KPI 卡。总Token/对话次数/代码行/时长 四卡带 sparkline(按日序列)。时长为 gap-aware 估算。
 // 数据全部来自 globalTotals 现聚合(users 已经过 App 层过滤)。删 change%(无历史)。
 import { Coins, Activity, Clock, Code2, Users, Cpu } from "lucide-react";
 import type { UserAgg } from "../../types";
-import { globalTotals, dailyStats, fmtK, fmtFull, lineTotal, C } from "../../lib/derive";
+import { globalTotals, dailyStats, fmtK, fmtFull, fmtDuration, lineTotal, C } from "../../lib/derive";
 import { MetricCard } from "../common/MetricCard";
 import { MiniSparkline } from "../common/MiniSparkline";
 
@@ -12,6 +12,7 @@ export function KpiCards({ users }: { users: UserAgg[] }) {
   const totalSeries = ds.map((d) => d.total);
   const sessionSeries = ds.map((d) => d.sessions);
   const linesSeries = ds.map((d) => d.lines);
+  const durSeries = ds.map((d) => d.dur);
 
   return (
     <div className="grid grid-cols-6 gap-4">
@@ -33,10 +34,11 @@ export function KpiCards({ users }: { users: UserAgg[] }) {
       />
       <MetricCard
         title="对话总时长"
-        value="—"
-        sub="需 daemon 上报时长"
+        value={fmtDuration(t.activeMs)}
+        sub="gap-aware 估算 · 1h 间隙截断"
         icon={<Clock className="w-4 h-4 text-orange-600 dark:text-orange-400" />}
         color="bg-orange-50 dark:bg-orange-900/30"
+        extra={<MiniSparkline data={durSeries} color={C.dur} />}
       />
       <MetricCard
         title="生成代码行数"

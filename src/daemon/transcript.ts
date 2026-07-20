@@ -250,6 +250,7 @@ interface UsageDedupeEntry {
   output: number;
   cacheCreation: number;
   cacheRead: number;
+  ts: number; // 行时间戳(Date.parse(obj.timestamp),line 344 已严格校验);供 gap-aware 时长收集
 }
 
 function matchesExactKey(
@@ -362,6 +363,7 @@ function readUsageEntries(transcriptPath: string): UsageDedupeEntry[] {
       output,
       cacheCreation,
       cacheRead,
+      ts: Date.parse(obj.timestamp as string),
     });
   }
   return entries;
@@ -421,4 +423,49 @@ export function sumSessionUsage(parentPath: string): TokenUsage {
     for (const entry of readUsageEntries(file)) entries.push(entry);
   }
   return dedupeAndSum(entries);
+}
+
+// ---- gap-aware 活跃时长（「对话总时长」KPI 数据源）----
+// transcript 不落盘 duration（cost.total_duration_ms 是运行时字段），用 message timestamp 序列估算：
+// 相邻 gap > GAP_MS 视为用户离开、不计入；每段连续 burst 末尾 +BUFFER_MS 补读/测时间。
+// 复用 readUsageEntries 的 ccusage 严格校验 + pushDedupedEntry 的 messageId 去重，口径与 token 一致。
+const GAP_MS = 3600_000; // 1h：相邻 timestamp 间隔超过此值视为用户离开
+const BUFFER_MS = 600_000; // 10min：每段连续 burst 末尾补的读/测时间（单点 burst 也给 10min，避免「只发一条=0」）
+
+/** 对条目集合做 ccusage 全局去重（message.id+requestId，含 sidechain 重放兜底），返回 survivor 条目本身（未求和）。
+ *  与 dedupeAndSum 同语义，但保留条目（含 ts），供 sessionActiveMs 收集时间戳。
+ *  注意：必须走 messageId 去重而非 Set(ts) —— 同 messageId 的多行可能 ts 不同（重放/重试），Set 去不掉。 */
+function dedupedSurvivors(entries: UsageDedupeEntry[]): UsageDedupeEntry[] {
+  const survivors: UsageDedupeEntry[] = [];
+  const byExact = new Map<string, number[]>();
+  const byMessage = new Map<string, number[]>();
+  for (const entry of entries) pushDedupedEntry(entry, survivors, byExact, byMessage);
+  return survivors;
+}
+
+/** 某 session 的 gap-aware 活跃时长（ms）：父 transcript + subagents/*.jsonl 合并（与 token 同口径）。
+ *  收集去重后的 timestamp，升序排序后按 GAP_MS 切 burst 累加；空 session 返回 0。 */
+export function sessionActiveMs(parentPath: string): number {
+  const entries: UsageDedupeEntry[] = [];
+  for (const file of sessionTranscriptFiles(parentPath)) {
+    for (const entry of readUsageEntries(file)) entries.push(entry);
+  }
+  const ts = dedupedSurvivors(entries)
+    .map((e) => e.ts)
+    .filter((t) => Number.isFinite(t))
+    .sort((a, b) => a - b);
+  if (ts.length === 0) return 0;
+  let active = 0;
+  let burstStart = ts[0]!;
+  let prev = ts[0]!;
+  for (let i = 1; i < ts.length; i++) {
+    const cur = ts[i]!;
+    if (cur - prev > GAP_MS) {
+      active += prev - burstStart + BUFFER_MS;
+      burstStart = cur;
+    }
+    prev = cur;
+  }
+  active += prev - burstStart + BUFFER_MS; // 末尾 burst（单点时 prev-burstStart=0，得 BUFFER_MS=10min）
+  return active;
 }

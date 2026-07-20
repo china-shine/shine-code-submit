@@ -117,12 +117,25 @@ export function fmtFull(n: number): string {
   return n.toLocaleString("zh-CN");
 }
 
+/** 时长格式化:<1min→"<1m";<1h→"Xm";≥1h→"Xh Ym"(适配 MetricCard value 的 mono 字体)。
+ *  传入的是 gap-aware 估算值(ms),非精确墙钟跨度。 */
+export function fmtDuration(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return "0m";
+  const totalMin = Math.floor(ms / 60000);
+  if (totalMin < 1) return "<1m";
+  if (totalMin < 60) return `${totalMin}m`;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return m === 0 ? `${h}h` : `${h}h ${m}m`;
+}
+
 // ─── session 展平(带成员/项目上下文,供最近会话表/规模分布) ───────────────────────
 export interface FlatSession {
   sessionId: string;
   lastActive: number;
   token: TokenUsage | null;
   lines: LinesStat | null;
+  activeMs: number;
   gitUser: string;
   projectName: string;
   cwd: string;
@@ -139,6 +152,7 @@ export function flattenSessions(users: UserAgg[]): FlatSession[] {
           lastActive: s.lastActive,
           token: s.tokenTotal,
           lines: s.linesTotal,
+          activeMs: s.activeMs ?? 0,
           gitUser: u.gitUser,
           projectName: displayProjectName(p.name, p.cwd),
           cwd: p.cwd,
@@ -215,16 +229,18 @@ export interface DailyStat {
   total: number;
   sessions: number;
   lines: number;
+  dur: number;
 }
 
 export function dailyStats(users: UserAgg[]): DailyStat[] {
   const map = new Map<string, DailyStat>();
   for (const s of flattenSessions(users)) {
     const { key, label } = dayLabel(s.lastActive);
-    const b = map.get(key) ?? { date: label, ts: s.lastActive, total: 0, sessions: 0, lines: 0 };
+    const b = map.get(key) ?? { date: label, ts: s.lastActive, total: 0, sessions: 0, lines: 0, dur: 0 };
     b.total += rawTotal(s.token);
     b.sessions += 1;
     b.lines += lineTotal(s.lines);
+    b.dur += s.activeMs ?? 0;
     b.ts = s.lastActive;
     map.set(key, b);
   }
@@ -236,6 +252,7 @@ export interface GlobalTotals {
   token: TokenUsage;
   rawTotal: number;
   lines: LinesStat;
+  activeMs: number;
   sessions: number;
   members: number;
   projects: number;
@@ -244,10 +261,13 @@ export interface GlobalTotals {
 export function globalTotals(users: UserAgg[]): GlobalTotals {
   const token = sumTokens(users.map((u) => u.totalTokens));
   const lines = sumLines(users.map((u) => u.totalLines));
+  // activeMs 从 flattenSessions 累加(不给 UserAgg 加 totalActiveMs),天然适配 filterUsersByRange 的 session 过滤
+  const activeMs = flattenSessions(users).reduce((a, s) => a + (s.activeMs ?? 0), 0);
   return {
     token,
     rawTotal: rawTotal(token),
     lines,
+    activeMs,
     sessions: users.reduce((a, u) => a + u.sessionCount, 0),
     members: users.length,
     projects: users.reduce((a, u) => a + countRealProjects(u), 0),

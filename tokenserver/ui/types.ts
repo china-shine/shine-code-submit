@@ -18,6 +18,7 @@ export interface SessionAgg {
   lastActive: number;
   tokenTotal: TokenUsage | null;
   linesTotal: LinesStat | null;
+  activeMs?: number; // gap-aware 活跃时长(ms)
   title?: string | null;
 }
 

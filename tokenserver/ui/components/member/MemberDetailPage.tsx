@@ -1,8 +1,8 @@
-// 成员详情:返回 + 头像 + 6 KPI(时长占位) + Token 使用趋势(该 user 按天聚合) + 与团队均值对比 + 该用户最近会话表。
+// 成员详情:返回 + 头像 + 6 KPI(对话总时长为 gap-aware 估算) + Token 使用趋势(该 user 按天聚合) + 与团队均值对比 + 该用户最近会话表。
 import { ChevronRight } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import type { UserAgg } from "../../types";
-import { rawTotal, lineTotal, bucketByDay, flattenSessions, globalTotals, fmtK, fmtFull, C, countRealProjects, inoutTokens } from "../../lib/derive";
+import { rawTotal, lineTotal, bucketByDay, flattenSessions, globalTotals, fmtK, fmtFull, fmtDuration, C, countRealProjects, inoutTokens } from "../../lib/derive";
 import { fmtDate } from "../../lib/util";
 import { Avatar } from "../common/Avatar";
 import { RecentSessionsTable } from "../overview/RecentSessionsTable";
@@ -35,8 +35,10 @@ export function MemberDetailPage({
   const lines = lineTotal(user.totalLines);
   const inout = inoutTokens(user.totalTokens);
   const eff = inout > 0 ? Math.round((lines / inout) * 1_000_000) : 0;
-  const trend = bucketByDay(flattenSessions([user]));
+  const flat = flattenSessions([user]);
+  const trend = bucketByDay(flat);
   const range = trend.length > 0 ? `${trend[0].date} – ${trend[trend.length - 1].date}` : "—";
+  const userActiveMs = flat.reduce((a, s) => a + (s.activeMs ?? 0), 0);
 
   const g = globalTotals(users);
   const teamAvg = {
@@ -47,7 +49,7 @@ export function MemberDetailPage({
 
   const kpis = [
     { label: "对话次数", value: fmtFull(user.sessionCount), color: "text-indigo-600 dark:text-indigo-400" },
-    { label: "对话总时长", value: "—", color: "text-orange-600 dark:text-orange-400" },
+    { label: "对话总时长", value: fmtDuration(userActiveMs), color: "text-orange-600 dark:text-orange-400" },
     { label: "总 Token", value: fmtK(token), color: "text-violet-600 dark:text-violet-400" },
     { label: "代码行数", value: fmtFull(lines), color: "text-teal-600 dark:text-teal-400" },
     { label: "活跃项目", value: fmtFull(countRealProjects(user)), color: "text-blue-600 dark:text-blue-400" },

@@ -4,7 +4,7 @@
 // 任一文件没变就直接返回，变了才重读重算。冷启动逐步填充，稳态全命中。异常返回 null。
 import { statSync } from "node:fs";
 import { homedir } from "node:os";
-import { sumSessionUsage, sessionTranscriptFiles, readFirstUserText } from "./transcript";
+import { sumSessionUsage, sessionTranscriptFiles, readFirstUserText, sessionActiveMs } from "./transcript";
 import type { TokenUsage } from "../shared/types";
 
 interface Entry {
@@ -65,4 +65,34 @@ export function getSessionTitle(transcriptPath: string): string | null {
   }
   titleCache.set(transcriptPath, { mtimeKey, title });
   return title;
+}
+
+interface ActiveEntry {
+  mtimeKey: string;
+  activeMs: number;
+}
+const activeCache = new Map<string, ActiveEntry>();
+
+/** 返回某 transcript 的会话级 gap-aware 活跃时长（父 + subagents/*.jsonl，对齐 ccusage session 口径）；
+ *  带复合 mtime 缓存（与 getSessionTokenTotal 同策略）；读不到/解析失败返回 0。 */
+export function getSessionActiveMs(transcriptPath: string): number {
+  const realPath = transcriptPath.replace(/^~/, homedir());
+  const files = sessionTranscriptFiles(realPath);
+  if (files.length === 0) return 0;
+  let mtimeKey: string;
+  try {
+    mtimeKey = files.map((file) => `${file}:${statSync(file).mtimeMs}`).join("|");
+  } catch {
+    return 0;
+  }
+  const hit = activeCache.get(transcriptPath);
+  if (hit && hit.mtimeKey === mtimeKey) return hit.activeMs;
+  let activeMs = 0;
+  try {
+    activeMs = sessionActiveMs(realPath);
+  } catch {
+    activeMs = 0;
+  }
+  activeCache.set(transcriptPath, { mtimeKey, activeMs });
+  return activeMs;
 }
