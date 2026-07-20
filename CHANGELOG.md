@@ -2,6 +2,15 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.0.17 — 2026-07-20
+
+上报新增「会话标题」字段（来自 transcript 首条 user 提问）。
+
+### 改动
+- **ReportSession 新增 title**：daemon 扫描 transcript 取首条 user 消息文本作为会话标题，随报表上报（供 tokenserver 等接收方在最近会话表展示，比 sessionId 前 8 位可读）。
+- 新增 `readFirstUserText`（transcript.ts）/`getSessionTitle`（token-cache.ts，带 mtime 缓存）；`ScannedSession`/`ReportSession` 加 title 字段。
+- 过滤 Claude Code 注入的系统消息（local-command-caveat / command-* 等，以 `<` 开头），不误作标题。
+
 ## 1.0.16 — 2026-07-09
 
 会话树与报表统一数据源（修复两边项目/session 不一致）。
