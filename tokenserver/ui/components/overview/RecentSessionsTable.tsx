@@ -1,25 +1,75 @@
-// 最近会话表(9 列):flatten 全部 session,按 lastActive desc 取前 20,跳过 0 token。
+// 会话表(9 列):flatten 全部 session,按 lastActive desc,跳过 0 token,分页(默认 20/页)。
 // 列:最后活跃/成员/标题/项目/输入/输出/总Token/时长/代码变更。(删「路径」列:项目名已在「项目」列,完整 cwd 冗余占宽)
+// 概览页与成员详情页共用;数据变化(10s 轮询/时间范围过滤)使总页数缩小时,page 自动 clamp 防越界。
+// 分页栏居中,数字页码窗口默认 10,超出用 … 收缩(含首尾页)。
+import { useEffect, useMemo, useState } from "react";
 import type { UserAgg } from "../../types";
 import { flattenSessions, rawTotal, fmtK, fmtDuration } from "../../lib/derive";
-import { fmtDate } from "../../lib/util";
+import { fmtDateFull } from "../../lib/util";
 import { Avatar } from "../common/Avatar";
 
-export function RecentSessionsTable({ users }: { users: UserAgg[] }) {
-  const rows = flattenSessions(users)
-    .filter((s) => rawTotal(s.token) > 0)
-    .sort((a, b) => b.lastActive - a.lastActive)
-    .slice(0, 20);
+/** 生成分页页码项:总页数 ≤ window 全显示;否则首尾 + 当前页附近窗口 + 省略号,链接数约 window。 */
+function pageItems(cur: number, total: number, window = 10): (number | "...")[] {
+  if (total <= window) return Array.from({ length: total }, (_, i) => i + 1);
+  const half = Math.floor(window / 2);
+  let start = Math.max(1, cur - half);
+  let end = Math.min(total, start + window - 1);
+  start = Math.max(1, end - window + 1);
+  const items: (number | "...")[] = [];
+  if (start > 1) {
+    items.push(1);
+    if (start > 2) items.push("...");
+  }
+  for (let i = start; i <= end; i++) items.push(i);
+  if (end < total) {
+    if (end < total - 1) items.push("...");
+    items.push(total);
+  }
+  return items;
+}
+
+export function RecentSessionsTable({ users, pageSize = 20 }: { users: UserAgg[]; pageSize?: number }) {
+  const all = useMemo(
+    () => flattenSessions(users).filter((s) => rawTotal(s.token) > 0).sort((a, b) => b.lastActive - a.lastActive),
+    [users],
+  );
+  const totalPages = Math.max(1, Math.ceil(all.length / pageSize));
+  const [page, setPage] = useState(1);
+  // 数据减少(轮询/过滤)后页码可能越界,回拉到末页
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages);
+  }, [page, totalPages]);
+  const cur = Math.min(page, totalPages);
+  const rows = all.slice((cur - 1) * pageSize, cur * pageSize);
+  const items = pageItems(cur, totalPages, 10);
+
+  const btn =
+    "min-w-[28px] h-7 px-2 rounded border border-border text-foreground hover:bg-muted/50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors font-mono text-xs";
+  const btnActive = "bg-indigo-500 text-white border-indigo-500 hover:bg-indigo-500";
 
   return (
     <div className="bg-card border border-border rounded p-4">
-      <h3 className="text-sm font-semibold text-foreground mb-3">最近会话</h3>
+      <div className="flex items-center justify-between mb-3">
+        <h3 className="text-sm font-semibold text-foreground">最近会话</h3>
+        <span className="text-xs text-muted-foreground">共 {all.length} 条 · 每页 {pageSize}</span>
+      </div>
       <div className="overflow-x-auto">
-        <table className="w-full text-xs">
+        <table className="w-full text-xs table-fixed">
+          <colgroup>
+            <col className="w-[150px]" />
+            <col className="w-[120px]" />
+            <col className="w-[260px]" />
+            <col className="w-[200px]" />
+            <col className="w-[70px]" />
+            <col className="w-[70px]" />
+            <col className="w-[85px]" />
+            <col className="w-[85px]" />
+            <col className="w-[110px]" />
+          </colgroup>
           <thead>
             <tr className="border-b border-border">
               {["最后活跃", "成员", "标题", "项目", "输入", "输出", "总 Token", "时长", "代码变更"].map((h) => (
-                <th key={h} className="text-left py-2 pr-3 font-medium text-muted-foreground whitespace-nowrap">
+                <th key={h} className={`text-left py-2 pr-3 font-medium text-muted-foreground whitespace-nowrap${h === "标题" ? " w-[260px]" : ""}`}>
                   {h}
                 </th>
               ))}
@@ -35,17 +85,17 @@ export function RecentSessionsTable({ users }: { users: UserAgg[] }) {
             ) : (
               rows.map((s) => (
                 <tr key={s.sessionId} className="border-b border-border/50 hover:bg-muted/40 transition-colors">
-                  <td className="py-2.5 pr-3 font-mono text-muted-foreground whitespace-nowrap">{fmtDate(s.lastActive)}</td>
+                  <td className="py-2.5 pr-3 font-mono text-muted-foreground whitespace-nowrap">{fmtDateFull(s.lastActive)}</td>
                   <td className="py-2.5 pr-3">
                     <div className="flex items-center gap-1.5">
                       <Avatar name={s.gitUser || "?"} size="sm" />
                       <span className="font-medium text-foreground">{s.gitUser || "未知"}</span>
                     </div>
                   </td>
-                  <td className="py-2.5 pr-3 text-foreground max-w-[260px] truncate" title={s.sessionId}>
+                  <td className="py-2.5 pr-3 text-foreground w-[260px] max-w-[260px] truncate" title={s.sessionId}>
                     {s.title || s.sessionId.slice(0, 8)}
                   </td>
-                  <td className="py-2.5 pr-3 font-mono text-foreground">{s.projectName}</td>
+                  <td className="py-2.5 pr-3 font-mono text-foreground truncate" title={s.projectName}>{s.projectName}</td>
                   <td className="py-2.5 pr-3 font-mono text-blue-600 dark:text-blue-400">{fmtK(s.token?.input ?? 0)}</td>
                   <td className="py-2.5 pr-3 font-mono text-violet-600 dark:text-violet-400">{fmtK(s.token?.output ?? 0)}</td>
                   <td className="py-2.5 pr-3 font-mono font-medium text-foreground">{fmtK(rawTotal(s.token))}</td>
@@ -59,6 +109,43 @@ export function RecentSessionsTable({ users }: { users: UserAgg[] }) {
           </tbody>
         </table>
       </div>
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-4 mt-3 text-xs text-muted-foreground">
+          <button
+            disabled={cur <= 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            className={btn}
+            aria-label="上一页"
+          >
+            ‹
+          </button>
+          <div className="flex items-center gap-1">
+            {items.map((it, i) =>
+              it === "..." ? (
+                <span key={`e${i}`} className="px-1 text-muted-foreground">
+                  …
+                </span>
+              ) : (
+                <button
+                  key={it}
+                  onClick={() => setPage(it)}
+                  className={cur === it ? `${btn} ${btnActive}` : btn}
+                >
+                  {it}
+                </button>
+              ),
+            )}
+          </div>
+          <button
+            disabled={cur >= totalPages}
+            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            className={btn}
+            aria-label="下一页"
+          >
+            ›
+          </button>
+        </div>
+      )}
     </div>
   );
 }

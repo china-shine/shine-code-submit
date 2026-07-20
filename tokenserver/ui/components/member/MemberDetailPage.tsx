@@ -2,21 +2,24 @@
 import { ChevronRight } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import type { UserAgg } from "../../types";
-import { rawTotal, lineTotal, bucketByDay, flattenSessions, globalTotals, fmtK, fmtFull, fmtDuration, C, countRealProjects, inoutTokens } from "../../lib/derive";
+import { rawTotal, lineTotal, bucketByGranularity, flattenSessions, globalTotals, fmtK, fmtFull, fmtDuration, C, countRealProjects, inoutTokens } from "../../lib/derive";
 import { fmtDate } from "../../lib/util";
 import { Avatar } from "../common/Avatar";
 import { RecentSessionsTable } from "../overview/RecentSessionsTable";
 import { chartTheme } from "../overview/chartTheme";
+import type { Granularity } from "../shell/TopBar";
 
 export function MemberDetailPage({
   users,
   dark,
   gitUser,
+  granularity,
   onBack,
 }: {
   users: UserAgg[];
   dark: boolean;
   gitUser: string;
+  granularity: Granularity;
   onBack: () => void;
 }) {
   const user = users.find((u) => u.gitUser === gitUser) ?? null;
@@ -36,7 +39,8 @@ export function MemberDetailPage({
   const inout = inoutTokens(user.totalTokens);
   const eff = inout > 0 ? Math.round((lines / inout) * 1_000_000) : 0;
   const flat = flattenSessions([user]);
-  const trend = bucketByDay(flat);
+  const trend = bucketByGranularity(flat, granularity);
+  const granularityLabel = { day: "日", week: "周", month: "月" }[granularity];
   const range = trend.length > 0 ? `${trend[0].date} – ${trend[trend.length - 1].date}` : "—";
   const userActiveMs = flat.reduce((a, s) => a + (s.activeMs ?? 0), 0);
 
@@ -87,7 +91,7 @@ export function MemberDetailPage({
       <div className="grid grid-cols-12 gap-4">
         <div className="col-span-8 bg-card border border-border rounded p-4">
           <h3 className="text-sm font-semibold text-foreground">Token 使用趋势</h3>
-          <p className="text-xs text-muted-foreground mt-0.5 mb-4">{range} · 按会话最后活跃日聚合</p>
+          <p className="text-xs text-muted-foreground mt-0.5 mb-4">{range} · 按会话最后活跃{granularityLabel}聚合</p>
           <ResponsiveContainer width="100%" height={200}>
             <AreaChart data={trend} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
               <defs>

@@ -38,3 +38,14 @@ export function fmtDate(ts: number): string {
   const mi = String(d.getMinutes()).padStart(2, "0");
   return `${mm}-${dd} ${hh}:${mi}`;
 }
+
+/** 完整日期(带年):YYYY-MM-DD HH:MM。 */
+export function fmtDateFull(ts: number): string {
+  const d = new Date(ts);
+  const yy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  return `${yy}-${mm}-${dd} ${hh}:${mi}`;
+}

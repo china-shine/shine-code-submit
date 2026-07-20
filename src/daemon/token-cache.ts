@@ -4,7 +4,7 @@
 // 任一文件没变就直接返回，变了才重读重算。冷启动逐步填充，稳态全命中。异常返回 null。
 import { statSync } from "node:fs";
 import { homedir } from "node:os";
-import { sumSessionUsage, sessionTranscriptFiles, readFirstUserText, sessionActiveMs } from "./transcript";
+import { sumSessionUsage, sessionTranscriptFiles, readFirstUserText, readFirstCwd, sessionActiveMs } from "./transcript";
 import type { TokenUsage } from "../shared/types";
 
 interface Entry {
@@ -65,6 +65,36 @@ export function getSessionTitle(transcriptPath: string): string | null {
   }
   titleCache.set(transcriptPath, { mtimeKey, title });
   return title;
+}
+
+interface CwdEntry {
+  mtimeKey: string;
+  cwd: string | null;
+}
+const cwdCache = new Map<string, CwdEntry>();
+
+/** 返回某 transcript 父会话的真实 cwd（从 jsonl 首条 cwd 字段读，无编码损失）；带复合 mtime 缓存
+ *  （与 getSessionTitle 同策略，只读父 transcript）；读不到返回 null。供扫描替代 decodeProjectCwd 的有损解码。 */
+export function getSessionCwd(transcriptPath: string): string | null {
+  const realPath = transcriptPath.replace(/^~/, homedir());
+  const files = sessionTranscriptFiles(realPath);
+  if (files.length === 0) return null;
+  let mtimeKey: string;
+  try {
+    mtimeKey = files.map((file) => `${file}:${statSync(file).mtimeMs}`).join("|");
+  } catch {
+    return null;
+  }
+  const hit = cwdCache.get(transcriptPath);
+  if (hit && hit.mtimeKey === mtimeKey) return hit.cwd;
+  let cwd: string | null = null;
+  try {
+    cwd = readFirstCwd(realPath);
+  } catch {
+    cwd = null;
+  }
+  cwdCache.set(transcriptPath, { mtimeKey, cwd });
+  return cwd;
 }
 
 interface ActiveEntry {

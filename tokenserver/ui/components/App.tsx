@@ -102,7 +102,7 @@ export function App() {
               />
             )}
             {page === "member" && (
-              <MemberPage users={viewUsers} dark={dark} selected={selMember} setSelected={setSelMember} />
+              <MemberPage users={viewUsers} dark={dark} granularity={granularity} selected={selMember} setSelected={setSelMember} />
             )}
           </main>
         </div>

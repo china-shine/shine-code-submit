@@ -132,6 +132,31 @@ export function readFirstUserText(transcriptPath: string): string | null {
   return null;
 }
 
+/** 读 transcript，返回首条 cwd 字段（Claude Code 写入的真实工作目录，无编码损失）。
+ *  只解析前 64 行（cwd 通常在首行 summary）；无 cwd 字段返回 null。
+ *  供扫描补真实 cwd，替代从项目目录名反推的有损解码（中文/空格/括号被编码成 - 会丢失）。 */
+export function readFirstCwd(transcriptPath: string): string | null {
+  const path = transcriptPath.replace(/^~/, homedir());
+  if (!existsSync(path)) return null;
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch {
+    return null;
+  }
+  for (const line of raw.split("\n").slice(0, 64)) {
+    if (!line.trim()) continue;
+    let obj: Record<string, unknown>;
+    try {
+      obj = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    if (typeof obj.cwd === "string" && obj.cwd) return obj.cwd;
+  }
+  return null;
+}
+
 /** 从 message.usage（Anthropic 扁平四字段）提取 token 用量；无任何数值字段则 undefined。 */
 function readUsage(raw: unknown): TokenUsage | undefined {
   if (!raw || typeof raw !== "object") return undefined;

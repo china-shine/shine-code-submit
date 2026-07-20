@@ -198,7 +198,7 @@ export function startServer(deps: ServerDeps) {
           const h = hookMap.get(sc.sessionId);
           return {
             sessionId: sc.sessionId,
-            cwd: h?.cwd ?? decodeProjectCwd(sc.project),
+            cwd: h?.cwd ?? sc.cwd ?? decodeProjectCwd(sc.project),
             lastActive: Math.max(sc.lastActivity, h?.lastActive ?? 0),
             eventCount: h?.eventCount ?? 0,
             lastType: h?.lastType ?? null,
@@ -337,7 +337,7 @@ async function buildReport(store: Store, since: number): Promise<ReportResponse>
   // 同 cwd 的 session 合并到一个项目，避免导航栏因「同一 cwd 对应多个编码项目」而重复。
   const byCwd = new Map<string, ScannedSession[]>();
   for (const s of scanned) {
-    const cwd = hookCwd.get(s.sessionId) ?? decodeProjectCwd(s.project);
+    const cwd = hookCwd.get(s.sessionId) ?? s.cwd ?? decodeProjectCwd(s.project);
     const arr = byCwd.get(cwd);
     if (arr) arr.push(s);
     else byCwd.set(cwd, [s]);

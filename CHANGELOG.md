@@ -2,6 +2,18 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.0.19 — 2026-07-20
+
+修复 daemon cwd 反斜杠转义脏数据 + tokenserver 前端会话表增强。
+
+### 改动
+- **cwd 转义脏数据修复**:无 hook 的 session 此前用 `decodeProjectCwd` 反推 Claude Code 的有损编码目录名(中文/空格/括号编码成 `-`),反推出大量连续反斜杠(如 `ai数据同步平台\game` 显示成 `ai\\\\game`),导致 tokenserver 同项目拆多行、项目数虚高(34→实际 27)。改为扫描时直接读 transcript jsonl 首条 `cwd` 字段(无编码损失),`decodeProjectCwd` 仅极端兜底:`transcript.ts` 加 `readFirstCwd`、`token-cache.ts` 加 `getSessionCwd`(mtime 缓存)、`ScannedSession` 加 cwd 字段、`server.ts` 两处(/api/sessions + buildReport)接入三级兜底(hook cwd ?? jsonl cwd ?? decode)。
+- **tokenserver 存量愈合**:upsert WHERE 加 `OR excluded.cwd IS NOT sessions.cwd`,历史脏 cwd 在下次上报(即使 lastActive 不变)被干净值覆盖,无需清库。
+- **会话表分页 + 固定列宽**:`RecentSessionsTable` 去掉 slice(0,20) 硬截断,改 20/页(数字页码窗口 10 + 省略号 + 首尾、居中、当前页高亮);`table-fixed` + colgroup 固定 9 列宽,翻页不再抖动。
+- **首列日期带年**:`fmtDateFull`(YYYY-MM-DD HH:MM)用于会话表首列。
+- **成员趋势图 granularity**:成员详情趋势写死 `bucketByDay`(日/周/月无变化),改 `bucketByGranularity` 并从 App→MemberPage→MemberDetailPage 透传 granularity,与概览页一致。
+- 验证:rebuild daemon 后 /api/report 全部 cwd 干净(含中文路径);tokenserver upsert 单元验证愈合;前端本地 dev 验证分页/列宽/趋势切换。
+
 ## 1.0.18 — 2026-07-20
 
 新增「对话总时长」(gap-aware 活跃时间估算),补全 KPI / 会话表 / 成员列表 / 成员详情四处时长展示。

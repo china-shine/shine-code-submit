@@ -5,7 +5,7 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 
-import { getSessionTokenTotal, getSessionTitle, getSessionActiveMs } from "./token-cache";
+import { getSessionTokenTotal, getSessionTitle, getSessionActiveMs, getSessionCwd } from "./token-cache";
 import type { TokenUsage } from "../shared/types";
 
 export interface ScannedSession {
@@ -21,6 +21,8 @@ export interface ScannedSession {
   activeMs: number;
   /** 首条 user 消息(会话标题);读不到为 null。 */
   title: string | null;
+  /** 真实 cwd(从 transcript jsonl 首条 cwd 字段读,无编码损失);读不到为 null,消费方回退解码目录名。 */
+  cwd: string | null;
 }
 
 const ZERO: TokenUsage = { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 };
@@ -140,6 +142,7 @@ function collectScannedSessions(): ScannedSession[] {
         tokenTotal,
         activeMs: getSessionActiveMs(file),
         title: getSessionTitle(file),
+        cwd: getSessionCwd(file),
       });
     }
   }

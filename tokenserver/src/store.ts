@@ -160,7 +160,7 @@ const upsertSession = db.query(`
     activeMs = excluded.activeMs,
     title = excluded.title,
     updatedAt = excluded.updatedAt
-  WHERE excluded.lastActive >= sessions.lastActive
+  WHERE excluded.lastActive >= sessions.lastActive OR excluded.cwd IS NOT sessions.cwd
 `);
 
 /** 存储一次上报:拆分逐条 upsert。 */
