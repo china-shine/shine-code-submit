@@ -93,6 +93,45 @@ export function parseTranscript(transcriptPath: string): TranscriptMessage[] {
   return messages;
 }
 
+/** 读 transcript,返回首条 user 消息文本(合并多行、去首尾空白、限长 200),作为「会话标题」。
+ *  比 sessionId 更可读;只解析前 64 行(首条提问通常在前几行);无 user text 返回 null。 */
+export function readFirstUserText(transcriptPath: string): string | null {
+  const path = transcriptPath.replace(/^~/, homedir());
+  if (!existsSync(path)) return null;
+  let raw: string;
+  try {
+    raw = readFileSync(path, "utf8");
+  } catch {
+    return null;
+  }
+  for (const line of raw.split("\n").slice(0, 64)) {
+    if (!line.trim()) continue;
+    let obj: Record<string, unknown>;
+    try {
+      obj = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const message = obj.message as Record<string, unknown> | undefined;
+    if (!message || message.role !== "user") continue;
+    const content = message.content;
+    let text = "";
+    if (typeof content === "string") text = content;
+    else if (Array.isArray(content)) {
+      text = content
+        .filter((c) => (c as Record<string, unknown>).type === "text")
+        .map((c) => (c as Record<string, unknown>).text as string)
+        .join("\n");
+    }
+    text = text.trim();
+    if (!text) continue;
+    // 跳过 Claude Code 注入的系统消息(local-command-caveat / command-* 等,以 < 开头的 XML 标签)
+    if (text.startsWith("<")) continue;
+    return text.replace(/\s+/g, " ").slice(0, 200);
+  }
+  return null;
+}
+
 /** 从 message.usage（Anthropic 扁平四字段）提取 token 用量；无任何数值字段则 undefined。 */
 function readUsage(raw: unknown): TokenUsage | undefined {
   if (!raw || typeof raw !== "object") return undefined;

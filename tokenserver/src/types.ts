@@ -19,6 +19,7 @@ export interface ReportSession {
   lastActive: number;
   tokenTotal: TokenUsage | null;
   linesTotal: LinesStat | null;
+  title?: string | null;
 }
 
 export interface ReportProject {

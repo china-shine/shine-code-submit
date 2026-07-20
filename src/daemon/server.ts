@@ -352,6 +352,7 @@ async function buildReport(store: Store, since: number): Promise<ReportResponse>
           lastActive: s.lastActivity,
           tokenTotal: s.tokenTotal,
           linesTotal: getSessionLines(store, s.sessionId, s.lastActivity),
+          title: s.title,
         }));
         const totalTokens = sumTokens(rs.map((r) => r.tokenTotal));
         const totalLines = sumLines(rs.map((r) => r.linesTotal));

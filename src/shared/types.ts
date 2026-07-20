@@ -130,6 +130,7 @@ export interface ReportSession {
   lastActive: number;
   tokenTotal: TokenUsage | null;
   linesTotal: LinesStat | null;
+  title?: string | null; // 首条 user 消息(会话标题),读不到为 null
 }
 
 /** 报告里单个项目(=cwd)的聚合行。 */

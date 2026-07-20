@@ -42,6 +42,7 @@ db.exec(`
     added INTEGER DEFAULT 0,
     deleted INTEGER DEFAULT 0,
     modified INTEGER DEFAULT 0,
+    title TEXT,
     updatedAt INTEGER DEFAULT 0
   );
   CREATE INDEX IF NOT EXISTS idx_sessions_user_cwd ON sessions(gitUser, cwd);
@@ -55,6 +56,7 @@ db.exec(`
   for (const c of ["added", "deleted", "modified"]) {
     if (!have.has(c)) db.exec(`ALTER TABLE sessions ADD COLUMN ${c} INTEGER DEFAULT 0`);
   }
+  if (!have.has("title")) db.exec(`ALTER TABLE sessions ADD COLUMN title TEXT`);
 }
 
 export interface SessionAgg {
@@ -62,6 +64,7 @@ export interface SessionAgg {
   lastActive: number;
   tokenTotal: TokenUsage | null;
   linesTotal: LinesStat | null;
+  title?: string | null;
 }
 export interface ProjectAgg {
   cwd: string;
@@ -124,6 +127,7 @@ interface SessionRow {
   added: number;
   deleted: number;
   modified: number;
+  title: string | null;
 }
 
 const upsertProject = db.query(`
@@ -136,8 +140,8 @@ const upsertProject = db.query(`
     updatedAt = excluded.updatedAt
 `);
 const upsertSession = db.query(`
-  INSERT INTO sessions (sessionId, gitUser, cwd, lastActive, input, output, cacheCreation, cacheRead, added, deleted, modified, updatedAt)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  INSERT INTO sessions (sessionId, gitUser, cwd, lastActive, input, output, cacheCreation, cacheRead, added, deleted, modified, title, updatedAt)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(sessionId) DO UPDATE SET
     gitUser = excluded.gitUser,
     cwd = excluded.cwd,
@@ -149,6 +153,7 @@ const upsertSession = db.query(`
     added = excluded.added,
     deleted = excluded.deleted,
     modified = excluded.modified,
+    title = excluded.title,
     updatedAt = excluded.updatedAt
   WHERE excluded.lastActive >= sessions.lastActive
 `);
@@ -171,7 +176,7 @@ export function saveReport(raw: ReportResponse): void {
         upsertSession.run(
           s.sessionId, gitUser, p.cwd, s.lastActive,
           t.input, t.output, t.cacheCreation, t.cacheRead,
-          l.added, l.deleted, l.modified, now,
+          l.added, l.deleted, l.modified, s.title ?? null, now,
         );
       }
     }
@@ -191,7 +196,7 @@ export function aggregate(): UserAgg[] {
     .all();
   const sess = db
     .query<SessionRow>(
-      "SELECT sessionId, gitUser, cwd, lastActive, input, output, cacheCreation, cacheRead, added, deleted, modified FROM sessions",
+      "SELECT sessionId, gitUser, cwd, lastActive, input, output, cacheCreation, cacheRead, added, deleted, modified, title FROM sessions",
     )
     .all();
 
@@ -213,6 +218,7 @@ export function aggregate(): UserAgg[] {
         cacheRead: s.cacheRead,
       },
       linesTotal: { added: s.added, deleted: s.deleted, modified: s.modified },
+      title: s.title,
     });
   }
   for (const arr of sessByProj.values()) arr.sort((a, b) => b.lastActive - a.lastActive);

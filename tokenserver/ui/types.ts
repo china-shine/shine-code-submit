@@ -18,6 +18,7 @@ export interface SessionAgg {
   lastActive: number;
   tokenTotal: TokenUsage | null;
   linesTotal: LinesStat | null;
+  title?: string | null;
 }
 
 export interface ProjectAgg {

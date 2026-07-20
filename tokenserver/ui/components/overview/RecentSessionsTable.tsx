@@ -19,7 +19,7 @@ export function RecentSessionsTable({ users }: { users: UserAgg[] }) {
         <table className="w-full text-xs">
           <thead>
             <tr className="border-b border-border">
-              {["最后活跃", "成员", "项目", "路径", "会话", "输入", "输出", "总 Token", "代码变更"].map((h) => (
+              {["最后活跃", "成员", "标题", "项目", "路径", "输入", "输出", "总 Token", "代码变更"].map((h) => (
                 <th key={h} className="text-left py-2 pr-3 font-medium text-muted-foreground whitespace-nowrap">
                   {h}
                 </th>
@@ -43,12 +43,12 @@ export function RecentSessionsTable({ users }: { users: UserAgg[] }) {
                       <span className="font-medium text-foreground">{s.gitUser || "未知"}</span>
                     </div>
                   </td>
+                  <td className="py-2.5 pr-3 text-foreground max-w-[260px] truncate" title={s.sessionId}>
+                    {s.title || s.sessionId.slice(0, 8)}
+                  </td>
                   <td className="py-2.5 pr-3 font-mono text-foreground">{s.projectName}</td>
                   <td className="py-2.5 pr-3 font-mono text-muted-foreground max-w-[180px] truncate" title={cleanCwd(s.cwd)}>
                     {cleanCwd(s.cwd)}
-                  </td>
-                  <td className="py-2.5 pr-3 font-mono text-foreground" title={s.sessionId}>
-                    {s.sessionId.slice(0, 8)}
                   </td>
                   <td className="py-2.5 pr-3 font-mono text-blue-600 dark:text-blue-400">{fmtK(s.token?.input ?? 0)}</td>
                   <td className="py-2.5 pr-3 font-mono text-violet-600 dark:text-violet-400">{fmtK(s.token?.output ?? 0)}</td>

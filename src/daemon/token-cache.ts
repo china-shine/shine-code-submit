@@ -4,7 +4,7 @@
 // 任一文件没变就直接返回，变了才重读重算。冷启动逐步填充，稳态全命中。异常返回 null。
 import { statSync } from "node:fs";
 import { homedir } from "node:os";
-import { sumSessionUsage, sessionTranscriptFiles } from "./transcript";
+import { sumSessionUsage, sessionTranscriptFiles, readFirstUserText } from "./transcript";
 import type { TokenUsage } from "../shared/types";
 
 interface Entry {
@@ -35,4 +35,34 @@ export function getSessionTokenTotal(transcriptPath: string): TokenUsage | null 
   } catch {
     return null;
   }
+}
+
+interface TitleEntry {
+  mtimeKey: string;
+  title: string | null;
+}
+const titleCache = new Map<string, TitleEntry>();
+
+/** 返回某 transcript 父会话的首条 user 消息(会话标题);带复合 mtime 缓存;读不到返回 null。
+ *  只读父 transcript(subagents 不参与标题),与 getSessionTokenTotal 同缓存策略。 */
+export function getSessionTitle(transcriptPath: string): string | null {
+  const realPath = transcriptPath.replace(/^~/, homedir());
+  const files = sessionTranscriptFiles(realPath);
+  if (files.length === 0) return null;
+  let mtimeKey: string;
+  try {
+    mtimeKey = files.map((file) => `${file}:${statSync(file).mtimeMs}`).join("|");
+  } catch {
+    return null;
+  }
+  const hit = titleCache.get(transcriptPath);
+  if (hit && hit.mtimeKey === mtimeKey) return hit.title;
+  let title: string | null = null;
+  try {
+    title = readFirstUserText(realPath);
+  } catch {
+    title = null;
+  }
+  titleCache.set(transcriptPath, { mtimeKey, title });
+  return title;
 }

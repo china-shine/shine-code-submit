@@ -126,6 +126,7 @@ export interface FlatSession {
   gitUser: string;
   projectName: string;
   cwd: string;
+  title: string | null;
 }
 
 export function flattenSessions(users: UserAgg[]): FlatSession[] {
@@ -141,6 +142,7 @@ export function flattenSessions(users: UserAgg[]): FlatSession[] {
           gitUser: u.gitUser,
           projectName: displayProjectName(p.name, p.cwd),
           cwd: p.cwd,
+          title: s.title ?? null,
         });
       }
     }
