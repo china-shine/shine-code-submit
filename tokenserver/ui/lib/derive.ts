@@ -47,6 +47,35 @@ export function lineTotal(l?: LinesStat | null): number {
   return l.added + l.deleted + l.modified;
 }
 
+// ─── 路径/项目名清洗(治标) ─────────────────────────────────────────────────────
+// daemon 的 decodeProjectCwd 把 Claude project 目录名(- 编码)解码回 cwd,
+// 但 Claude 对中文/特殊字符也编码成 '-',解码后出现连续 '\'。此处合并显示。
+export function cleanCwd(cwd?: string | null): string {
+  if (!cwd) return "";
+  return cwd
+    .replace(/[\\/]+/g, "\\") // 连续 \ 或 / 合并成单个 \
+    .replace(/\\+$/, "") // 去末尾反斜杠
+    .replace(/^([a-z]):/i, (_m, d) => d.toUpperCase() + ":"); // 盘符统一大写
+}
+
+/** cleanCwd 后的末 N 段,用 / 连接(跨平台安全)。 */
+function pathTail(cwd: string | null | undefined, depth = 1): string {
+  if (!cwd) return "";
+  const segs = cleanCwd(cwd).split(/[\\/]+/).filter(Boolean);
+  if (segs.length === 0) return "";
+  return segs.slice(-depth).join("/");
+}
+
+/** 项目名可读化:纯数字/单字符名(如 test\2\5 → "5")回退到 cwd 末两段("2/5");其余原样。 */
+export function displayProjectName(name?: string | null, cwd?: string | null): string {
+  const base = (name && name.trim()) || pathTail(cwd, 1) || "(未知)";
+  if (/^\d+$/.test(base) || base.length <= 1) {
+    const two = pathTail(cwd, 2);
+    if (two && two.length > 1) return two;
+  }
+  return base;
+}
+
 // ─── 格式化(复制 TokenWeb fmtK/fmtFull 以保视觉一致;fmtDate 沿用 util.ts) ─────────
 export function fmtK(n: number): string {
   if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(2) + "B"; // B 两位
@@ -80,7 +109,7 @@ export function flattenSessions(users: UserAgg[]): FlatSession[] {
           token: s.tokenTotal,
           lines: s.linesTotal,
           gitUser: u.gitUser,
-          projectName: p.name || p.cwd,
+          projectName: displayProjectName(p.name, p.cwd),
           cwd: p.cwd,
         });
       }

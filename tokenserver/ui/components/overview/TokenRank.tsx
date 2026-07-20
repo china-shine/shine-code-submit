@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { Cpu } from "lucide-react";
 import type { UserAgg } from "../../types";
-import { rawTotal, fmtK } from "../../lib/derive";
+import { rawTotal, fmtK, displayProjectName } from "../../lib/derive";
 import { Avatar } from "../common/Avatar";
 
 export function TokenRank({
@@ -19,7 +19,7 @@ export function TokenRank({
     .map((u) => ({ name: u.gitUser || "未知", gitUser: u.gitUser, token: rawTotal(u.totalTokens) }))
     .sort((a, b) => b.token - a.token);
   const projectRank = users
-    .flatMap((u) => u.projects.map((p) => ({ name: p.name || p.cwd, token: rawTotal(p.totalTokens) })))
+    .flatMap((u) => u.projects.map((p) => ({ name: displayProjectName(p.name, p.cwd), token: rawTotal(p.totalTokens) })))
     .sort((a, b) => b.token - a.token);
   const list = rankBy === "member" ? memberRank : projectRank;
   const max = list[0]?.token || 1;

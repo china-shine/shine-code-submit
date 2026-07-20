@@ -2,7 +2,7 @@
 // 列:最后活跃/成员/项目/路径(cwd)/会话(sid8)/输入/输出/总Token/代码变更。
 // 删 TokenWeb 的 时长/对话主题/模型/状态 列(tokenserver 无对应字段)。
 import type { UserAgg } from "../../types";
-import { flattenSessions, rawTotal, fmtK } from "../../lib/derive";
+import { flattenSessions, rawTotal, fmtK, cleanCwd } from "../../lib/derive";
 import { fmtDate } from "../../lib/util";
 import { Avatar } from "../common/Avatar";
 
@@ -44,8 +44,8 @@ export function RecentSessionsTable({ users }: { users: UserAgg[] }) {
                     </div>
                   </td>
                   <td className="py-2.5 pr-3 font-mono text-foreground">{s.projectName}</td>
-                  <td className="py-2.5 pr-3 font-mono text-muted-foreground max-w-[180px] truncate" title={s.cwd}>
-                    {s.cwd}
+                  <td className="py-2.5 pr-3 font-mono text-muted-foreground max-w-[180px] truncate" title={cleanCwd(s.cwd)}>
+                    {cleanCwd(s.cwd)}
                   </td>
                   <td className="py-2.5 pr-3 font-mono text-foreground" title={s.sessionId}>
                     {s.sessionId.slice(0, 8)}
