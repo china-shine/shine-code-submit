@@ -76,6 +76,29 @@ export function displayProjectName(name?: string | null, cwd?: string | null): s
   return base;
 }
 
+/** 判断 cwd 是否"真项目":排除盘根/用户家目录/桌面等显然不是项目的路径。
+ *  规则:cleanCwd 后按段数判断 —— 1 段=盘根;X:\Users\<name>=家目录;
+ *  X:\Users\<name>\{Desktop,Documents,Downloads}=家目录常用子目录。其余算项目。 */
+export function isRealProject(cwd?: string | null): boolean {
+  if (!cwd) return false;
+  const segs = cleanCwd(cwd).split(/[\\/]+/).filter(Boolean);
+  if (segs.length === 0) return false;
+  if (segs.length === 1) return false; // 盘根 X:
+  if (segs.length === 3 && segs[1].toLowerCase() === "users") return false; // 家目录
+  if (
+    segs.length === 4 &&
+    segs[1].toLowerCase() === "users" &&
+    ["desktop", "documents", "downloads"].includes(segs[3].toLowerCase())
+  )
+    return false; // 家目录下的桌面/文档/下载
+  return true;
+}
+
+/** 该成员的"真项目"数(用于 KPI/列表/详情,替代后端给的 projectCount 全量数)。 */
+export function countRealProjects(u: UserAgg): number {
+  return u.projects.filter((p) => isRealProject(p.cwd)).length;
+}
+
 // ─── 格式化(复制 TokenWeb fmtK/fmtFull 以保视觉一致;fmtDate 沿用 util.ts) ─────────
 export function fmtK(n: number): string {
   if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(2) + "B"; // B 两位
@@ -218,7 +241,7 @@ export function globalTotals(users: UserAgg[]): GlobalTotals {
     lines,
     sessions: users.reduce((a, u) => a + u.sessionCount, 0),
     members: users.length,
-    projects: users.reduce((a, u) => a + u.projectCount, 0),
+    projects: users.reduce((a, u) => a + countRealProjects(u), 0),
   };
 }
 

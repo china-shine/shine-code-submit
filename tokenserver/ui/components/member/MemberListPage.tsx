@@ -2,7 +2,7 @@
 // 效率 = 行/M Token(代码行 / 总Token * 1e6)。整行点击或「详情」按钮进详情。
 import { Eye } from "lucide-react";
 import type { UserAgg } from "../../types";
-import { rawTotal, lineTotal, fmtK, fmtFull } from "../../lib/derive";
+import { rawTotal, lineTotal, fmtK, fmtFull, countRealProjects } from "../../lib/derive";
 import { fmtDate } from "../../lib/util";
 import { Avatar } from "../common/Avatar";
 
@@ -50,7 +50,7 @@ export function MemberListPage({
                     </div>
                   </td>
                   <td className="py-3 px-4 font-mono text-muted-foreground whitespace-nowrap">{fmtDate(u.lastActive)}</td>
-                  <td className="py-3 px-4 font-mono text-foreground text-center">{u.projectCount}</td>
+                  <td className="py-3 px-4 font-mono text-foreground text-center">{countRealProjects(u)}</td>
                   <td className="py-3 px-4 font-mono text-indigo-600 dark:text-indigo-400">{u.sessionCount}</td>
                   <td className="py-3 px-4 font-mono font-medium text-foreground">{fmtK(token)}</td>
                   <td className="py-3 px-4 font-mono text-teal-600 dark:text-teal-400">{fmtFull(lines)}</td>
