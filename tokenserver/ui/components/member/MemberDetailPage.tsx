@@ -2,7 +2,7 @@
 import { ChevronRight } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import type { UserAgg } from "../../types";
-import { rawTotal, lineTotal, bucketByDay, flattenSessions, globalTotals, fmtK, fmtFull, C, countRealProjects } from "../../lib/derive";
+import { rawTotal, lineTotal, bucketByDay, flattenSessions, globalTotals, fmtK, fmtFull, C, countRealProjects, inoutTokens } from "../../lib/derive";
 import { fmtDate } from "../../lib/util";
 import { Avatar } from "../common/Avatar";
 import { RecentSessionsTable } from "../overview/RecentSessionsTable";
@@ -33,7 +33,8 @@ export function MemberDetailPage({
 
   const token = rawTotal(user.totalTokens);
   const lines = lineTotal(user.totalLines);
-  const eff = token > 0 ? Math.round((lines / token) * 1_000_000) : 0;
+  const inout = inoutTokens(user.totalTokens);
+  const eff = inout > 0 ? Math.round((lines / inout) * 1_000_000) : 0;
   const trend = bucketByDay(flattenSessions([user]));
   const range = trend.length > 0 ? `${trend[0].date} – ${trend[trend.length - 1].date}` : "—";
 

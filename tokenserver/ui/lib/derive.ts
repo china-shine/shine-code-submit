@@ -19,6 +19,13 @@ export function rawTotal(u?: TokenUsage | null): number {
   return u.input + u.output + u.cacheCreation + u.cacheRead;
 }
 
+/** 真实读写的新 token(input+output,不含缓存读取/写入),用作效率分母。
+ *  cacheRead 通常占 95%+,计入会严重稀释效率,故效率口径只用 input+output。 */
+export function inoutTokens(t?: TokenUsage | null): number {
+  if (!t) return 0;
+  return t.input + t.output;
+}
+
 export function sumTokens(list: (TokenUsage | null | undefined)[]): TokenUsage {
   return list.reduce(
     (a, t) => ({

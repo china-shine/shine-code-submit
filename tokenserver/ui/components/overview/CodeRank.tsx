@@ -1,6 +1,6 @@
 // 代码产出排行(按成员):行数 + 对话次数 + 行/K Token。删组别行(tokenserver 无 team)。
 import type { UserAgg } from "../../types";
-import { rawTotal, lineTotal, fmtFull } from "../../lib/derive";
+import { inoutTokens, lineTotal, fmtFull } from "../../lib/derive";
 import { Avatar } from "../common/Avatar";
 
 export function CodeRank({ users }: { users: UserAgg[] }) {
@@ -9,7 +9,7 @@ export function CodeRank({ users }: { users: UserAgg[] }) {
       name: u.gitUser || "未知",
       code: lineTotal(u.totalLines),
       convs: u.sessionCount,
-      token: rawTotal(u.totalTokens),
+      inout: inoutTokens(u.totalTokens),
     }))
     .sort((a, b) => b.code - a.code);
 
@@ -28,7 +28,7 @@ export function CodeRank({ users }: { users: UserAgg[] }) {
               </div>
               <div className="flex items-center justify-between mt-0.5">
                 <span className="text-xs text-muted-foreground">{m.convs} 次对话</span>
-                <span className="text-xs text-muted-foreground">{m.token > 0 ? Math.round(m.code / (m.token / 1000)) : 0} 行/K Token</span>
+                <span className="text-xs text-muted-foreground">{m.inout > 0 ? Math.round(m.code / (m.inout / 1_000_000)) : 0} 行/M Token</span>
               </div>
             </div>
           </div>

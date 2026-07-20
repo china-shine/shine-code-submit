@@ -2,7 +2,7 @@
 // 效率 = 行/M Token(代码行 / 总Token * 1e6)。整行点击或「详情」按钮进详情。
 import { Eye } from "lucide-react";
 import type { UserAgg } from "../../types";
-import { rawTotal, lineTotal, fmtK, fmtFull, countRealProjects } from "../../lib/derive";
+import { rawTotal, lineTotal, fmtK, fmtFull, countRealProjects, inoutTokens } from "../../lib/derive";
 import { fmtDate } from "../../lib/util";
 import { Avatar } from "../common/Avatar";
 
@@ -36,7 +36,8 @@ export function MemberListPage({
             users.map((u) => {
               const lines = lineTotal(u.totalLines);
               const token = rawTotal(u.totalTokens);
-              const eff = token > 0 ? Math.round((lines / token) * 1_000_000) : 0;
+              const inout = inoutTokens(u.totalTokens);
+              const eff = inout > 0 ? Math.round((lines / inout) * 1_000_000) : 0;
               return (
                 <tr
                   key={u.gitUser || "?"}
