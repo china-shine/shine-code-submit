@@ -2,7 +2,7 @@
 import { ChevronRight } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import type { UserAgg } from "../../types";
-import { rawTotal, lineTotal, bucketByDay, flattenSessions, globalTotals, fmtK, fmtFull, C, countRealProjects, displayProjectName, isRealProject, cleanCwd } from "../../lib/derive";
+import { rawTotal, lineTotal, bucketByDay, flattenSessions, globalTotals, fmtK, fmtFull, C, countRealProjects } from "../../lib/derive";
 import { fmtDate } from "../../lib/util";
 import { Avatar } from "../common/Avatar";
 import { RecentSessionsTable } from "../overview/RecentSessionsTable";
@@ -36,12 +36,6 @@ export function MemberDetailPage({
   const eff = token > 0 ? Math.round((lines / token) * 1_000_000) : 0;
   const trend = bucketByDay(flattenSessions([user]));
   const range = trend.length > 0 ? `${trend[0].date} – ${trend[trend.length - 1].date}` : "—";
-
-  const projs = user.projects
-    .filter((p) => isRealProject(p.cwd))
-    .map((p) => ({ name: displayProjectName(p.name, p.cwd), cwd: p.cwd, token: rawTotal(p.totalTokens), sess: p.sessionCount }))
-    .sort((a, b) => b.token - a.token);
-  const pmax = projs[0]?.token || 1;
 
   const g = globalTotals(users);
   const teamAvg = {
@@ -144,28 +138,6 @@ export function MemberDetailPage({
             })}
           </div>
           )}
-        </div>
-      </div>
-
-      <div className="bg-card border border-border rounded p-4">
-        <h3 className="text-sm font-semibold text-foreground mb-3">项目分布 <span className="text-xs text-muted-foreground font-normal ml-1">({projs.length} 个项目)</span></h3>
-        <div className="space-y-2">
-          {projs.length === 0 ? (
-            <div className="text-xs text-muted-foreground py-3 text-center">暂无项目</div>
-          ) : projs.map((p, i) => {
-            const pct = pmax > 0 ? (p.token / pmax) * 100 : 0;
-            return (
-              <div key={p.cwd + i} className="flex items-center gap-2.5">
-                <span className="text-xs text-muted-foreground w-4 text-right">{i + 1}</span>
-                <span className="text-xs font-medium font-mono text-foreground w-40 truncate" title={cleanCwd(p.cwd)}>{p.name}</span>
-                <div className="flex-1 h-1.5 bg-muted rounded-full overflow-hidden">
-                  <div className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full" style={{ width: `${pct}%` }} />
-                </div>
-                <span className="text-xs font-mono text-foreground w-16 text-right">{fmtK(p.token)}</span>
-                <span className="text-xs text-muted-foreground w-14 text-right">{p.sess} 会话</span>
-              </div>
-            );
-          })}
         </div>
       </div>
 
