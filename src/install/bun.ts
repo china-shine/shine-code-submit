@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
+import { info, isSilent, warn } from "./log";
 
 const MIN_BUN = [1, 1, 0];
 const INSTALL_TIMEOUT_MS = 5 * 60 * 1000;
@@ -44,7 +45,12 @@ function isCnRegistry(): boolean {
 }
 
 function runShell(cmd: string): number {
-  return spawnSync(cmd, { shell: true, encoding: "utf8", timeout: INSTALL_TIMEOUT_MS, stdio: "inherit" }).status ?? 1;
+  return spawnSync(cmd, {
+    shell: true,
+    encoding: "utf8",
+    timeout: INSTALL_TIMEOUT_MS,
+    stdio: isSilent() ? "ignore" : "inherit",
+  }).status ?? 1;
 }
 
 /**
@@ -57,24 +63,24 @@ export async function ensureBun(): Promise<string> {
     const v =
       spawnSync(existing, ["--version"], { shell: process.platform === "win32", encoding: "utf8" }).stdout?.trim() ?? "";
     if (v && versionGte(v, MIN_BUN)) {
-      console.log(`[shine-code-submit] bun ${v} detected`);
+      info(`[shine-code-submit] bun ${v} detected`);
       return existing;
     }
   }
 
-  console.log("[shine-code-submit] bun 未找到或版本过低,开始自动安装...");
+  info("[shine-code-submit] bun 未找到或版本过低,开始自动安装...");
 
   // 国内镜像优先:npm i -g bun(走 npmmirror,比官方脚本快且稳)
   if (isCnRegistry()) {
-    console.log("[shine-code-submit] 检测到国内 npm 镜像,先尝试 npm install -g bun");
+    info("[shine-code-submit] 检测到国内 npm 镜像,先尝试 npm install -g bun");
     if (runShell("npm install -g bun") === 0) {
       const p = getBunPath();
       if (p) {
-        console.log("[shine-code-submit] ✓ bun 安装成功(via npm 镜像)");
+        info("[shine-code-submit] ✓ bun 安装成功(via npm 镜像)");
         return p;
       }
     }
-    console.log("[shine-code-submit] npm 镜像方式失败,回退官方脚本");
+    info("[shine-code-submit] npm 镜像方式失败,回退官方脚本");
   }
 
   // 官方脚本
@@ -86,12 +92,12 @@ export async function ensureBun(): Promise<string> {
 
   const p = getBunPath();
   if (!p) {
-    console.error("[shine-code-submit] bun 自动安装失败。请手动安装后重试:");
-    console.error("  Windows: winget install Oven-sh.Bun   或   npm install -g bun");
-    console.error("  macOS:   brew install oven-sh/bun/bun");
-    console.error("  Linux:   curl -fsSL https://bun.sh/install | bash");
+    warn("[shine-code-submit] bun 自动安装失败。请手动安装后重试:");
+    warn("  Windows: winget install Oven-sh.Bun   或   npm install -g bun");
+    warn("  macOS:   brew install oven-sh/bun/bun");
+    warn("  Linux:   curl -fsSL https://bun.sh/install | bash");
     throw new Error("bun installation failed");
   }
-  console.log("[shine-code-submit] ✓ bun 安装成功");
+  info("[shine-code-submit] ✓ bun 安装成功");
   return p;
 }

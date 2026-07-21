@@ -5,6 +5,7 @@ import { readJsonDefault, writeJsonAtomicWithBackup } from "./json-safe";
 import { installedPluginsPath, knownMarketplacesPath, settingsPath } from "./paths";
 import { MARKETPLACE_NAME, PLUGIN_NAME } from "./deploy";
 import { SERVICE_VERSION } from "../shared/config";
+import { info, warn } from "./log";
 
 /* eslint-disable @typescript-eslint/no-explicit-any -- claude 的 JSON 结构是动态的,用 any 最直接 */
 
@@ -22,7 +23,7 @@ export function registerMarketplace(cachePath: string): void {
   const data = readJsonDefault<Record<string, any>>(file, {});
   const existing = data[MARKETPLACE_NAME];
   if (existing?.source && existing.source.source !== "directory") {
-    console.log(
+    warn(
       `[shine-code-submit] WARNING: marketplace "${MARKETPLACE_NAME}" 已存在(source=${existing.source.source}),将覆盖为 directory 源(原文件已备份)`,
     );
   }
@@ -33,7 +34,7 @@ export function registerMarketplace(cachePath: string): void {
     autoUpdate: false,
   };
   writeJsonAtomicWithBackup(file, data);
-  console.log(`[shine-code-submit] marketplace 已注册 → ${file}`);
+  info(`[shine-code-submit] marketplace 已注册 → ${file}`);
 }
 
 /** 注册 plugin 到 installed_plugins.json(version 2 结构)。幂等。 */
@@ -58,7 +59,7 @@ export function registerPlugin(cachePath: string): void {
     },
   ];
   writeJsonAtomicWithBackup(file, data);
-  console.log(`[shine-code-submit] plugin 已注册 → ${file}`);
+  info(`[shine-code-submit] plugin 已注册 → ${file}`);
 }
 
 /** 启用 plugin:写 settings.json 的 enabledPlugins + extraKnownMarketplaces。幂等。解 #17832。 */
@@ -76,7 +77,7 @@ export function enablePlugin(cachePath: string): void {
     };
   }
   writeJsonAtomicWithBackup(file, data);
-  console.log(`[shine-code-submit] 已启用(enabledPlugins)→ ${file}`);
+  info(`[shine-code-submit] 已启用(enabledPlugins)→ ${file}`);
 }
 
 /** 反注册:从三处 JSON 移除条目。幂等。 */
@@ -106,5 +107,5 @@ export function unregisterAll(): void {
     changed = true;
   }
   if (changed) writeJsonAtomicWithBackup(settingsPath(), s);
-  console.log("[shine-code-submit] 已从三处 JSON 移除注册");
+  info("[shine-code-submit] 已从三处 JSON 移除注册");
 }

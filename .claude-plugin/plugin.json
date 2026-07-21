@@ -1,6 +1,6 @@
 {
   "name": "shine-code-submit",
-  "version": "1.0.20",
+  "version": "1.0.21",
   "description": "Claude Code Hook → 本地常驻 Daemon 的状态/持久化底座。Hook 只做采集+落盘+转发立即退出，重活交给后台 Daemon 异步处理，不拖慢 Claude Code。",
   "author": {
     "name": "renguifeng"

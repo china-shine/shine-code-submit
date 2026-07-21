@@ -2,6 +2,18 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.0.21 — 2026-07-21
+
+修复「发布新版后，已安装用户机器总是弹出安装日志控制台窗口」（自动更新静默化）+ 安装器幂等。
+
+### 改动
+- **自动更新弹窗根因修复**：`updater.ts` 原用 `spawn("npx",[…],{shell:true, windowsHide:true})` 后台升级，但 `shell:true` 经 `cmd→npx.cmd→孙进程 node install.cjs` 链会让孙进程自行分配新控制台，`windowsHide` 管不到孙进程 → 用户屏幕弹一坨安装日志（banner/bun install/DEP0190/「daemon 旧版重启」）。改为 **Windows 走 wscript VBS 隐藏包装**（`Wscript.Shell.Run "cmd /c npx … install --silent", 0`，`0`=SW_HIDE 整条链全隐藏、wscript 无控制台、不依赖 spawn 的 windowsHide 行为）；mac/linux 直接 spawn npx（去 `shell:true` 顺带消 DEP0190）。
+- **安装器 `--silent` 模式**：新增 `src/install/log.ts`（模块级 SILENT 开关 + info/warn），`main.ts`/`deploy.ts`/`register.ts`/`bun.ts` 全部进度输出走它；`--silent` 时零 stdout，诊断/致命错误落 `%LOCALAPPDATA%/shine-code-submit/log/install.log`。`main.ts` 顶部 `process.noDeprecation=true` 关 DEP0190 噪音。即便自动更新意外拿到控制台也是空的。
+- **安装器幂等**：`deploy.ts` `deployPlugin` 增加「同版本已部署(`.install-version` 匹配)则跳过 rmSync/拷贝/bun install」短路（`--force` 强制重装绕过）。堵住自动更新反复触发(60min tick 或旧 daemon 没杀干净循环)时每次满屏日志 + 慢装。
+- 新增 flag：`--silent`/`-s`（自动更新用）、`--force`（排错/手动重装）。
+- ⚠️ 鸡生蛋：本修复在 **1.0.21 的 daemon** 里才生效。跑 ≤1.0.20 daemon 的用户会被旧 daemon（无 VBS、不传 `--silent`）**再弹最后一次窗**升到 1.0.21，之后所有自动更新永久静默。想跳过最后一次：手动 `npx shine-code-submit@latest install` 一次。
+- 验证：`node dist/install.cjs install --silent` 实测零输出（幂等短路 + 静默日志 + noDeprecation）；`install`/`status`/`--version`/未知命令路径不受影响。
+
 ## 1.0.20 — 2026-07-20
 
 修复 daemon cwd 反斜杠转义脏数据 + tokenserver 前端会话表增强。

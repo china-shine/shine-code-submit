@@ -1,9 +1,10 @@
 // 部署 plugin 文件到 claude cache 目录,并跑 bun install 装运行时依赖(marked/react)。
-import { cpSync, existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { pluginsRoot } from "./paths";
 import { SERVICE_VERSION } from "../shared/config";
+import { info, isSilent } from "./log";
 
 export const MARKETPLACE_NAME = "shine-code-submit";
 export const PLUGIN_NAME = "shine-code-submit";
@@ -47,35 +48,43 @@ const WHITELIST = [".claude-plugin", "hooks", "bin", "src", "ui", "package.json"
 /**
  * 部署 plugin:清同版本目录 → 拷白名单 → bun install 装依赖 → 写版本标记。
  * 返回 cache 目录绝对路径。
+ *
+ * 幂等:同版本已部署(且非 --force)时直接复用,不 rmSync/不拷贝/不 bun install。
+ * 自动更新可能反复触发(60min tick、或旧 daemon 没杀干净导致循环),没有幂等就会每次满屏日志 + 慢装。
  */
-export function deployPlugin(bunPath: string): string {
+export function deployPlugin(bunPath: string, opts: { force?: boolean } = {}): string {
   const target = cacheDir();
+  if (!opts.force && sameVersionDeployed(target)) {
+    info("[shine-code-submit] 同版本已部署,跳过(用 --force 强制重装)");
+    return target;
+  }
   if (existsSync(target)) rmSync(target, { recursive: true, force: true });
   mkdirSync(target, { recursive: true });
 
   const srcRoot = findPackageRoot();
-  console.log(`[shine-code-submit] 部署源:${srcRoot}`);
+  info(`[shine-code-submit] 部署源:${srcRoot}`);
   for (const item of WHITELIST) {
     const from = join(srcRoot, item);
     if (!existsSync(from)) continue; // 缺(如 bun.lock 未入库)跳过
     cpSync(from, join(target, item), { recursive: true });
   }
 
-  // bun install 装运行时依赖
-  console.log("[shine-code-submit] 安装运行时依赖(bun install)...");
+  // bun install 装运行时依赖。silent(--silent) 时 stdio:ignore,不喷日志到可能的控制台。
+  info("[shine-code-submit] 安装运行时依赖(bun install)...");
+  const stdio = isSilent() ? "ignore" : "inherit";
   let status = spawnSync(bunPath, ["install", "--frozen-lockfile"], {
     cwd: target,
     shell: process.platform === "win32",
     encoding: "utf8",
-    stdio: "inherit",
+    stdio,
   }).status;
   if (status !== 0) {
-    console.log("[shine-code-submit] --frozen-lockfile 失败,重试普通 bun install");
+    info("[shine-code-submit] --frozen-lockfile 失败,重试普通 bun install");
     status = spawnSync(bunPath, ["install"], {
       cwd: target,
       shell: process.platform === "win32",
       encoding: "utf8",
-      stdio: "inherit",
+      stdio,
     }).status;
     if (status !== 0) {
       throw new Error(`bun install 失败(exit ${status})。请手动在 ${target} 跑 bun install`);
@@ -87,6 +96,18 @@ export function deployPlugin(bunPath: string): string {
     JSON.stringify({ version: SERVICE_VERSION, installedAt: Date.now() }),
     "utf8",
   );
-  console.log(`[shine-code-submit] 已部署到 ${target}`);
+  info(`[shine-code-submit] 已部署到 ${target}`);
   return target;
+}
+
+/** 同版本已部署?.install-version 的 version === SERVICE_VERSION 即视为已部署。 */
+function sameVersionDeployed(target: string): boolean {
+  try {
+    const meta = JSON.parse(readFileSync(join(target, ".install-version"), "utf8")) as {
+      version?: string;
+    };
+    return meta.version === SERVICE_VERSION;
+  } catch {
+    return false;
+  }
 }
