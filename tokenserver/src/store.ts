@@ -61,63 +61,8 @@ db.exec(`
   if (!have.has("activeMs")) db.exec(`ALTER TABLE sessions ADD COLUMN activeMs INTEGER DEFAULT 0`);
 }
 
-export interface SessionAgg {
-  sessionId: string;
-  lastActive: number;
-  tokenTotal: TokenUsage | null;
-  linesTotal: LinesStat | null;
-  activeMs: number;
-  title?: string | null;
-}
-export interface ProjectAgg {
-  cwd: string;
-  name: string;
-  gitRemote: string | null;
-  lastActive: number;
-  sessionCount: number;
-  totalTokens: TokenUsage;
-  totalLines: LinesStat;
-  sessions: SessionAgg[];
-}
-export interface UserAgg {
-  gitUser: string;
-  lastActive: number;
-  projectCount: number;
-  sessionCount: number;
-  totalTokens: TokenUsage;
-  totalLines: LinesStat;
-  projects: ProjectAgg[];
-}
-
 const ZERO: TokenUsage = { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 };
 const ZERO_LINES: LinesStat = { added: 0, deleted: 0, modified: 0 };
-
-function rawTotal(u: TokenUsage): number {
-  return u.input + u.output + u.cacheCreation + u.cacheRead;
-}
-function sumTokens(a: TokenUsage, b: TokenUsage): TokenUsage {
-  return {
-    input: a.input + b.input,
-    output: a.output + b.output,
-    cacheCreation: a.cacheCreation + b.cacheCreation,
-    cacheRead: a.cacheRead + b.cacheRead,
-  };
-}
-function sumLines(a: LinesStat, b: LinesStat): LinesStat {
-  return {
-    added: a.added + b.added,
-    deleted: a.deleted + b.deleted,
-    modified: a.modified + b.modified,
-  };
-}
-
-interface ProjectRow {
-  gitUser: string;
-  cwd: string;
-  name: string | null;
-  gitRemote: string | null;
-  lastActive: number;
-}
 interface SessionRow {
   sessionId: string;
   gitUser: string;
@@ -187,102 +132,400 @@ export function saveReport(raw: ReportResponse): void {
     }
   });
   tx();
-  cachedUsers = null;
 }
 
-let cachedUsers: UserAgg[] | null = null;
+// (旧的三级聚合 aggregate()/cachedUsers 已移除:前端不再拉 /api/reports 全量,
+//  overview/member 全部走服务端 /api/stats + /api/member + /api/sessions。)
 
-/** 查询三级聚合(内存缓存,saveReport 时失效)。 */
-export function aggregate(): UserAgg[] {
-  if (cachedUsers) return cachedUsers;
+// ====================================================================
+// 服务端聚合/分页(阶段1:overview 服务端化)。复刻 ui/lib/derive.ts 口径。
+// isRealProjectCwd 仅用于 tokenRank 项目榜 + projects 计数;其余聚合用全部 session(对齐 flattenSessions/globalTotals)。
+// 展示清洗(displayProjectName/cleanCwd)前端保留,后端返 cwd+name 原值。
+// ====================================================================
 
-  const projs = db
-    .query<ProjectRow>("SELECT gitUser, cwd, name, gitRemote, lastActive FROM projects")
-    .all();
-  const sess = db
-    .query<SessionRow>(
-      "SELECT sessionId, gitUser, cwd, lastActive, input, output, cacheCreation, cacheRead, added, deleted, modified, activeMs, title FROM sessions",
-    )
-    .all();
+export type Granularity = "day" | "week" | "month";
 
-  const sessByProj = new Map<string, SessionAgg[]>();
-  for (const s of sess) {
-    const key = s.gitUser + "\0" + s.cwd;
-    let arr = sessByProj.get(key);
-    if (!arr) {
-      arr = [];
-      sessByProj.set(key, arr);
+const SIZE_BUCKETS = [
+  { range: "0–10K", max: 10_000 },
+  { range: "10–100K", max: 100_000 },
+  { range: "100K–1M", max: 1_000_000 },
+  { range: "1–10M", max: 10_000_000 },
+  { range: ">10M", max: Infinity },
+];
+
+/** 等价 derive.ts isRealProject:排除盘根/家目录/桌面(只看 cleanCwd 后段数)。*/
+function isRealProjectCwd(cwd: string | null | undefined): boolean {
+  if (!cwd) return false;
+  const segs = cwd.replace(/[\\/]+/g, "/").replace(/\/+$/, "").split("/").filter(Boolean);
+  if (segs.length <= 1) return false;
+  if (segs.length === 3 && segs[1].toLowerCase() === "users") return false;
+  if (
+    segs.length === 4 &&
+    segs[1].toLowerCase() === "users" &&
+    ["desktop", "documents", "downloads"].includes(segs[3].toLowerCase())
+  )
+    return false;
+  return true;
+}
+
+function pad2(n: number): string {
+  return String(n).padStart(2, "0");
+}
+
+/** 等价 derive.ts bucketTs:day / week(周一起)/ month 桶。*/
+function bucketOf(ts: number, g: Granularity): { key: string; label: string } {
+  const d = new Date(ts);
+  if (g === "month") {
+    const key = `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+    return { key, label: key };
+  }
+  if (g === "day") {
+    return {
+      key: `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`,
+      label: `${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`,
+    };
+  }
+  // week:自然周(周一起)
+  const ws = new Date(d);
+  ws.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return {
+    key: `${ws.getFullYear()}-${pad2(ws.getMonth() + 1)}-${pad2(ws.getDate())}`,
+    label: `${pad2(ws.getMonth() + 1)}-${pad2(ws.getDate())}`,
+  };
+}
+
+interface FilterOpts {
+  from: number;
+  members: string[];
+}
+
+/** 查 from + members 过滤的 sessions(未排序,不含 isRealProject 过滤)。*/
+function querySessions(opts: FilterOpts): SessionRow[] {
+  let sql =
+    "SELECT sessionId, gitUser, cwd, lastActive, input, output, cacheCreation, cacheRead, added, deleted, modified, activeMs, title FROM sessions WHERE lastActive >= ?";
+  const params: (number | string)[] = [opts.from];
+  if (opts.members.length > 0) {
+    sql += ` AND gitUser IN (${opts.members.map(() => "?").join(",")})`;
+    params.push(...opts.members);
+  }
+  return db.prepare(sql).all(...params) as SessionRow[];
+}
+
+/** projects 表 (gitUser\0cwd)→name 映射(项目榜/会话表展示名 fallback,前端 displayProjectName 再清洗)。*/
+function projectNameMap(): Map<string, string> {
+  const rows = db.prepare("SELECT gitUser, cwd, name FROM projects").all() as Array<{
+    gitUser: string;
+    cwd: string;
+    name: string | null;
+  }>;
+  const m = new Map<string, string>();
+  for (const r of rows) m.set(r.gitUser + "\0" + r.cwd, r.name ?? r.cwd);
+  return m;
+}
+
+export interface DayBucket {
+  date: string;
+  ts: number;
+  input: number;
+  output: number;
+  cache: number;
+  total: number;
+}
+export interface DailyStat {
+  date: string;
+  ts: number;
+  total: number;
+  sessions: number;
+  lines: number;
+  dur: number;
+}
+export interface MemberAgg {
+  gitUser: string;
+  lastActive: number;
+  realProjects: number;
+  sessionCount: number;
+  activeMs: number;
+  totalTokens: TokenUsage;
+  totalLines: LinesStat;
+}
+export interface StatsPayload {
+  totals: {
+    token: TokenUsage;
+    rawTotal: number;
+    lines: LinesStat;
+    activeMs: number;
+    sessions: number;
+    members: number;
+    projects: number;
+  };
+  activeMin: number; // 过滤后 lastActive min(范围徽章)
+  activeMax: number; // 过滤后 lastActive max
+  allMembers: string[]; // 全量 gitUser(成员下拉,不受 members 过滤)
+  trend: DayBucket[]; // 按 granularity(TokenTrendChart)
+  daily: DailyStat[]; // 固定 day(KpiCards sparkline)
+  composition: { input: number; output: number; cache: number };
+  tokenRank: {
+    member: Array<{ gitUser: string; token: number }>;
+    project: Array<{ cwd: string; name: string; token: number }>;
+  };
+  codeRank: Array<{ gitUser: string; lines: number; convs: number; token: number }>;
+  sizeBuckets: Array<{ range: string; count: number }>;
+  members: MemberAgg[];
+}
+
+interface MemberAcc {
+  input: number;
+  output: number;
+  cc: number;
+  cr: number;
+  added: number;
+  deleted: number;
+  modified: number;
+  activeMs: number;
+  convs: number;
+  lastActive: number;
+  cwds: Set<string>; // 仅真项目
+}
+
+/** 全局聚合(复刻 derive.ts globalTotals/dailyStats/bucketByGranularity/tokenRank/codeRank/sessionSizeBuckets/countRealProjects)。*/
+export function getStats(opts: FilterOpts & { granularity: Granularity }): StatsPayload {
+  const rows = querySessions(opts);
+  const names = projectNameMap();
+
+  let tInput = 0,
+    tOutput = 0,
+    tCC = 0,
+    tCR = 0,
+    tActive = 0,
+    tAdded = 0,
+    tDeleted = 0,
+    tModified = 0;
+  let activeMin = Infinity,
+    activeMax = -Infinity;
+  const trendMap = new Map<string, DayBucket>();
+  const dailyMap = new Map<string, DailyStat>();
+  const memberAcc = new Map<string, MemberAcc>();
+  const projTok = new Map<string, number>(); // gitUser\0cwd → token(仅真项目)
+  const realProjKeys = new Set<string>();
+  const sizes = SIZE_BUCKETS.map((b) => ({ range: b.range, count: 0 }));
+
+  for (const r of rows) {
+    const t = r.input + r.output + r.cacheCreation + r.cacheRead;
+    tInput += r.input;
+    tOutput += r.output;
+    tCC += r.cacheCreation;
+    tCR += r.cacheRead;
+    tActive += r.activeMs;
+    tAdded += r.added;
+    tDeleted += r.deleted;
+    tModified += r.modified;
+    if (r.lastActive < activeMin) activeMin = r.lastActive;
+    if (r.lastActive > activeMax) activeMax = r.lastActive;
+
+    // trend(按 granularity)
+    const tb = bucketOf(r.lastActive, opts.granularity);
+    const tr =
+      trendMap.get(tb.key) ?? { date: tb.label, ts: r.lastActive, input: 0, output: 0, cache: 0, total: 0 };
+    tr.input += r.input;
+    tr.output += r.output;
+    tr.cache += r.cacheCreation + r.cacheRead;
+    tr.total += t;
+    tr.ts = r.lastActive;
+    trendMap.set(tb.key, tr);
+
+    // daily(固定 day,KpiCards sparkline)
+    const dk = bucketOf(r.lastActive, "day");
+    const ds = dailyMap.get(dk.key) ?? { date: dk.label, ts: r.lastActive, total: 0, sessions: 0, lines: 0, dur: 0 };
+    ds.total += t;
+    ds.sessions += 1;
+    ds.lines += r.added + r.deleted + r.modified;
+    ds.dur += r.activeMs;
+    ds.ts = r.lastActive;
+    dailyMap.set(dk.key, ds);
+
+    // member 累加(全部 session)
+    let m = memberAcc.get(r.gitUser);
+    if (!m) {
+      m = { input: 0, output: 0, cc: 0, cr: 0, added: 0, deleted: 0, modified: 0, activeMs: 0, convs: 0, lastActive: 0, cwds: new Set() };
+      memberAcc.set(r.gitUser, m);
     }
-    arr.push({
-      sessionId: s.sessionId,
-      lastActive: s.lastActive,
-      tokenTotal: {
-        input: s.input,
-        output: s.output,
-        cacheCreation: s.cacheCreation,
-        cacheRead: s.cacheRead,
-      },
-      linesTotal: { added: s.added, deleted: s.deleted, modified: s.modified },
-      activeMs: s.activeMs,
-      title: s.title,
-    });
-  }
-  for (const arr of sessByProj.values()) arr.sort((a, b) => b.lastActive - a.lastActive);
+    m.input += r.input;
+    m.output += r.output;
+    m.cc += r.cacheCreation;
+    m.cr += r.cacheRead;
+    m.added += r.added;
+    m.deleted += r.deleted;
+    m.modified += r.modified;
+    m.activeMs += r.activeMs;
+    m.convs += 1;
+    if (r.lastActive > m.lastActive) m.lastActive = r.lastActive;
 
-  const projByUser = new Map<string, ProjectAgg[]>();
-  for (const p of projs) {
-    let arr = projByUser.get(p.gitUser);
-    if (!arr) {
-      arr = [];
-      projByUser.set(p.gitUser, arr);
+    // 仅真项目:项目榜 + realProjects 计数
+    if (isRealProjectCwd(r.cwd)) {
+      const pk = r.gitUser + "\0" + r.cwd;
+      projTok.set(pk, (projTok.get(pk) ?? 0) + t);
+      realProjKeys.add(pk);
+      m.cwds.add(r.cwd);
     }
-    const sessions = sessByProj.get(p.gitUser + "\0" + p.cwd) ?? [];
-    const totalTokens = sessions.reduce(
-      (acc, s) => sumTokens(acc, s.tokenTotal ?? ZERO),
-      { ...ZERO },
-    );
-    const totalLines = sessions.reduce(
-      (acc, s) => sumLines(acc, s.linesTotal ?? ZERO_LINES),
-      { ...ZERO_LINES },
-    );
-    arr.push({
-      cwd: p.cwd,
-      name: p.name ?? p.cwd,
-      gitRemote: p.gitRemote,
-      lastActive: p.lastActive,
-      sessionCount: sessions.length,
-      totalTokens,
-      totalLines,
-      sessions,
-    });
-  }
-  for (const arr of projByUser.values()) {
-    arr.sort((a, b) => rawTotal(b.totalTokens) - rawTotal(a.totalTokens));
+
+    // sizeBuckets(跳过 0 token,等价 sessionSizeBuckets)
+    if (t > 0) {
+      for (let i = 0; i < SIZE_BUCKETS.length; i++) {
+        if (t <= SIZE_BUCKETS[i].max) {
+          sizes[i].count++;
+          break;
+        }
+      }
+    }
   }
 
-  const users: UserAgg[] = [];
-  for (const [gitUser, projects] of projByUser) {
-    const totalTokens = projects.reduce(
-      (acc, p) => sumTokens(acc, p.totalTokens),
-      { ...ZERO },
-    );
-    const totalLines = projects.reduce(
-      (acc, p) => sumLines(acc, p.totalLines),
-      { ...ZERO_LINES },
-    );
-    const sessionCount = projects.reduce((a, p) => a + p.sessionCount, 0);
-    const lastActive = projects.reduce((a, p) => Math.max(a, p.lastActive), 0);
-    users.push({
+  const token: TokenUsage = { input: tInput, output: tOutput, cacheCreation: tCC, cacheRead: tCR };
+  const lines: LinesStat = { added: tAdded, deleted: tDeleted, modified: tModified };
+
+  const membersRaw = [...memberAcc.entries()].map(([gitUser, mm]) => {
+    const raw = mm.input + mm.output + mm.cc + mm.cr;
+    return {
       gitUser,
-      lastActive,
-      projectCount: projects.length,
-      sessionCount,
-      totalTokens,
-      totalLines,
-      projects,
-    });
+      lastActive: mm.lastActive,
+      realProjects: mm.cwds.size,
+      sessionCount: mm.convs,
+      activeMs: mm.activeMs,
+      totalTokens: { input: mm.input, output: mm.output, cacheCreation: mm.cc, cacheRead: mm.cr },
+      totalLines: { added: mm.added, deleted: mm.deleted, modified: mm.modified },
+      _raw: raw,
+    };
+  });
+  membersRaw.sort((a, b) => b._raw - a._raw);
+
+  const tokenRankMember = membersRaw
+    .map((m) => ({ gitUser: m.gitUser, token: m._raw }))
+    .sort((a, b) => b.token - a.token);
+  const codeRank = membersRaw
+    .map((m) => ({
+      gitUser: m.gitUser,
+      lines: m.totalLines.added + m.totalLines.deleted + m.totalLines.modified,
+      convs: m.sessionCount,
+      token: m.totalTokens.input + m.totalTokens.output,
+    }))
+    .sort((a, b) => b.lines - a.lines);
+  const members: MemberAgg[] = membersRaw.map(({ _raw, ...rest }) => rest);
+
+  const tokenRankProject = [...projTok.entries()]
+    .map(([pk, tok]) => {
+      const [gitUser, cwd] = pk.split("\0");
+      return { cwd, name: names.get(pk) ?? cwd, token: tok };
+    })
+    .sort((a, b) => b.token - a.token);
+
+  return {
+    totals: {
+      token,
+      rawTotal: tInput + tOutput + tCC + tCR,
+      lines,
+      activeMs: tActive,
+      sessions: rows.length,
+      members: memberAcc.size,
+      projects: realProjKeys.size,
+    },
+    activeMin: rows.length ? activeMin : 0,
+    activeMax: rows.length ? activeMax : 0,
+    allMembers: (db.prepare("SELECT DISTINCT gitUser FROM sessions").all() as Array<{ gitUser: string }>)
+      .map((r) => r.gitUser)
+      .sort(),
+    trend: [...trendMap.values()].sort((a, b) => a.ts - b.ts),
+    daily: [...dailyMap.values()].sort((a, b) => a.ts - b.ts),
+    composition: { input: tInput, output: tOutput, cache: tCC + tCR },
+    tokenRank: { member: tokenRankMember, project: tokenRankProject },
+    codeRank,
+    sizeBuckets: sizes,
+    members,
+  };
+}
+
+export interface SessionRowOut extends SessionRow {
+  name: string;
+}
+
+/** 会话明细分页(等价 RecentSessionsTable 的 flattenSessions.filter(token>0).sort(lastActive desc))。*/
+export function getSessions(
+  opts: FilterOpts & { member?: string },
+  page: number,
+  pageSize: number,
+): { rows: SessionRowOut[]; total: number; page: number; pageSize: number } {
+  const o: FilterOpts = opts.member ? { from: opts.from, members: [opts.member] } : opts;
+  const rows = querySessions(o)
+    .filter((r) => r.input + r.output + r.cacheCreation + r.cacheRead > 0)
+    .sort((a, b) => b.lastActive - a.lastActive);
+  const names = projectNameMap();
+  const total = rows.length;
+  const start = (page - 1) * pageSize;
+  const sliced = rows.slice(start, start + pageSize).map((r) => ({
+    ...r,
+    name: names.get(r.gitUser + "\0" + r.cwd) ?? r.cwd,
+  }));
+  return { rows: sliced, total, page, pageSize };
+}
+
+export interface MemberDetail {
+  gitUser: string;
+  lastActive: number;
+  totals: {
+    token: TokenUsage;
+    rawTotal: number;
+    lines: LinesStat;
+    activeMs: number;
+    sessions: number;
+    realProjects: number;
+  };
+  trend: DayBucket[];
+}
+
+/** 单成员 KPI + 趋势(给 MemberDetailPage;团队均值复用全局 getStats.totals)。*/
+export function getMember(gitUser: string, opts: { from: number; granularity: Granularity }): MemberDetail {
+  const rows = querySessions({ from: opts.from, members: [gitUser] });
+  let tInput = 0,
+    tOutput = 0,
+    tCC = 0,
+    tCR = 0,
+    tActive = 0,
+    tAdded = 0,
+    tDeleted = 0,
+    tModified = 0;
+  let lastActive = 0;
+  const realCwds = new Set<string>();
+  const trendMap = new Map<string, DayBucket>();
+  for (const r of rows) {
+    const t = r.input + r.output + r.cacheCreation + r.cacheRead;
+    tInput += r.input;
+    tOutput += r.output;
+    tCC += r.cacheCreation;
+    tCR += r.cacheRead;
+    tActive += r.activeMs;
+    tAdded += r.added;
+    tDeleted += r.deleted;
+    tModified += r.modified;
+    if (r.lastActive > lastActive) lastActive = r.lastActive;
+    if (isRealProjectCwd(r.cwd)) realCwds.add(r.cwd);
+    const tb = bucketOf(r.lastActive, opts.granularity);
+    const tr = trendMap.get(tb.key) ?? { date: tb.label, ts: r.lastActive, input: 0, output: 0, cache: 0, total: 0 };
+    tr.input += r.input;
+    tr.output += r.output;
+    tr.cache += r.cacheCreation + r.cacheRead;
+    tr.total += t;
+    tr.ts = r.lastActive;
+    trendMap.set(tb.key, tr);
   }
-  users.sort((a, b) => rawTotal(b.totalTokens) - rawTotal(a.totalTokens));
-  cachedUsers = users;
-  return users;
+  return {
+    gitUser,
+    lastActive,
+    totals: {
+      token: { input: tInput, output: tOutput, cacheCreation: tCC, cacheRead: tCR },
+      rawTotal: tInput + tOutput + tCC + tCR,
+      lines: { added: tAdded, deleted: tDeleted, modified: tModified },
+      activeMs: tActive,
+      sessions: rows.length,
+      realProjects: realCwds.size,
+    },
+    trend: [...trendMap.values()].sort((a, b) => a.ts - b.ts),
+  };
 }

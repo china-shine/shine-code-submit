@@ -1,16 +1,14 @@
-// 代码产出排行(按成员):行数 + 对话次数 + 行/K Token。删组别行(tokenserver 无 team)。
-import type { UserAgg } from "../../types";
-import { inoutTokens, lineTotal, fmtFull } from "../../lib/derive";
+// 代码产出排行(按成员):行数 + 对话次数 + 行/M Token。数据 = stats.codeRank(后端聚合)。
+import { fmtFull } from "../../lib/derive";
 import { Avatar } from "../common/Avatar";
 
-export function CodeRank({ users }: { users: UserAgg[] }) {
-  const rank = users
-    .map((u) => ({
-      name: u.gitUser || "未知",
-      code: lineTotal(u.totalLines),
-      convs: u.sessionCount,
-      inout: inoutTokens(u.totalTokens),
-    }))
+export function CodeRank({
+  codeRank,
+}: {
+  codeRank: Array<{ gitUser: string; lines: number; convs: number; token: number }>;
+}) {
+  const rank = codeRank
+    .map((c) => ({ name: c.gitUser || "未知", code: c.lines, convs: c.convs, inout: c.token }))
     .sort((a, b) => b.code - a.code);
 
   return (

@@ -1,6 +1,6 @@
 // 数据总览:6 KPI(含 sparkline) + (趋势|构成饼图) + (Token排行|代码排行|会话规模分布) + 最近会话表。
-// granularity 透传给趋势图(日/周/月聚合)。users 已经过 App 层时间范围+成员过滤。
-import type { UserAgg } from "../../types";
+// 数据 = stats(全局聚合,后端 SQL)+ sessionsPage(分页),不再吃全量 users。granularity 透传给趋势图。
+import type { StatsPayload, SessionsPage } from "../../types";
 import type { Granularity } from "../shell/TopBar";
 import { KpiCards } from "./KpiCards";
 import { TokenTrendChart } from "./TokenTrendChart";
@@ -11,32 +11,46 @@ import { SessionSizeBar } from "./SessionSizeBar";
 import { RecentSessionsTable } from "./RecentSessionsTable";
 
 export function OverviewPage({
-  users,
+  stats,
+  sessionsPage,
+  pageNum,
+  pageSize,
+  onPageChange,
   dark,
   granularity,
   onSelectMember,
 }: {
-  users: UserAgg[];
+  stats: StatsPayload;
+  sessionsPage: SessionsPage;
+  pageNum: number;
+  pageSize: number;
+  onPageChange: (n: number) => void;
   dark: boolean;
   granularity: Granularity;
   onSelectMember: (gitUser: string) => void;
 }) {
   return (
     <div className="space-y-5">
-      <KpiCards users={users} />
+      <KpiCards stats={stats} />
 
       <div className="grid grid-cols-12 gap-4">
-        <TokenTrendChart users={users} dark={dark} granularity={granularity} />
-        <TokenCompositionPie users={users} dark={dark} />
+        <TokenTrendChart trend={stats.trend} dark={dark} granularity={granularity} />
+        <TokenCompositionPie composition={stats.composition} dark={dark} />
       </div>
 
       <div className="grid grid-cols-12 gap-4">
-        <TokenRank users={users} onSelectMember={onSelectMember} />
-        <CodeRank users={users} />
-        <SessionSizeBar users={users} dark={dark} />
+        <TokenRank tokenRank={stats.tokenRank} onSelectMember={onSelectMember} />
+        <CodeRank codeRank={stats.codeRank} />
+        <SessionSizeBar sizeBuckets={stats.sizeBuckets} dark={dark} />
       </div>
 
-      <RecentSessionsTable users={users} />
+      <RecentSessionsTable
+        rows={sessionsPage.rows}
+        total={sessionsPage.total}
+        page={pageNum}
+        pageSize={pageSize}
+        onPageChange={onPageChange}
+      />
     </div>
   );
 }

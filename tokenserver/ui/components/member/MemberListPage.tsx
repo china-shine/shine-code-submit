@@ -1,16 +1,16 @@
-// 成员列表表(9 列)。效率 = 行/M Token(代码行 / 总Token * 1e6)。整行点击或「详情」按钮进详情。
-// 列:成员/最后同步/活跃项目/对话次数/对话时长/总Token/代码行/效率/操作。
+// 成员列表表(9 列)。数据 = stats.members(MemberAgg[],realProjects/sessionCount/activeMs 已聚合,不再前端 flatten/countRealProjects)。
+// 效率 = 行/M Token(代码行 / inout Token * 1e6)。整行点击或「详情」按钮进详情。
 import { Eye } from "lucide-react";
-import type { UserAgg } from "../../types";
-import { rawTotal, lineTotal, fmtK, fmtFull, fmtDuration, countRealProjects, flattenSessions, inoutTokens } from "../../lib/derive";
+import type { MemberAgg } from "../../types";
+import { rawTotal, lineTotal, inoutTokens, fmtK, fmtFull, fmtDuration } from "../../lib/derive";
 import { fmtDate } from "../../lib/util";
 import { Avatar } from "../common/Avatar";
 
 export function MemberListPage({
-  users,
+  members,
   onSelect,
 }: {
-  users: UserAgg[];
+  members: MemberAgg[];
   onSelect: (gitUser: string) => void;
 }) {
   return (
@@ -26,19 +26,18 @@ export function MemberListPage({
           </tr>
         </thead>
         <tbody>
-          {users.length === 0 ? (
+          {members.length === 0 ? (
             <tr>
               <td colSpan={9} className="py-6 text-center text-muted-foreground">
                 暂无成员数据
               </td>
             </tr>
           ) : (
-            users.map((u) => {
+            members.map((u) => {
               const lines = lineTotal(u.totalLines);
               const token = rawTotal(u.totalTokens);
               const inout = inoutTokens(u.totalTokens);
               const eff = inout > 0 ? Math.round((lines / inout) * 1_000_000) : 0;
-              const activeMs = flattenSessions([u]).reduce((a, s) => a + (s.activeMs ?? 0), 0);
               return (
                 <tr
                   key={u.gitUser || "?"}
@@ -52,9 +51,9 @@ export function MemberListPage({
                     </div>
                   </td>
                   <td className="py-3 px-4 font-mono text-muted-foreground whitespace-nowrap">{fmtDate(u.lastActive)}</td>
-                  <td className="py-3 px-4 font-mono text-foreground text-center">{countRealProjects(u)}</td>
+                  <td className="py-3 px-4 font-mono text-foreground text-center">{u.realProjects}</td>
                   <td className="py-3 px-4 font-mono text-indigo-600 dark:text-indigo-400">{u.sessionCount}</td>
-                  <td className="py-3 px-4 font-mono text-orange-600 dark:text-orange-400 whitespace-nowrap">{fmtDuration(activeMs)}</td>
+                  <td className="py-3 px-4 font-mono text-orange-600 dark:text-orange-400 whitespace-nowrap">{fmtDuration(u.activeMs)}</td>
                   <td className="py-3 px-4 font-mono font-medium text-foreground">{fmtK(token)}</td>
                   <td className="py-3 px-4 font-mono text-teal-600 dark:text-teal-400">{fmtFull(lines)}</td>
                   <td className="py-3 px-4 font-mono text-muted-foreground">{eff}</td>

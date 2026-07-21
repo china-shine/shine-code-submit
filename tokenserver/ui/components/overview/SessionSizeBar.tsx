@@ -1,12 +1,16 @@
-// 会话规模分布 BarChart。TokenWeb 原为「对话时长分布」,tokenserver 无 duration,
-// 语义替换为「按总 Token 分桶」并诚实标注。BarChart 形态/配色不变,色用 C.dur。
+// 会话规模分布 BarChart(按总 Token 分桶)。数据 = stats.sizeBuckets(后端聚合)。
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import type { UserAgg } from "../../types";
-import { sessionSizeBuckets, C } from "../../lib/derive";
+import { C } from "../../lib/derive";
 import { chartTheme } from "./chartTheme";
 
-export function SessionSizeBar({ users, dark }: { users: UserAgg[]; dark: boolean }) {
-  const data = sessionSizeBuckets(users);
+export function SessionSizeBar({
+  sizeBuckets,
+  dark,
+}: {
+  sizeBuckets: Array<{ range: string; count: number }>;
+  dark: boolean;
+}) {
+  const data = sizeBuckets;
   const { tooltipStyle, tickStyle, gridStroke } = chartTheme(dark);
 
   return (

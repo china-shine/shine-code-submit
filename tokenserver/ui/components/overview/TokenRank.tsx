@@ -1,28 +1,24 @@
-// Token 消耗排行:成员/项目两 tab(删模型 tab,tokenserver 无 model 字段)。
+// Token 消耗排行:成员/项目两 tab。数据 = stats.tokenRank(后端聚合,isRealProject 过滤已在后端)。
 // 成员项可点击 → onSelectMember 跳转成员详情。进度条宽度相对榜首。
 import { useState } from "react";
 import { Cpu } from "lucide-react";
-import type { UserAgg } from "../../types";
-import { rawTotal, fmtK, displayProjectName, isRealProject } from "../../lib/derive";
+import { fmtK, displayProjectName } from "../../lib/derive";
 import { Avatar } from "../common/Avatar";
 
 export function TokenRank({
-  users,
+  tokenRank,
   onSelectMember,
 }: {
-  users: UserAgg[];
+  tokenRank: {
+    member: Array<{ gitUser: string; token: number }>;
+    project: Array<{ cwd: string; name: string; token: number }>;
+  };
   onSelectMember?: (gitUser: string) => void;
 }) {
   const [rankBy, setRankBy] = useState<"member" | "project">("member");
 
-  const memberRank = users
-    .map((u) => ({ name: u.gitUser || "未知", gitUser: u.gitUser, token: rawTotal(u.totalTokens) }))
-    .sort((a, b) => b.token - a.token);
-  const projectRank = users
-    .flatMap((u) => u.projects)
-    .filter((p) => isRealProject(p.cwd))
-    .map((p) => ({ name: displayProjectName(p.name, p.cwd), token: rawTotal(p.totalTokens) }))
-    .sort((a, b) => b.token - a.token);
+  const memberRank = tokenRank.member.map((m) => ({ name: m.gitUser || "未知", gitUser: m.gitUser, token: m.token }));
+  const projectRank = tokenRank.project.map((p) => ({ name: displayProjectName(p.name, p.cwd), token: p.token }));
   const list = rankBy === "member" ? memberRank : projectRank;
   const max = list[0]?.token || 1;
 
@@ -52,7 +48,7 @@ export function TokenRank({
               key={(m.name || "?") + i}
               className={`flex items-center gap-2.5 ${rankBy === "member" && onSelectMember ? "cursor-pointer hover:bg-muted/40 -mx-1 px-1 rounded" : ""}`}
               onClick={() => {
-                if (rankBy === "member" && onSelectMember) onSelectMember(m.gitUser);
+                if (rankBy === "member" && onSelectMember) onSelectMember((m as { gitUser?: string }).gitUser ?? m.name);
               }}
             >
               <span className="text-xs text-muted-foreground w-4 text-right">{i + 1}</span>

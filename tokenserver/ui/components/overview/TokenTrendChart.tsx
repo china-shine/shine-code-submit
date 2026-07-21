@@ -1,15 +1,15 @@
 // Token 消耗趋势 AreaChart(总量/输入/输出/缓存 4 视图)。
-// 数据 = bucketByGranularity(flattenSessions(users)):按 session.lastActive 在所选粒度(日/周/月)聚合。
+// 数据 = stats.trend(后端按所选粒度日/周/月聚合的 DayBucket[]),不再前端 flattenSessions。
 import { useState } from "react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import type { UserAgg } from "../../types";
-import { bucketByGranularity, flattenSessions, fmtK, fmtFull, C } from "../../lib/derive";
+import type { DayBucket } from "../../types";
+import { fmtK, fmtFull, C } from "../../lib/derive";
 import type { Granularity } from "../shell/TopBar";
 import { chartTheme } from "./chartTheme";
 
-export function TokenTrendChart({ users, dark, granularity }: { users: UserAgg[]; dark: boolean; granularity: Granularity }) {
+export function TokenTrendChart({ trend, dark, granularity }: { trend: DayBucket[]; dark: boolean; granularity: Granularity }) {
   const [tokenView, setTokenView] = useState<"total" | "input" | "output" | "cache">("total");
-  const data = bucketByGranularity(flattenSessions(users), granularity);
+  const data = trend;
   const { tooltipStyle, tickStyle, gridStroke } = chartTheme(dark);
   const tokenColor = { total: C.total, input: C.input, output: C.output, cache: C.cache }[tokenView];
   const range = data.length > 0 ? `${data[0].date} – ${data[data.length - 1].date}` : "—";

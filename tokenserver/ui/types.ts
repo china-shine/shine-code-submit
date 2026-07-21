@@ -1,4 +1,4 @@
-// GET /api/reports 响应类型（与 src/store.ts 的 UserAgg/ProjectAgg/SessionAgg 一致）。
+// API 响应类型(服务端化:/api/stats + /api/sessions + /api/member)。
 
 export interface TokenUsage {
   input: number;
@@ -13,36 +13,93 @@ export interface LinesStat {
   modified: number;
 }
 
-export interface SessionAgg {
-  sessionId: string;
-  lastActive: number;
-  tokenTotal: TokenUsage | null;
-  linesTotal: LinesStat | null;
-  activeMs?: number; // gap-aware 活跃时长(ms)
-  title?: string | null;
-}
+export type Granularity = "day" | "week" | "month";
 
-export interface ProjectAgg {
-  cwd: string;
-  name: string;
-  gitRemote: string | null;
-  lastActive: number;
-  sessionCount: number;
-  totalTokens: TokenUsage;
-  totalLines: LinesStat;
-  sessions: SessionAgg[];
+export interface DayBucket {
+  date: string;
+  ts: number;
+  input: number;
+  output: number;
+  cache: number;
+  total: number;
 }
-
-export interface UserAgg {
+export interface DailyStat {
+  date: string;
+  ts: number;
+  total: number;
+  sessions: number;
+  lines: number;
+  dur: number;
+}
+export interface MemberAgg {
   gitUser: string;
   lastActive: number;
-  projectCount: number;
+  realProjects: number;
   sessionCount: number;
+  activeMs: number;
   totalTokens: TokenUsage;
   totalLines: LinesStat;
-  projects: ProjectAgg[];
+}
+export interface StatsPayload {
+  totals: {
+    token: TokenUsage;
+    rawTotal: number;
+    lines: LinesStat;
+    activeMs: number;
+    sessions: number;
+    members: number;
+    projects: number;
+  };
+  activeMin: number; // 过滤后 lastActive min(范围徽章)
+  activeMax: number; // 过滤后 lastActive max
+  allMembers: string[]; // 全量 gitUser(成员下拉,不受 members 过滤)
+  trend: DayBucket[]; // 按 granularity(TokenTrendChart)
+  daily: DailyStat[]; // 固定 day(KpiCards sparkline)
+  composition: { input: number; output: number; cache: number };
+  tokenRank: {
+    member: Array<{ gitUser: string; token: number }>;
+    project: Array<{ cwd: string; name: string; token: number }>;
+  };
+  codeRank: Array<{ gitUser: string; lines: number; convs: number; token: number }>;
+  sizeBuckets: Array<{ range: string; count: number }>;
+  members: MemberAgg[];
 }
 
-export interface ReportsResponse {
-  users: UserAgg[];
+/** /api/sessions 的单行(会话明细 + 项目展示名 fallback,前端 displayProjectName 再清洗)。*/
+export interface SessionRowOut {
+  sessionId: string;
+  gitUser: string;
+  cwd: string;
+  lastActive: number;
+  input: number;
+  output: number;
+  cacheCreation: number;
+  cacheRead: number;
+  added: number;
+  deleted: number;
+  modified: number;
+  activeMs: number;
+  title: string | null;
+  name: string;
+}
+export interface SessionsPage {
+  rows: SessionRowOut[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
+
+/** /api/member/:gitUser 响应(单成员 KPI + 趋势)。*/
+export interface MemberDetail {
+  gitUser: string;
+  lastActive: number;
+  totals: {
+    token: TokenUsage;
+    rawTotal: number;
+    lines: LinesStat;
+    activeMs: number;
+    sessions: number;
+    realProjects: number;
+  };
+  trend: DayBucket[];
 }

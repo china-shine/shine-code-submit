@@ -78,6 +78,7 @@ chmod +x tokenserver-linux-x64
 
 # 3. 后台运行(data/ 目录自动建在二进制旁,需可写)
 nohup ./tokenserver-linux-x64 > tokenserver.log 2>&1 &
+nohup env PORT=8091 ./tokenserver-linux-x64 > tokenserver.log 2>&1 &
 
 # 4. 放行端口(默认 36667)
 sudo ufw allow 36667
@@ -130,9 +131,11 @@ curl -X PUT http://127.0.0.1:36666/api/settings \
 ## API
 
 - `GET /api/health` — 健康检查（无鉴权）
-- `POST /api/report` — 接收上报，body = `ReportResponse` JSON
-- `GET /api/reports` — 聚合返回三级结构 `{ users: [{ gitUser, projects: [{ cwd, sessions }] }] }`
-- `GET /` — 单页 UI
+- `POST /api/report` — daemon 上报，body = `ReportResponse` JSON（全量快照，upsert 入库）
+- `GET /api/stats?range=&members=&granularity=` — 全局聚合（KPI/趋势/排行/规模分布/成员列表），供 overview
+- `GET /api/sessions?range=&members=&member=&page=&pageSize=` — 会话明细分页（翻页查 DB）
+- `GET /api/member/:gitUser?range=&granularity=` — 单成员 KPI + 趋势（成员详情）
+- `GET /` — 单页 UI（app.js/style.css 走 gzip + ETag）
 
 > ⚠️ `POST /api/report` 当前无鉴权，局域网/本地用没问题；公网暴露前建议加 token 校验。
 
@@ -148,7 +151,7 @@ sessions(sessionId, gitUser, cwd, lastActive,
 
 - 上报时拆分逐条 upsert：项目按 `(gitUser, cwd)` 去重，会话按 `sessionId` 去重（仅 `lastActive >= 旧` 时覆盖 token，取最新快照）
 - `tokenTotal` 拆成 4 个整数列，SQL 可直接 SUM
-- `aggregate()` 结果内存缓存，`saveReport` 时失效（查询 O(1)）
+- 聚合查询（`getStats` / `getMember`）实时算，`getSessions` 走 LIMIT/OFFSET；前端不再有全量拉取，所有响应大小不随会话数膨胀
 
 上报是**全量快照**（daemon 每次上报所有项目/会话，非增量），所以覆盖式取最新即可代表当前状态。
 

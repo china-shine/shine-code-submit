@@ -1,67 +1,108 @@
-// 成员详情:返回 + 头像 + 6 KPI(对话总时长为 gap-aware 估算) + Token 使用趋势(该 user 按天聚合) + 与团队均值对比 + 该用户最近会话表。
+// 成员详情:返回 + 头像 + 6 KPI + Token 使用趋势 + 与团队均值对比 + 该用户最近会话表。
+// 全部服务端化:KPI/趋势 = /api/member/:X;团队均值 = 全局 stats.totals;会话表 = /api/sessions?member=X(翻页查 DB)。
+import { useEffect, useState } from "react";
 import { ChevronRight } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import type { UserAgg } from "../../types";
-import { rawTotal, lineTotal, bucketByGranularity, flattenSessions, globalTotals, fmtK, fmtFull, fmtDuration, C, countRealProjects, inoutTokens } from "../../lib/derive";
+import type { MemberDetail, SessionsPage, StatsPayload } from "../../types";
+import { rawTotal, lineTotal, inoutTokens, fmtK, fmtFull, fmtDuration, C } from "../../lib/derive";
 import { fmtDate } from "../../lib/util";
+import { fetchMember, fetchSessions } from "../../lib/api";
 import { Avatar } from "../common/Avatar";
 import { RecentSessionsTable } from "../overview/RecentSessionsTable";
 import { chartTheme } from "../overview/chartTheme";
-import type { Granularity } from "../shell/TopBar";
+import type { Granularity, RangeKey } from "../shell/TopBar";
+
+const PAGE_SIZE = 20;
 
 export function MemberDetailPage({
-  users,
   dark,
   gitUser,
   granularity,
+  range,
+  teamStats,
   onBack,
 }: {
-  users: UserAgg[];
   dark: boolean;
   gitUser: string;
   granularity: Granularity;
+  range: RangeKey;
+  teamStats: StatsPayload["totals"];
   onBack: () => void;
 }) {
-  const user = users.find((u) => u.gitUser === gitUser) ?? null;
+  const [member, setMember] = useState<MemberDetail | null>(null);
+  const [sessionsPage, setSessionsPage] = useState<SessionsPage | null>(null);
+  const [pageNum, setPageNum] = useState(1);
+
+  // 进详情/range/granularity 变 → 拉单成员 + 会话首页
+  useEffect(() => {
+    let cancelled = false;
+    setMember(null);
+    Promise.all([
+      fetchMember(gitUser, { range, granularity }),
+      fetchSessions({ range, members: [], member: gitUser, page: 1, pageSize: PAGE_SIZE }),
+    ])
+      .then(([m, sp]) => {
+        if (!cancelled) {
+          setMember(m);
+          setSessionsPage(sp);
+          setPageNum(1);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [gitUser, range, granularity]);
+
+  const loadPage = async (n: number) => {
+    try {
+      const sp = await fetchSessions({ range, members: [], member: gitUser, page: n, pageSize: PAGE_SIZE });
+      setSessionsPage(sp);
+      setPageNum(n);
+    } catch {
+      /* ignore */
+    }
+  };
+
   const { tooltipStyle, tickStyle, gridStroke } = chartTheme(dark);
 
-  if (!user) {
+  if (!member) {
     return (
       <div className="text-muted-foreground">
-        未找到成员:{gitUser || "(空)"}
+        加载中…
         <button onClick={onBack} className="text-primary hover:underline ml-2">返回</button>
       </div>
     );
   }
 
-  const token = rawTotal(user.totalTokens);
-  const lines = lineTotal(user.totalLines);
-  const inout = inoutTokens(user.totalTokens);
+  const t = member.totals;
+  const token = t.rawTotal;
+  const lines = lineTotal(t.lines);
+  const inout = inoutTokens(t.token);
   const eff = inout > 0 ? Math.round((lines / inout) * 1_000_000) : 0;
-  const flat = flattenSessions([user]);
-  const trend = bucketByGranularity(flat, granularity);
+  const trend = member.trend;
   const granularityLabel = { day: "日", week: "周", month: "月" }[granularity];
-  const range = trend.length > 0 ? `${trend[0].date} – ${trend[trend.length - 1].date}` : "—";
-  const userActiveMs = flat.reduce((a, s) => a + (s.activeMs ?? 0), 0);
+  const range2 = trend.length > 0 ? `${trend[0].date} – ${trend[trend.length - 1].date}` : "—";
 
-  const g = globalTotals(users);
+  // 团队均值(全局 teamStats;teamMembers 作分母)
+  const teamMembers = teamStats.members;
   const teamAvg = {
-    token: users.length > 0 ? Math.round(g.rawTotal / users.length) : 0,
-    convs: users.length > 0 ? Math.round(g.sessions / users.length) : 0,
-    lines: users.length > 0 ? Math.round(lineTotal(g.lines) / users.length) : 0,
+    token: teamMembers > 0 ? Math.round(teamStats.rawTotal / teamMembers) : 0,
+    convs: teamMembers > 0 ? Math.round(teamStats.sessions / teamMembers) : 0,
+    lines: teamMembers > 0 ? Math.round(lineTotal(teamStats.lines) / teamMembers) : 0,
   };
 
   const kpis = [
-    { label: "对话次数", value: fmtFull(user.sessionCount), color: "text-indigo-600 dark:text-indigo-400" },
-    { label: "对话总时长", value: fmtDuration(userActiveMs), color: "text-orange-600 dark:text-orange-400" },
+    { label: "对话次数", value: fmtFull(t.sessions), color: "text-indigo-600 dark:text-indigo-400" },
+    { label: "对话总时长", value: fmtDuration(t.activeMs), color: "text-orange-600 dark:text-orange-400" },
     { label: "总 Token", value: fmtK(token), color: "text-violet-600 dark:text-violet-400" },
     { label: "代码行数", value: fmtFull(lines), color: "text-teal-600 dark:text-teal-400" },
-    { label: "活跃项目", value: fmtFull(countRealProjects(user)), color: "text-blue-600 dark:text-blue-400" },
+    { label: "活跃项目", value: fmtFull(t.realProjects), color: "text-blue-600 dark:text-blue-400" },
     { label: "Token 效率", value: `${eff} 行/M`, color: "text-foreground" },
   ];
   const compare = [
     { label: "Token 消耗", personal: token, avg: teamAvg.token },
-    { label: "对话次数", personal: user.sessionCount, avg: teamAvg.convs },
+    { label: "对话次数", personal: t.sessions, avg: teamAvg.convs },
     { label: "代码行数", personal: lines, avg: teamAvg.lines },
   ];
 
@@ -72,10 +113,10 @@ export function MemberDetailPage({
       </button>
 
       <div className="flex items-center gap-4">
-        <Avatar name={user.gitUser || "?"} size="lg" />
+        <Avatar name={member.gitUser || "?"} size="lg" />
         <div>
-          <h2 className="text-lg font-semibold text-foreground">{user.gitUser || "未知"}</h2>
-          <p className="text-xs text-muted-foreground mt-0.5">最后同步 {fmtDate(user.lastActive)}</p>
+          <h2 className="text-lg font-semibold text-foreground">{member.gitUser || "未知"}</h2>
+          <p className="text-xs text-muted-foreground mt-0.5">最后同步 {fmtDate(member.lastActive)}</p>
         </div>
       </div>
 
@@ -91,7 +132,7 @@ export function MemberDetailPage({
       <div className="grid grid-cols-12 gap-4">
         <div className="col-span-8 bg-card border border-border rounded p-4">
           <h3 className="text-sm font-semibold text-foreground">Token 使用趋势</h3>
-          <p className="text-xs text-muted-foreground mt-0.5 mb-4">{range} · 按会话最后活跃{granularityLabel}聚合</p>
+          <p className="text-xs text-muted-foreground mt-0.5 mb-4">{range2} · 按会话最后活跃{granularityLabel}聚合</p>
           <ResponsiveContainer width="100%" height={200}>
             <AreaChart data={trend} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
               <defs>
@@ -111,44 +152,50 @@ export function MemberDetailPage({
 
         <div className="col-span-4 bg-card border border-border rounded p-4">
           <h3 className="text-sm font-semibold text-foreground mb-4">与团队均值对比</h3>
-          {users.length <= 1 ? (
-            <p className="text-xs text-muted-foreground py-4 text-center">仅 {users.length} 名成员,无团队对比意义(需 ≥2 名成员)</p>
+          {teamMembers <= 1 ? (
+            <p className="text-xs text-muted-foreground py-4 text-center">仅 {teamMembers} 名成员,无团队对比意义(需 ≥2 名成员)</p>
           ) : (
-          <div className="space-y-4">
-            {compare.map((c) => {
-              const max = Math.max(c.personal, c.avg, 1);
-              return (
-                <div key={c.label}>
-                  <p className="text-xs text-muted-foreground mb-1.5">{c.label}</p>
-                  <div className="space-y-1.5">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-mono text-foreground w-14 text-right">
-                        {c.personal >= 1000 ? fmtK(c.personal) : c.personal}
-                      </span>
-                      <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                        <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${(c.personal / max) * 100}%` }} />
+            <div className="space-y-4">
+              {compare.map((c) => {
+                const max = Math.max(c.personal, c.avg, 1);
+                return (
+                  <div key={c.label}>
+                    <p className="text-xs text-muted-foreground mb-1.5">{c.label}</p>
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono text-foreground w-14 text-right">
+                          {c.personal >= 1000 ? fmtK(c.personal) : c.personal}
+                        </span>
+                        <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                          <div className="h-full bg-indigo-500 rounded-full transition-all" style={{ width: `${(c.personal / max) * 100}%` }} />
+                        </div>
+                        <span className="text-xs text-indigo-600 dark:text-indigo-400 w-7">本人</span>
                       </div>
-                      <span className="text-xs text-indigo-600 dark:text-indigo-400 w-7">本人</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-mono text-muted-foreground w-14 text-right">
-                        {c.avg >= 1000 ? fmtK(c.avg) : c.avg}
-                      </span>
-                      <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
-                        <div className="h-full bg-muted-foreground/40 rounded-full transition-all" style={{ width: `${(c.avg / max) * 100}%` }} />
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono text-muted-foreground w-14 text-right">
+                          {c.avg >= 1000 ? fmtK(c.avg) : c.avg}
+                        </span>
+                        <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                          <div className="h-full bg-muted-foreground/40 rounded-full transition-all" style={{ width: `${(c.avg / max) * 100}%` }} />
+                        </div>
+                        <span className="text-xs text-muted-foreground w-7">均值</span>
                       </div>
-                      <span className="text-xs text-muted-foreground w-7">均值</span>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
           )}
         </div>
       </div>
 
-      <RecentSessionsTable users={[user]} />
+      <RecentSessionsTable
+        rows={sessionsPage?.rows ?? []}
+        total={sessionsPage?.total ?? 0}
+        page={pageNum}
+        pageSize={PAGE_SIZE}
+        onPageChange={loadPage}
+      />
     </div>
   );
 }

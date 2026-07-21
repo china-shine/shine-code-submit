@@ -1,15 +1,19 @@
-// Token 构成环形饼图(输入/输出/缓存) + 中心总数 + 图例占比。数据 = globalTotals 四件套求和。
+// Token 构成环形饼图(输入/输出/缓存) + 中心总数 + 图例占比。数据 = stats.composition。
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
-import type { UserAgg } from "../../types";
-import { globalTotals, fmtK, C } from "../../lib/derive";
+import { fmtK, C } from "../../lib/derive";
 import { chartTheme } from "./chartTheme";
 
-export function TokenCompositionPie({ users, dark }: { users: UserAgg[]; dark: boolean }) {
-  const t = globalTotals(users);
+export function TokenCompositionPie({
+  composition,
+  dark,
+}: {
+  composition: { input: number; output: number; cache: number };
+  dark: boolean;
+}) {
   const pieData = [
-    { name: "输入 Token", value: t.token.input, color: C.input },
-    { name: "输出 Token", value: t.token.output, color: C.output },
-    { name: "缓存 Token", value: t.token.cacheCreation + t.token.cacheRead, color: C.cache },
+    { name: "输入 Token", value: composition.input, color: C.input },
+    { name: "输出 Token", value: composition.output, color: C.output },
+    { name: "缓存 Token", value: composition.cache, color: C.cache },
   ];
   const pieTotal = pieData.reduce((s, d) => s + d.value, 0);
   const { tooltipStyle } = chartTheme(dark);

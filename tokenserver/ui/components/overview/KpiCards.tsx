@@ -1,14 +1,14 @@
 // 6 KPI 卡。总Token/对话次数/代码行/时长 四卡带 sparkline(按日序列)。时长为 gap-aware 估算。
-// 数据全部来自 globalTotals 现聚合(users 已经过 App 层过滤)。删 change%(无历史)。
+// 数据 = stats.totals(全局聚合)+ stats.daily(按日 sparkline),不再现场 globalTotals/dailyStats。
 import { Coins, Activity, Clock, Code2, Users, Cpu } from "lucide-react";
-import type { UserAgg } from "../../types";
-import { globalTotals, dailyStats, fmtK, fmtFull, fmtDuration, lineTotal, C } from "../../lib/derive";
+import type { StatsPayload } from "../../types";
+import { fmtK, fmtFull, fmtDuration, lineTotal, C } from "../../lib/derive";
 import { MetricCard } from "../common/MetricCard";
 import { MiniSparkline } from "../common/MiniSparkline";
 
-export function KpiCards({ users }: { users: UserAgg[] }) {
-  const t = globalTotals(users);
-  const ds = dailyStats(users);
+export function KpiCards({ stats }: { stats: StatsPayload }) {
+  const t = stats.totals;
+  const ds = stats.daily;
   const totalSeries = ds.map((d) => d.total);
   const sessionSeries = ds.map((d) => d.sessions);
   const linesSeries = ds.map((d) => d.lines);
@@ -58,7 +58,7 @@ export function KpiCards({ users }: { users: UserAgg[] }) {
       <MetricCard
         title="活跃项目"
         value={fmtFull(t.projects)}
-        sub="跨用户项目数"
+        sub="跨用户真项目数"
         icon={<Cpu className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />}
         color="bg-cyan-50 dark:bg-cyan-900/30"
       />

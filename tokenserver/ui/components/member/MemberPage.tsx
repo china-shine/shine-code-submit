@@ -1,32 +1,35 @@
-// 成员分析路由:selected 为空显示列表,非空显示该成员详情。
-import type { UserAgg } from "../../types";
-import type { Granularity } from "../shell/TopBar";
+// 成员分析路由:selected 为空显示列表(用 stats.members),非空显示该成员详情(详情自己 fetchMember,团队均值复用 stats.totals)。
+import type { StatsPayload } from "../../types";
+import type { Granularity, RangeKey } from "../shell/TopBar";
 import { MemberListPage } from "./MemberListPage";
 import { MemberDetailPage } from "./MemberDetailPage";
 
 export function MemberPage({
-  users,
+  stats,
   dark,
   granularity,
+  range,
   selected,
   setSelected,
 }: {
-  users: UserAgg[];
+  stats: StatsPayload;
   dark: boolean;
   granularity: Granularity;
+  range: RangeKey;
   selected: string | null;
   setSelected: (g: string | null) => void;
 }) {
   if (selected) {
     return (
       <MemberDetailPage
-        users={users}
         dark={dark}
         gitUser={selected}
         granularity={granularity}
+        range={range}
+        teamStats={stats.totals}
         onBack={() => setSelected(null)}
       />
     );
   }
-  return <MemberListPage users={users} onSelect={(g) => setSelected(g)} />;
+  return <MemberListPage members={stats.members} onSelect={(g) => setSelected(g)} />;
 }
