@@ -19,3 +19,4 @@ bin/*/
 venv
 tmp.txt
 TokenWeb
+logs
