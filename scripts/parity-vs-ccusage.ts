@@ -12,8 +12,8 @@ const STATIC_MS = 10 * 60 * 1000; // 10 分钟内无活动视为活跃
 
 // ---- ccusage ----
 const cc = await (await Bun.file(CCFILE).json()) as {
-  session: Array<{
-    period: string; // sessionId
+  sessions: Array<{
+    sessionId: string;
     inputTokens: number; outputTokens: number;
     cacheCreationTokens: number; cacheReadTokens: number;
     totalTokens: number; totalCost: number;
@@ -21,8 +21,8 @@ const cc = await (await Bun.file(CCFILE).json()) as {
   totals: unknown;
 };
 const ccMap = new Map<string, { input: number; output: number; cacheCreation: number; cacheRead: number; total: number }>();
-for (const s of cc.session) {
-  ccMap.set(s.period, {
+for (const s of cc.sessions) {
+  ccMap.set(s.sessionId, {
     input: s.inputTokens, output: s.outputTokens,
     cacheCreation: s.cacheCreationTokens, cacheRead: s.cacheReadTokens,
     total: s.totalTokens,
@@ -98,12 +98,12 @@ for (const id of allIds) {
 
 // ---- 全局总量对比 ----
 const ccTot = { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 };
-for (const s of cc.session) { ccTot.input += s.inputTokens; ccTot.output += s.outputTokens; ccTot.cacheCreation += s.cacheCreationTokens; ccTot.cacheRead += s.cacheReadTokens; }
+for (const s of cc.sessions) { ccTot.input += s.inputTokens; ccTot.output += s.outputTokens; ccTot.cacheCreation += s.cacheCreationTokens; ccTot.cacheRead += s.cacheReadTokens; }
 const dTot = rep.totals.tokens;
 
 console.log(JSON.stringify({
   summary: {
-    ccusage_sessions: cc.session.length,
+    ccusage_sessions: cc.sessions.length,
     daemon_sessions: dMap.size,
     both_match: bothMatch,
     both_diff: bothDiff,
