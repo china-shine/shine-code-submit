@@ -131,6 +131,43 @@ bun run build                # 编译本机平台 daemon/hook/cli 到 bin/<plat>
 - `bin/<plat>-<arch>/`：`bun build --compile` 产出的**本机**二进制，开发自测用、**gitignored、不入库、不发布**。launcher 优先用它、没有则 `bun run src/...`，所以不 build 也能跑。
 - 发版到 npm：`bash scripts/publish.sh`（build → `npm pack` → `fix-tarball-mode.py` 修 `+x` → `npm publish <tgz>`）。详见 [`CHANGELOG.md`](./CHANGELOG.md)。
 
+### 源码调试（直接 bun run，不经插件 / exe）
+
+调试 daemon / hook / UI 的首选：绕开插件机制与 `bin/launcher.cjs`，全程 `bun run` 源码，改 `.ts` 即时生效、不 build 任何二进制。
+
+> 不用 `/plugin install` 本地目录的原因：`launcher.cjs` 见 `bin/<plat>-<arch>/hook.exe` 存在就优先 spawn 二进制（固化旧版），插件路径还可能复制到 cache；下法彻底绕开。
+
+**① 起 daemon**（源码模式，占住 36666）：
+
+```bash
+bun run src/daemon/main.ts
+```
+
+Dashboard：`http://localhost:36666/ui?t=<token>`，token 在 `%LOCALAPPDATA%/shine-code-submit/daemon.pid`，或 `bun run src/cli/main.ts ui` 打印带 token 链接。已有个同源 daemon 在跑时会自检复用、不重复启动（`isOursAlive`）。
+
+**② Claude Code 事件走源码 hook**——项目 `.claude/settings.local.json`（已 gitignore，本地专用）把各事件 command 直指源码：
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "bun run \"<仓库绝对路径>/src/hook/main.ts\" PostToolUse" }] }],
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "bun run \"<仓库绝对路径>/src/hook/main.ts\" SessionStart" }] }]
+  }
+}
+```
+
+（`UserPromptSubmit / Stop / SubagentStop / PreCompact / SessionEnd` 同理。）**重启 Claude Code** 加载后，本项目事件直接跑源码 hook，不碰 `bin/*.exe`。
+
+**③ 改代码生效**：
+
+| 改动 | 操作 |
+|---|---|
+| `src/daemon/*.ts` | 重启 daemon：`powershell -c "Stop-Process -Id <pid> -Force"`（pid 见 pid 文件）后重跑① |
+| `src/hook/*.ts` | 下次 hook 触发自动用新源码，无需重启 |
+| `ui/*.tsx` | `bun run build:ui` 重新生成 `src/daemon/ui-assets.ts` → 重启 daemon |
+
+`npm run build:ui`（`scripts/build-ui.ts`）只把 `ui/*` bundle 成字符串嵌入 `ui-assets.ts`、**不 build exe**，与 `build.ts` 的 ui 段同口径。源码 hook 每次事件 `spawn bun`，比二进制慢、`PostToolUse` 高频事件有几百 ms 延迟，调试完删 `settings.local.json` 即恢复。
+
 ## 目录
 
 ```

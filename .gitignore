@@ -16,6 +16,9 @@ ui/.build/
 
 # 方案 C：bin/ 只留 launcher.js；平台二进制（bun run build 产物）不入库
 bin/*/
+
+# Claude Code 本地调试配置（源码模式 hooks，含本机绝对路径，不入库）
+.claude/settings.local.json
 venv
 tmp.txt
 TokenWeb

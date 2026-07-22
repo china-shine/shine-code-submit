@@ -48,6 +48,7 @@
     "hook": "bun run src/hook/main.ts",
     "cli": "bun run src/cli/main.ts",
     "build": "bun run scripts/build.ts",
+    "build:ui": "bun run scripts/build-ui.ts",
     "build:all": "bun run scripts/build.ts --all",
     "build:install": "bun run scripts/build-install.ts",
     "build:dist": "bun run scripts/build.ts && bun run scripts/build-install.ts",
