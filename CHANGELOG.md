@@ -2,6 +2,13 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.1.5 — 2026-07-22
+
+每次打开 Claude 都显示 dashboard 链接（resume 也显示）。
+
+### 改动
+- **resume 也始终打链接**：SessionStart 块原仅 `source=startup` 始终打链接，`resume` 只在升级时打。改为 `startup` 与 `resume` 都每次打链接——用户无论全新启动还是 `claude -c` / `--resume` / 从历史恢复，进入即看到入口。不覆盖 `clear` / `compact`（会话中途的 `/clear`、`/compact`），避免刷屏。升级 / 首次仍带 ✨ 前缀。
+
 ## 1.1.4 — 2026-07-22
 
 修复升级提示在「首次遇到该功能的版本」上不显示的问题：1.1.3 引入了升级提示，但自身无基线版本可比（`notice.json` 是 1.1.3 才有的文件），导致所有用户升到 1.1.3 时都看不到提示。

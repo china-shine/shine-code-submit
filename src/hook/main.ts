@@ -51,22 +51,19 @@ async function main(): Promise<void> {
 
   // 3. SessionStart 时给用户打印 UI 入口：stdout 输出 JSON，Claude Code 解析 systemMessage
   //    字段直接显示给用户（裸 stdout 只注入 assistant 当 context，用户不可见）。
-  //    · dashboard 链接仅 source=startup 打印（避免 resume/clear/compact 刷屏）；读不到 token（daemon 未就绪）则静默跳过。
-  //    · 升级提示（✨ 已升级 vX + 链接）在 startup 与 resume 各打【一次】：自动升级会重启 daemon，
-  //      但 token 持久、链接不变；用户重新进入 Claude 时凭 NOTICE_FILE 记录的版本差异感知到升级，
-  //      记录更新后同版本不再提示。resume 也覆盖，避免只 --resume 从不看提示的用户漏掉。
+  //    · 每次「打开/回到」Claude（source=startup 或 resume）都打链接——任何方式进入都能看到入口。
+  //    · 不覆盖 clear/compact（会话中途的 /clear、/compact），避免中途刷屏。
+  //    · 升级/首次时链接前带「✨ 已升级 vX / ✨ vX」（upgradeNotice，凭 NOTICE_FILE 版本差异，同版本不带）。
+  //    · 读不到 token（daemon 未就绪）则静默跳过。
   if (event.type === "SessionStart") {
     const source = (event.payload as Record<string, unknown> | null | undefined)?.source;
-    const isStartup = source === "startup";
-    if (isStartup || source === "resume") {
+    if (source === "startup" || source === "resume") {
       const token = readToken();
       if (token) {
-        const note = upgradeNotice(); // 升级→"✨ …vX\n"；首次/同版本→""；顺带落 NOTICE_FILE
-        if (note || isStartup) {
-          const url = `${PUBLIC_BASE_URL}/ui?t=${token}`; // 网卡 IP：显示与打开浏览器用同一地址，局域网通用
-          process.stdout.write(JSON.stringify({ systemMessage: `${note}Shine Dashboard: ${url}` }));
-          // openBrowser(url); // 自动弹浏览器暂时关闭——链接仍作 systemMessage 打印,用户可点开
-        }
+        const note = upgradeNotice(); // 升级/首次→"✨ …\n"；同版本→""；顺带落 NOTICE_FILE
+        const url = `${PUBLIC_BASE_URL}/ui?t=${token}`; // 网卡 IP：显示与打开浏览器用同一地址，局域网通用
+        process.stdout.write(JSON.stringify({ systemMessage: `${note}Shine Dashboard: ${url}` }));
+        // openBrowser(url); // 自动弹浏览器暂时关闭——链接仍作 systemMessage 打印,用户可点开
       }
     }
   }
