@@ -1,7 +1,6 @@
-// L1 项目列表 + 全局 totals(/api/projects)。OverviewModule 取 KPI 用。
-// 套 (api,key,active) 范式:loadedRef 防重复 + alive 取消 + 自管 {projects,totals,loading,error}。
-// 会话/报表模块的项目表分页走 PagedTable 直 fetch,不用此 hook。
-import { useEffect, useRef, useState } from "react";
+// L1 项目列表 + 全局 totals(/api/projects)。OverviewModule/会话/报表 L1 标头汇总用。
+// reload():手动刷新(标头刷新按钮调),重新拉 /api/projects(后端 scanSessions 10s + git 5min 缓存命中,快)。
+import { useCallback, useEffect, useState } from "react";
 import type { ApiFn } from "./useApi";
 import type { ProjectSummary, ProjectsResponse, ReportTotals } from "../types";
 
@@ -10,11 +9,10 @@ export function useProjects(api: ApiFn, active: boolean) {
   const [totals, setTotals] = useState<ReportTotals | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const loadedRef = useRef(false);
+  const [reloadCount, setReloadCount] = useState(0);
 
   useEffect(() => {
-    if (!active || loadedRef.current) return;
-    loadedRef.current = true;
+    if (!active) return;
     let alive = true;
     setLoading(true);
     setError(null);
@@ -33,7 +31,8 @@ export function useProjects(api: ApiFn, active: boolean) {
     return () => {
       alive = false;
     };
-  }, [api, active]);
+  }, [api, active, reloadCount]);
 
-  return { projects, totals, loading, error };
+  const reload = useCallback(() => setReloadCount((c) => c + 1), []);
+  return { projects, totals, loading, error, reload };
 }

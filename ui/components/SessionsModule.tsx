@@ -1,11 +1,12 @@
 // 会话模块:三级表格钻取。L1 项目表 → L2 session 表 → L3 聊天详情(SessionDetail 复用)。
-// 每级 PagedTable 服务端分页;面包屑返回上级;L1 头部 token 汇总(与报表对称,来自 useProjects totals)。
+// 每级 PagedTable 服务端分页;面包屑返回上级;L1 头部 token 汇总 + 刷新按钮(reload 汇总 + PagedTable refreshKey 重载当前页)。
 import { useState } from "react";
 import { useApp } from "../state/AppContext";
 import { useApi } from "../hooks/useApi";
 import { useProjects } from "../hooks/useProjects";
 import { PagedTable, type Column } from "./PagedTable";
 import { SessionDetail } from "./SessionDetail";
+import { LoadingBar } from "./LoadingBar";
 import { fmtDateTime, fmtTokens, fmtUsageLabeled, rawTotal, shortDir } from "../lib/util";
 import type {
   ProjectSession,
@@ -18,6 +19,8 @@ const PROJECT_COLS: Column<ProjectSummary>[] = [
   { key: "name", header: "项目", render: (p) => <span title={p.cwd}>{p.name}</span> },
   { key: "sessionCount", header: "会话数", thClassName: "rt-num", tdClassName: "rt-num", render: (p) => p.sessionCount },
   { key: "token", header: "Token", thClassName: "rt-num", tdClassName: "rt-num", render: (p) => fmtTokens(rawTotal(p.totalTokens)) },
+  { key: "cc", header: "缓存创建", thClassName: "rt-num", tdClassName: "rt-num", render: (p) => fmtTokens(p.totalTokens.cacheCreation) },
+  { key: "cr", header: "缓存读", thClassName: "rt-num", tdClassName: "rt-num", render: (p) => fmtTokens(p.totalTokens.cacheRead) },
   { key: "lastActive", header: "最后活跃", render: (p) => fmtDateTime(p.lastActive) },
 ];
 
@@ -46,9 +49,14 @@ const SESSION_COLS: Column<ProjectSession>[] = [
 export function SessionsModule() {
   const { token, selectedSessionId, setSelectedSessionId } = useApp();
   const api = useApi(token);
-  const { totals } = useProjects(api, true);
+  const { totals, reload, loading } = useProjects(api, true);
   const [view, setView] = useState<"l1" | "l2" | "l3">("l1");
   const [selCwd, setSelCwd] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const refresh = () => {
+    reload();
+    setRefreshKey((c) => c + 1);
+  };
 
   const crumbs = [
     { label: "项目", onClick: view !== "l1" ? () => setView("l1") : undefined },
@@ -58,6 +66,7 @@ export function SessionsModule() {
 
   return (
     <div className="report-view" style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
+      <LoadingBar loading={loading} />
       <div className="panel-header" style={{ display: "flex", gap: "0.6rem", alignItems: "center", flexWrap: "wrap" }}>
         {crumbs.map((it, i) => (
           <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: "0.4rem" }}>
@@ -71,11 +80,14 @@ export function SessionsModule() {
             {i < crumbs.length - 1 && <span style={{ color: "#9aa" }}>/</span>}
           </span>
         ))}
-        {view === "l1" && totals && (
-          <span style={{ marginLeft: "auto" }}>
-            {totals.projects} 项目 · {totals.sessions} 会话 · {fmtUsageLabeled(totals.tokens)}
-          </span>
-        )}
+        <span style={{ marginLeft: "auto", display: "flex", gap: "0.6rem", alignItems: "center" }}>
+          {view === "l1" && (
+            <span>{totals ? `${totals.projects} 项目 · ${totals.sessions} 会话 · ${fmtUsageLabeled(totals.tokens)}` : "…"}</span>
+          )}
+          <button type="button" className="tab" onClick={refresh} title="重新加载数据">
+            ↻ 刷新
+          </button>
+        </span>
       </div>
       <div style={{ flex: "1 1 0", minHeight: 0, display: "flex", flexDirection: "column" }}>
         {view === "l1" && (
@@ -91,6 +103,7 @@ export function SessionsModule() {
               setSelCwd(p.cwd);
               setView("l2");
             }}
+            refreshKey={refreshKey}
           />
         )}
         {view === "l2" && selCwd && (
@@ -108,6 +121,7 @@ export function SessionsModule() {
               setSelectedSessionId(s.sessionId);
               setView("l3");
             }}
+            refreshKey={refreshKey}
           />
         )}
         {view === "l3" && selectedSessionId && (

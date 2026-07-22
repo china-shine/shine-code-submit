@@ -18,6 +18,7 @@ export function PagedTable<T>({
   rowKey,
   onRowClick,
   emptyText = "暂无数据",
+  refreshKey = 0,
 }: {
   columns: Column<T>[];
   fetchPage: (page: number) => Promise<{ rows: T[]; total: number }>;
@@ -25,6 +26,7 @@ export function PagedTable<T>({
   rowKey: (row: T) => string;
   onRowClick?: (row: T) => void;
   emptyText?: string;
+  refreshKey?: number;
 }) {
   const [page, setPage] = useState(1);
   const [rows, setRows] = useState<T[]>([]);
@@ -51,7 +53,7 @@ export function PagedTable<T>({
     return () => {
       alive = false;
     };
-  }, [page]);
+  }, [page, refreshKey]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const cur = Math.min(page, totalPages);
@@ -72,11 +74,24 @@ export function PagedTable<T>({
             </tr>
           </thead>
           <tbody>
-            {loading ? (
-              <tr>
-                <td colSpan={colCount}>加载中…</td>
-              </tr>
-            ) : rows.length === 0 ? (
+            {loading
+              ? Array.from({ length: 6 }).map((_, i) => (
+                  <tr key={`sk${i}`}>
+                    {Array.from({ length: colCount }).map((_, j) => (
+                      <td key={j}>
+                        <div
+                          style={{
+                            height: 10,
+                            background: "var(--hover)",
+                            borderRadius: 3,
+                            width: j === 0 ? "40%" : "75%",
+                          }}
+                        />
+                      </td>
+                    ))}
+                  </tr>
+                ))
+              : rows.length === 0 ? (
               <tr>
                 <td colSpan={colCount}>{emptyText}</td>
               </tr>

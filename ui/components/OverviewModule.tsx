@@ -3,6 +3,7 @@ import { useApi } from "../hooks/useApi";
 import { useEvents } from "../hooks/useEvents";
 import { useAllCommits } from "../hooks/useAllCommits";
 import { useProjects } from "../hooks/useProjects";
+import { LoadingBar } from "./LoadingBar";
 import { useApp } from "../state/AppContext";
 import { fmtDateTime, fmtTokens, rawTotal, shortDir } from "../lib/util";
 
@@ -19,7 +20,7 @@ export function OverviewModule() {
   const { token, stats } = useApp();
   const api = useApi(token);
   const { events } = useEvents(api, null, true);
-  const { projects, totals } = useProjects(api, true);
+  const { projects, totals, loading } = useProjects(api, true);
   const { commits } = useAllCommits(api, projects.map((p) => p.cwd), true);
 
   const tot = totals?.tokens ?? null;
@@ -42,6 +43,7 @@ export function OverviewModule() {
 
   return (
     <div className="overview-view">
+      <LoadingBar loading={loading} />
       <div className="kpi-grid">
         <div className="kpi-card">
           <span className="kpi-label">Token 总量</span>

@@ -78,7 +78,7 @@ export function fmtUsageFull(u?: TokenUsage | null): string {
 /** token 用量带标签：输入 X · 输出 Y · 总数 Z(原始四字段和)。会话详情/报表标题用。 */
 export function fmtUsageLabeled(u?: TokenUsage | null): string {
   if (!u) return "";
-  return `输入 ${fmtTokens(u.input)} · 输出 ${fmtTokens(u.output)} · 总数 ${fmtTokens(rawTotal(u))}`;
+  return `输入 ${fmtTokens(u.input)} · 输出 ${fmtTokens(u.output)} · 缓存创建 ${fmtTokens(u.cacheCreation)} · 缓存读 ${fmtTokens(u.cacheRead)} · 总数 ${fmtTokens(rawTotal(u))}`;
 }
 
 function trimZero(s: string): string {

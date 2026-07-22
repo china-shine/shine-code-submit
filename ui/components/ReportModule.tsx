@@ -1,10 +1,11 @@
-// 报表模块:二级表格钻取。L1 项目表(顶部 totals + 上报按钮) → L2 session 明细表。
-// 每级 PagedTable 服务端分页;L2 用 /api/sessions?cwd=(与会话模块 L2 同源)。不再直拉 /api/report 全量。
+// 报表模块:二级表格钻取。L1 项目表(顶部 totals + 刷新 + 上报) → L2 session 明细表。
+// 每级 PagedTable 服务端分页;L2 用 /api/sessions?cwd=(与会话 L2 同源)。刷新按钮 reload 汇总 + PagedTable 重载当前页。
 import { useState } from "react";
 import { useApi } from "../hooks/useApi";
 import { useApp } from "../state/AppContext";
 import { useProjects } from "../hooks/useProjects";
 import { PagedTable, type Column } from "./PagedTable";
+import { LoadingBar } from "./LoadingBar";
 import { fmtDateTime, fmtTokens, fmtUsageLabeled, rawTotal } from "../lib/util";
 import type {
   ProjectSession,
@@ -16,20 +17,28 @@ import type {
 export function ReportModule() {
   const { token } = useApp();
   const api = useApi(token);
-  const { totals } = useProjects(api, true);
+  const { totals, reload, loading } = useProjects(api, true);
   const [selCwd, setSelCwd] = useState<string | null>(null);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [uploading, setUploading] = useState(false);
   const [uploadResult, setUploadResult] = useState<{ ok: boolean; text: string } | null>(null);
+  const refresh = () => {
+    reload();
+    setRefreshKey((c) => c + 1);
+  };
 
   const projectCols: Column<ProjectSummary>[] = [
     { key: "name", header: "项目", render: (p) => <span title={p.cwd}>{p.name}</span> },
     { key: "gitUser", header: "成员", render: (p) => p.gitUser ?? "—" },
     { key: "sessionCount", header: "会话", thClassName: "rt-num", tdClassName: "rt-num", render: (p) => p.sessionCount },
     { key: "token", header: "Token", thClassName: "rt-num", tdClassName: "rt-num", render: (p) => fmtTokens(rawTotal(p.totalTokens)) },
+    { key: "cc", header: "缓存创建", thClassName: "rt-num", tdClassName: "rt-num", render: (p) => fmtTokens(p.totalTokens.cacheCreation) },
+    { key: "cr", header: "缓存读", thClassName: "rt-num", tdClassName: "rt-num", render: (p) => fmtTokens(p.totalTokens.cacheRead) },
     {
       key: "lines",
       header: "代码变更",
-      thClassName: "rt-num", tdClassName: "rt-num",
+      thClassName: "rt-num",
+      tdClassName: "rt-num",
       render: (p) => `+${p.totalLines.added} -${p.totalLines.deleted} M${p.totalLines.modified}`,
     },
     { key: "lastActive", header: "最后活跃", render: (p) => fmtDateTime(p.lastActive) },
@@ -57,23 +66,26 @@ export function ReportModule() {
     {
       key: "lines",
       header: "代码变更",
-      thClassName: "rt-num", tdClassName: "rt-num",
+      thClassName: "rt-num",
+      tdClassName: "rt-num",
       render: (s) => (s.linesTotal ? `+${s.linesTotal.added} -${s.linesTotal.deleted} M${s.linesTotal.modified}` : "-"),
     },
   ];
 
   return (
     <div className="report-view" style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
+      <LoadingBar loading={loading} />
       <div
         className="panel-header"
         style={{ display: "flex", gap: "1.1rem", alignItems: "baseline", flexWrap: "wrap" }}
       >
         <b>报表</b>
-        {totals && (
-          <span style={{ marginLeft: "auto" }}>
-            {totals.projects} 项目 · {totals.sessions} 会话 · {fmtUsageLabeled(totals.tokens)}
-          </span>
-        )}
+        <span style={{ marginLeft: "auto" }}>
+          {totals ? `${totals.projects} 项目 · ${totals.sessions} 会话 · ${fmtUsageLabeled(totals.tokens)}` : "…"}
+        </span>
+        <button type="button" className="tab" onClick={refresh} title="重新加载数据">
+          ↻ 刷新
+        </button>
         <button
           type="button"
           className="tab"
@@ -115,6 +127,7 @@ export function ReportModule() {
               return { rows: r.projects, total: r.total };
             }}
             onRowClick={(p) => setSelCwd(p.cwd)}
+            refreshKey={refreshKey}
           />
         ) : (
           <>
@@ -136,6 +149,7 @@ export function ReportModule() {
                 );
                 return { rows: r.sessions, total: r.total };
               }}
+              refreshKey={refreshKey}
             />
           </>
         )}

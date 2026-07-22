@@ -11,6 +11,7 @@ import { SpoolConsumer } from "./spool-consumer";
 import { WebSocketPool } from "./ws";
 import { startServer } from "./server";
 import { serveUi } from "./ui";
+import { scanSessions } from "./claude-scan";
 
 async function main(): Promise<void> {
   ensureDirs();
@@ -85,6 +86,11 @@ async function main(): Promise<void> {
   writePidFile(pid);
 
   log.info(`${SERVICE_NAME} v${SERVICE_VERSION} listening http://${LISTEN_HOST}:${PORT} pid=${process.pid} token=${pid.token}`);
+
+  // 预热扫描缓存:daemon 启动 500ms 后后台扫一次 transcript 填 scanCache。
+  // 用户首次打开 dashboard 时一般已完成(命中 0.22s,避免 ~1.5s 冷扫等待)。
+  // 代价:这 1.5s 同步扫描短暂阻塞事件循环,期间 hook 转发可能超时走 spool(事件不丢、延迟入库);500ms 延迟避开初始 SessionStart。
+  setTimeout(() => { try { scanSessions(); } catch { /* 预热失败无害,首次请求会再扫 */ } }, 500);
 }
 
 try {
