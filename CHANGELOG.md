@@ -2,6 +2,14 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.1.1 — 2026-07-22
+
+修复 Windows daemon 升级后控制台弹窗(0.0.0.0:36666)。
+
+### 改动
+- **daemon 控制台弹窗修复**:`spawnDaemon`(daemonctl.ts)原 `spawn(exe,{windowsHide:true})` 对 detached 的 console exe(daemon.exe = bun --compile console subsystem)无效(独立进程自分配控制台)→ daemon 启动弹黑框显示 `listening http://0.0.0.0:36666`。Windows 分支改用 wscript VBS(`Wscript.Shell.Run "<cmd>", 0(SW_HIDE), False`)强隐藏整条进程链,类 1.0.21 updater 当年的 VBS 修法。非 Windows 直接 spawn(shell)不变。
+- 修正:1.1.0 发版漏 bump `.claude-plugin/plugin.json` version(仍 1.0.21),1.1.1 对齐到 1.1.1(package.json + plugin.json 两处对齐)。
+
 ## 1.1.0 — 2026-07-22
 
 本地 dashboard 分级懒加载 + 后端缓存化 + 上报 gzip + 表格/设置页体验优化。
