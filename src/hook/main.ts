@@ -172,8 +172,9 @@ function truncate(s: string): string {
 /**
  * 升级提示：对比 NOTICE_FILE 记录的上次版本与当前 SERVICE_VERSION。
  * - 同版本 → ""（不提示）。
- * - 首次（无记录/损坏）→ ""（不报「已升级」），仅落当前版本。
- * - 版本变了（升级/降级）→ "✨ shine-code-submit 已升级到 vX\n"，并更新记录（下次同版本不再提示）。
+ * - 首次（无记录/损坏）→ "✨ shine-code-submit vX\n"（也显示一次 banner 露链接），并落当前版本。
+ *   关键：没有这条的话，引入本功能的版本自身（如 1.1.3）无基线可比 → 永远静默，所有用户升上来都看不到提示。
+ * - 版本变了（升级/降级）→ "✨ shine-code-submit 已升级到 vX（原 v旧）\n"，并更新记录（下次同版本不再提示）。
  * 全程容错：任何读写失败均返回 ""，绝不影响 hook。
  */
 function upgradeNotice(): string {
@@ -191,7 +192,9 @@ function upgradeNotice(): string {
     } catch {
       /* 写失败：本次仍提示，下次启动再尝试记录 */
     }
-    return last ? `✨ shine-code-submit 已升级到 v${SERVICE_VERSION}\n` : "";
+    return last
+      ? `✨ shine-code-submit 已升级到 v${SERVICE_VERSION}（原 v${last}）\n`
+      : `✨ shine-code-submit v${SERVICE_VERSION}\n`; // 首次也显示（露链接），不再静默
   } catch {
     return "";
   }
