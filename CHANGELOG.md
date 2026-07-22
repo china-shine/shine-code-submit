@@ -2,6 +2,22 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.1.0 — 2026-07-22
+
+本地 dashboard 分级懒加载 + 后端缓存化 + 上报 gzip + 表格/设置页体验优化。
+
+### 改动
+- **后端缓存化(治本,token 口径不变)**:`token-cache.ts` 4 套 mtime 缓存合并为 1 套 getSessionInfo bundle(省 3/4 stat);`scanSessions` TTL 2s→10s + SessionStart 事件主动失效;`git.ts` user/remote 加 per-cwd 5min 缓存;前端轮询拆 stats(2s)/sessions(10s)。
+- **接口分级 + 服务端分页**:抽 `aggregate.ts`;新增 `/api/projects`(L1 项目表,分页)、扩展 `/api/sessions?cwd=`(L2 session 明细,富化 title/activeMs/linesTotal,分页);`buildReport` 复用 aggregate 同口径(/api/report 上报链路零回归)。
+- **前端三级表格钻取**:通用 `PagedTable`(服务端分页 + 序号 + 骨架 + 刷新);会话三级(项目表→session表→聊天 SessionDetail 复用)、报表二级;AppContext 瘦身 + stats-only 轮询,停止全量 sessions 轮询。
+- **上报 body gzip**:`uploadReport` 加 `content-encoding: gzip`(gzipSync);tokenserver `/api/report` 按 content-encoding gunzip(兼容老上报)。几万 session 体积降 ~1/4。⚠️部署:tokenserver 先升级(gunzip 接收),daemon 再上报 gzip。
+- **体验优化**:L1 标头刷新按钮(reload 汇总 + PagedTable 重载);daemon 启动预热(500ms 后台扫填 cache);顶部 LoadingBar 进度条 + 表格骨架行;表格列(序号/Session/标题300px/时间 YYYY-MM-DD HH:MM/输入/输出/缓存创建/缓存读/总数/代码变更)列对齐统一。
+- **钻取引导**:可点击行尾 ▸ 箭头 + cursor pointer + hover 高亮;会话/报表 L1 顶部 💡 操作提示。
+- **设置页排版**:保存按钮蓝底白字醒目化 + 移到设置页底部独立行;两个 section 卡片 gap 间距。
+- **源码调试模式**:`scripts/build-ui.ts` + `npm run build:ui`(只生成 ui-assets 不 build exe);`.claude/settings.local.json`(本地 bun hooks,gitignore);README「源码调试」「分级加载+缓存」小节。
+- **工具**:`scripts/parity-vs-ccusage.ts` 适配 ccusage 20.0.18(sessions/sessionId)。
+- 验证:token 对齐 ccusage 复核(静止 session 97/97 逐字段全等);typecheck/build:dist 全过。
+
 ## 1.0.21 — 2026-07-21
 
 修复「发布新版后，已安装用户机器总是弹出安装日志控制台窗口」（自动更新静默化）+ 安装器幂等。
