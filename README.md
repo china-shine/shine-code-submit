@@ -168,6 +168,18 @@ Dashboard：`http://localhost:36666/ui?t=<token>`，token 在 `%LOCALAPPDATA%/sh
 
 `npm run build:ui`（`scripts/build-ui.ts`）只把 `ui/*` bundle 成字符串嵌入 `ui-assets.ts`、**不 build exe**，与 `build.ts` 的 ui 段同口径。源码 hook 每次事件 `spawn bun`，比二进制慢、`PostToolUse` 高频事件有几百 ms 延迟，调试完删 `settings.local.json` 即恢复。
 
+### 分级加载 + 缓存（架构概览）
+
+本地 dashboard 数据加载分三级懒加载，后端 4 层缓存兜底（2026-07-22 重构）：
+
+- **前端三级表格钻取**：L1 项目表（`/api/projects` 分页）→ L2 session 表（`/api/sessions?cwd=` 分页）→ L3 聊天（`/api/transcript`，已是懒加载）。会话/报表模块各用 `PagedTable`（服务端分页 + 序号 + 骨架行 + 刷新按钮）。
+- **后端 4 层缓存**（稳态全命中 → 秒回）：① `scanSessions`（10s TTL + SessionStart 主动失效）② `getSessionInfo`（mtime 内容键，token/title/cwd/activeMs 一次算）③ `git`（per-cwd 5min）④ `getSessionLines`（lastActive 键）。
+- **预热**：daemon 启动 500ms 后台扫一次填缓存（避开初始 SessionStart），代价是 1.5s 同步扫描短暂阻塞 hook（走 spool 兜底，事件不丢）。预热只帮"daemon 起 10s 内打开"（scanCache 10s TTL）。
+- **首次冷扫兜底**：进度条（`LoadingBar`）+ 骨架行，加载完消失。
+- **彻底消除冷扫（远期，未做）**：transcript 扫描结果持久化 sqlite，启动读 DB + 只扫新/活跃。
+
+token 口径对齐 ccusage（静止 session 逐字段全等）。详见 `src/daemon/claude-scan.ts`、`aggregate.ts`、`server.ts` 注释。
+
 ## 目录
 
 ```
