@@ -13,6 +13,17 @@ interface Settings {
   latestVersion?: string | null;
 }
 
+const SAVE_BTN: React.CSSProperties = {
+  background: "#4f8cff",
+  color: "#fff",
+  border: "none",
+  borderRadius: 4,
+  padding: "0.55rem 1.6rem",
+  fontSize: "var(--fs-sm)",
+  fontWeight: 600,
+  cursor: "pointer",
+};
+
 export function SettingsModule() {
   const { token } = useApp();
   const api = useApi(token);
@@ -88,7 +99,7 @@ export function SettingsModule() {
         {loading ? (
           <div className="sum-empty">加载中…</div>
         ) : (
-          <>
+          <div style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
             <section className="sum-section">
               <div className="sum-head">
                 <h3>上报</h3>
@@ -164,26 +175,33 @@ export function SettingsModule() {
                   分钟(daemon 每分钟 tick,按此间隔节流)
                 </span>
               </div>
-              <div className="field-row">
-                <label /> {/* 占位对齐 */}
-                <button
-                  type="button"
-                  className="tab"
-                  onClick={save}
-                  disabled={saving}
-                  title="保存设置"
-                >
-                  {saving ? "保存中…" : "保存"}
-                </button>
-                {msg && (
-                  <span className={msg.kind === "ok" ? "field-ok" : "field-err"}>{msg.text}</span>
-                )}
-              </div>
               <div className="field-hint">
                 升级后 daemon 自动重启到新版(版本感知);plugin 需重启 Claude Code 生效。也可命令行手动 <code>shine-code-submit update</code>。
               </div>
             </section>
-          </>
+
+            {/* 保存按钮:独立行,设置页底部居右,蓝底白字醒目 */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "flex-end",
+                alignItems: "center",
+                gap: "0.8rem",
+                padding: "0.2rem 0.2rem 0",
+              }}
+            >
+              {msg && <span className={msg.kind === "ok" ? "field-ok" : "field-err"}>{msg.text}</span>}
+              <button
+                type="button"
+                onClick={save}
+                disabled={saving}
+                title="保存设置"
+                style={{ ...SAVE_BTN, cursor: saving ? "default" : "pointer", opacity: saving ? 0.6 : 1 }}
+              >
+                {saving ? "保存中…" : "💾 保存设置"}
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>
