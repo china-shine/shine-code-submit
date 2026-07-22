@@ -76,5 +76,8 @@ export const LOG_ROTATE_BYTES = 5 * 1024 * 1024;
 // git log 子进程超时（提交视图 /api/commits）；超时返回空 + error，不阻塞查看页。
 export const GIT_TIMEOUT_MS = 5000;
 
+// git user.name / remote origin 极少变，按 cwd 缓存避免 buildReport 每项目重复 spawn 子进程（各调 2 次）。
+export const GIT_CACHE_TTL_MS = 300_000; // 5 分钟
+
 // /api/sessions enrich tokenTotal 时，最多对最近多少个 session 读 transcript 汇总（控 2s 轮询成本）。
 export const SESSION_TOKEN_ENRICH_LIMIT = 50;

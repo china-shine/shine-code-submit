@@ -11,7 +11,7 @@ type StatTab = "token" | "commits" | "day";
 export function StatsModule() {
   const { token, sessions } = useApp();
   const api = useApi(token);
-  const { commits } = useAllCommits(api, sessions, true);
+  const { commits } = useAllCommits(api, sessions.map((s) => s.cwd), true);
   const [tab, setTab] = useState<StatTab>("token");
 
   const projTokens = useMemo(() => aggregateTokenByProject(sessions), [sessions]);

@@ -5,16 +5,13 @@ import { useApp } from "../state/AppContext";
 import { fmtUsageFull, fmtUsageLabeled, rawTotal, shortDir } from "../lib/util";
 import { Conversation } from "./Conversation";
 
-/** 会话详情（右侧）：顶部摘要（sid/cwd/token）+ 该会话对话。
- *  两栏布局下不再需要返回按钮（左侧树常驻，选会话即切换）。 */
-export function SessionDetail({ sessionId }: { sessionId: string }) {
-  const { token, sessions } = useApp();
+/** 会话详情(L3):顶部摘要(sid/cwd/token) + 该会话对话。
+ *  P3 起三级钻取:cwd 由父组件传入,tokenTotal 来自 useConversation(不再依赖全局 sessions)。 */
+export function SessionDetail({ sessionId, cwd }: { sessionId: string; cwd?: string }) {
+  const { token } = useApp();
   const api = useApi(token);
   const [searchConv, setSearchConv] = useState("");
-  const { messages, loading, error } = useConversation(api, sessionId, true);
-
-  const session = sessions.find((s) => s.sessionId === sessionId);
-  const tokenTotal = session?.tokenTotal ?? null;
+  const { messages, tokenTotal, loading, error } = useConversation(api, sessionId, true);
 
   return (
     <div className="session-detail">
@@ -22,9 +19,9 @@ export function SessionDetail({ sessionId }: { sessionId: string }) {
         <span className="detail-sid" title={sessionId}>
           {sessionId.slice(0, 8)}
         </span>
-        {session?.cwd && (
-          <span className="detail-cwd" title={session.cwd}>
-            {shortDir(session.cwd)}
+        {cwd && (
+          <span className="detail-cwd" title={cwd}>
+            {shortDir(cwd)}
           </span>
         )}
         {tokenTotal && rawTotal(tokenTotal) > 0 && (

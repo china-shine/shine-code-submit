@@ -1,22 +1,21 @@
 import { useEffect, useRef, useState } from "react";
-import type { CommitLog, CommitsResponse, SessionSummary } from "../types";
+import type { CommitLog, CommitsResponse } from "../types";
 import type { ApiFn } from "./useApi";
 
-/** 跨所有 cwd 合并 git log（概览/统计模块用）。
- *  从 sessions 提取 distinct cwd，各拉 /api/commits，按 time 倒序合并。
- *  cwd 集合不变不重拉（sig 缓存，避 sessions 2s 轮询抖动）。 */
+/** 跨所有 cwd 合并 git log（概览模块用）。
+ *  cwds 由调用方传入(来自 /api/projects 的项目列表),各拉 /api/commits,按 time 倒序合并。
+ *  cwd 集合不变不重拉(sig 缓存)。P3 起签名从 sessions 改为 cwds(不再依赖全局 sessions)。 */
 export interface AllCommit extends CommitLog {
   cwd: string;
 }
 
-export function useAllCommits(api: ApiFn, sessions: SessionSummary[], active: boolean) {
+export function useAllCommits(api: ApiFn, cwds: string[], active: boolean) {
   const [commits, setCommits] = useState<AllCommit[]>([]);
   const [loading, setLoading] = useState(false);
   const loadedSigRef = useRef("");
 
   useEffect(() => {
     if (!active) return;
-    const cwds = Array.from(new Set(sessions.map((s) => s.cwd).filter(Boolean)));
     const sig = cwds.join("\n");
     if (loadedSigRef.current === sig) return;
     loadedSigRef.current = sig;
@@ -53,7 +52,7 @@ export function useAllCommits(api: ApiFn, sessions: SessionSummary[], active: bo
     return () => {
       alive = false;
     };
-  }, [api, sessions, active]);
+  }, [api, cwds, active]);
 
   return { commits, loading };
 }

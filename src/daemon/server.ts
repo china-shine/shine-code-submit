@@ -1,11 +1,15 @@
 // HTTP/WS 路由与鉴权。组装 Bun.serve。
 // 健康端点与静态页不鉴权；其余端点（事件接收、stats、events、sessions、ws、shutdown）需 token。
 import type { ServerWebSocket } from "bun";
-import { LISTEN_HOST, PORT, SERVICE_NAME, SERVICE_VERSION, LOG_TAIL_LINES } from "../shared/config";
+import { LISTEN_HOST, PORT, SERVICE_NAME, SERVICE_VERSION, LOG_TAIL_LINES, SESSION_TOKEN_ENRICH_LIMIT } from "../shared/config";
 import type {
   HookEvent,
   HookEventType,
   PidFile,
+  ProjectSession,
+  ProjectSessionsResponse,
+  ProjectSummary,
+  ProjectsResponse,
   ReportProject,
   ReportResponse,
   ReportSession,
@@ -16,9 +20,17 @@ import type {
 import { deriveStableEventId } from "../shared/id";
 import { checkToken } from "./auth";
 import { parseTranscript, sumUsage } from "./transcript";
-import { scanSessions, findTranscriptPathByScan, type ScannedSession } from "./claude-scan";
-import { getCommits, getGitUser, getGitRemote } from "./git";
+import { scanSessions, findTranscriptPathByScan, invalidateScanCache, type ScannedSession } from "./claude-scan";
+import { getCommits } from "./git";
 import { getSessionLines, sumLines } from "./lines";
+import {
+  buildHookCwdMap,
+  groupScannedByCwd,
+  buildProjectDetail,
+  buildProjectSummary,
+  decodeProjectCwd,
+  sumTokens,
+} from "./aggregate";
 import { readSettings, writeSettings } from "./settings";
 import { autoUpdateIfNeeded } from "../shared/updater";
 import type { Store } from "./store";
@@ -152,6 +164,8 @@ export function startServer(deps: ServerDeps) {
           bus.emit(event);
           stats.recordEvent();
           log.info(`ingest http ${event.type}`);
+          // 新会话可能新增 session 文件，清扫描缓存让下次轮询立即可见（其余事件靠 10s TTL 兜底，避免高频失效）
+          if (event.type === "SessionStart") invalidateScanCache();
         }
         return json({ status: "ok", inserted, version: SERVICE_VERSION });
       }
@@ -183,28 +197,44 @@ export function startServer(deps: ServerDeps) {
         });
       }
 
+      // L1 项目列表(分页,会话/报表模块首屏用):项目汇总 + 全局 totals,无 sessions 明细。
+      if (path === "/api/projects" && req.method === "GET") {
+        const since = num(url.searchParams.get("since")) ?? 0;
+        const page = Math.max(1, parseInt(url.searchParams.get("page") ?? "1", 10) || 1);
+        const pageSize = Math.max(1, parseInt(url.searchParams.get("pageSize") ?? "50", 10) || 50);
+        return json(await getProjects(store, since, page, pageSize));
+      }
+
       if (path === "/api/sessions" && req.method === "GET") {
-        // 扫描所有 transcript（ccusage 口径）与 hook 事件信息合并，
-        // 保证「会话树」与「报表」是同一批 session / 同一套项目分组。
-        const hookSessions = store.sessions();
-        // 与 buildReport 一致：每个 session 取最新的 hook cwd（store.sessions 按 last_active DESC，首个即最新），
-        // 否则跨 cwd 的 session 会在「会话树」和「报表」被分到不同项目。
-        const hookMap = new Map<string, SessionSummary>();
-        for (const s of hookSessions) {
-          if (!hookMap.has(s.sessionId)) hookMap.set(s.sessionId, s);
+        const since = num(url.searchParams.get("since")) ?? 0;
+        const cwdParam = url.searchParams.get("cwd");
+        // L2: ?cwd=<path> → 该项目 session 列表(富化 title/activeMs/linesTotal + 服务端分页)
+        if (cwdParam) {
+          const page = Math.max(1, parseInt(url.searchParams.get("page") ?? "1", 10) || 1);
+          const pageSize = Math.max(
+            1,
+            Math.min(
+              parseInt(url.searchParams.get("pageSize") ?? String(SESSION_TOKEN_ENRICH_LIMIT), 10) || SESSION_TOKEN_ENRICH_LIMIT,
+              2000,
+            ),
+          );
+          return json(await getProjectSessions(store, cwdParam, since, page, pageSize));
         }
-        // 只用 scan 的 session（与报表同源），用 hook 信息补 cwd/eventCount/lastType
-        const sessions: SessionSummary[] = scanSessions().map((sc) => {
-          const h = hookMap.get(sc.sessionId);
-          return {
-            sessionId: sc.sessionId,
-            cwd: h?.cwd ?? sc.cwd ?? decodeProjectCwd(sc.project),
-            lastActive: Math.max(sc.lastActivity, h?.lastActive ?? 0),
-            eventCount: h?.eventCount ?? 0,
-            lastType: h?.lastType ?? null,
-            tokenTotal: sc.tokenTotal,
-          };
-        });
+        // 旧行为(无 cwd):全量 SessionSummary[],P3 前端不再用,保留向后兼容。
+        const hookMap = buildHookCwdMap(store.sessions());
+        const sessions: SessionSummary[] = scanSessions()
+          .filter((sc) => since <= 0 || sc.lastActivity >= since)
+          .map((sc) => {
+            const h = hookMap.get(sc.sessionId);
+            return {
+              sessionId: sc.sessionId,
+              cwd: h?.cwd ?? sc.cwd ?? decodeProjectCwd(sc.project),
+              lastActive: Math.max(sc.lastActivity, h?.lastActive ?? 0),
+              eventCount: h?.eventCount ?? 0,
+              lastType: h?.lastType ?? null,
+              tokenTotal: sc.tokenTotal,
+            };
+          });
         sessions.sort((a, b) => b.lastActive - a.lastActive);
         return json({ sessions });
       }
@@ -312,66 +342,16 @@ function findTranscriptPath(store: Store, sessionId: string): string | null {
   return findTranscriptPathByScan(sessionId);
 }
 
-/** 解码 Claude 项目目录名 → 真实 cwd：':' '\' '/' 都被编码成 '-'。
- *  Windows 盘符 C--… → C:\…（其余 - → \）；无盘符时原样返回（posix 情形，少見）。 */
-function decodeProjectCwd(project: string): string {
-  const m = /^([A-Za-z])--(.*)$/.exec(project);
-  if (m && m[1] && m[2]) return `${m[1]}:\\${m[2].replace(/-/g, "\\")}`;
-  return project;
-}
-
-/** 构建 /api/report：token 直接扫所有 transcript（ccusage 口径，与 `ccusage claude session` 的 totals 逐字段相等），
- *  按项目(projects/<project>)聚合；cwd/git/代码行数尽量按 sessionId 匹配 hook session 取真实值，匹配不上则解码项目名。
- *  窗口 since(ms，0=全部)；since>0 时按 session 文件 mtime(session 级)过滤。 */
+/** 构建 /api/report:token 扫所有 transcript(ccusage 口径),按项目聚合。
+ *  复用 aggregate(decodeProjectCwd/groupScannedByCwd/buildProjectDetail/sumTokens)保证与 /api/projects、/api/sessions?cwd= 同口径。
+ *  同名项目消歧 + sort 是 /api/report 专属展示上报逻辑(L1 项目表不消歧,用 cwd 列区分)。 */
 async function buildReport(store: Store, since: number): Promise<ReportResponse> {
-  // hook session 的 sessionId → 真实 cwd，用于给 scan session 补 cwd/git/行数
-  const hookCwd = new Map<string, string>();
-  for (const s of store.sessions()) {
-    if (!hookCwd.has(s.sessionId)) hookCwd.set(s.sessionId, s.cwd);
-  }
-
-  // 扫描所有 transcript（ccusage 口径，含子代理），按 since 过滤
+  const hookCwd = buildHookCwdMap(store.sessions());
   const scanned = scanSessions().filter((s) => since <= 0 || s.lastActivity >= since);
-
-  // 按真实 cwd 分组（hook 捕获的 cwd 优先；无 hook 则解码项目名）。
-  // 同 cwd 的 session 合并到一个项目，避免导航栏因「同一 cwd 对应多个编码项目」而重复。
-  const byCwd = new Map<string, ScannedSession[]>();
-  for (const s of scanned) {
-    const cwd = hookCwd.get(s.sessionId) ?? s.cwd ?? decodeProjectCwd(s.project);
-    const arr = byCwd.get(cwd);
-    if (arr) arr.push(s);
-    else byCwd.set(cwd, [s]);
-  }
+  const byCwd = groupScannedByCwd(scanned, hookCwd);
 
   const projects = await Promise.all(
-    [...byCwd.keys()].map(
-      async (cwd): Promise<ReportProject> => {
-        const ss = byCwd.get(cwd) ?? [];
-        const rs: ReportSession[] = ss.map((s) => ({
-          sessionId: s.sessionId,
-          lastActive: s.lastActivity,
-          tokenTotal: s.tokenTotal,
-          activeMs: s.activeMs,
-          linesTotal: getSessionLines(store, s.sessionId, s.lastActivity),
-          title: s.title,
-        }));
-        const totalTokens = sumTokens(rs.map((r) => r.tokenTotal));
-        const totalLines = sumLines(rs.map((r) => r.linesTotal));
-
-        const [gitUser, gitRemote] = await Promise.all([getGitUser(cwd), getGitRemote(cwd)]);
-
-        return {
-          cwd,
-          name: shortName(cwd),
-          gitUser,
-          gitRemote,
-          sessionCount: ss.length,
-          sessions: rs,
-          totalTokens,
-          totalLines,
-        };
-      },
-    ),
+    [...byCwd.entries()].map(([cwd, ss]) => buildProjectDetail(cwd, ss, store)),
   );
 
   // 同名项目消歧：用「父目录/项目名」区分（如两个 test → workspace/test、ai/test）
@@ -391,43 +371,108 @@ async function buildReport(store: Store, since: number): Promise<ReportResponse>
       b.totalTokens.input + b.totalTokens.output - (a.totalTokens.input + a.totalTokens.output),
   );
 
-  const totals: ReportTotals = {
-    projects: projects.length,
-    sessions: scanned.length,
-    tokens: sumTokens(projects.map((p) => p.totalTokens)),
-    lines: sumLines(projects.map((p) => p.totalLines)),
-  };
-
   return {
     version: SERVICE_VERSION,
     generatedAt: Date.now(),
     since,
     gitUser: projects.find((p) => p.gitUser)?.gitUser ?? null,
     projects,
-    totals,
+    totals: {
+      projects: projects.length,
+      sessions: scanned.length,
+      tokens: sumTokens(projects.map((p) => p.totalTokens)),
+      lines: sumLines(projects.map((p) => p.totalLines)),
+    },
   };
 }
 
-/** 累加若干 TokenUsage（可 null/undefined），返回合计。 */
-function sumTokens(arr: (TokenUsage | null | undefined)[]): TokenUsage {
-  const t: TokenUsage = { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 };
-  for (const u of arr) {
-    if (u) {
-      t.input += u.input;
-      t.output += u.output;
-      t.cacheCreation += u.cacheCreation;
-      t.cacheRead += u.cacheRead;
-    }
-  }
-  return t;
+/** L1 /api/projects:项目汇总(无 sessions 明细)+ 全局 totals,服务端分页。
+ *  项目数通常几十,先全算再 slice(totals 需全量);git/lines 走缓存,稳态快。 */
+async function getProjects(store: Store, since: number, page: number, pageSize: number): Promise<ProjectsResponse> {
+  const hookCwd = buildHookCwdMap(store.sessions());
+  const scanned = scanSessions().filter((s) => since <= 0 || s.lastActivity >= since);
+  const byCwd = groupScannedByCwd(scanned, hookCwd);
+
+  const all = await Promise.all(
+    [...byCwd.entries()].map(([cwd, ss]) => buildProjectSummary(cwd, ss, store)),
+  );
+  all.sort(
+    (a, b) =>
+      b.sessionCount - a.sessionCount ||
+      b.totalTokens.input + b.totalTokens.output - (a.totalTokens.input + a.totalTokens.output),
+  );
+
+  const total = all.length;
+  const start = (page - 1) * pageSize;
+  const projects = all.slice(start, start + pageSize);
+
+  return {
+    version: SERVICE_VERSION,
+    generatedAt: Date.now(),
+    since,
+    gitUser: all.find((p) => p.gitUser)?.gitUser ?? null,
+    totals: {
+      projects: total,
+      sessions: scanned.length,
+      tokens: sumTokens(all.map((p) => p.totalTokens)),
+      lines: sumLines(all.map((p) => p.totalLines)),
+    },
+    projects,
+    page,
+    pageSize,
+    total,
+  };
 }
 
-/** 路径取末段作项目名（服务端版，与 ui/lib/util.ts shortDir 一致）。 */
-function shortName(p: string): string {
-  if (!p) return "";
-  const t = p.replace(/[\\/]+$/, "");
-  const i = Math.max(t.lastIndexOf("/"), t.lastIndexOf("\\"));
-  return i >= 0 ? t.slice(i + 1) : t;
+/** L2 /api/sessions?cwd=:该项目 session 列表(富化 title/activeMs/linesTotal),服务端分页。
+ *  totalTokens/totalLines/sessionCount 为该项目全量汇总(与 /api/report 同项目逐字段相等,供校验)。 */
+async function getProjectSessions(
+  store: Store,
+  cwd: string,
+  since: number,
+  page: number,
+  pageSize: number,
+): Promise<ProjectSessionsResponse> {
+  const hookMap = buildHookCwdMap(store.sessions());
+  // 该 cwd 的 hook sessions(per sessionId 取首个=最新),补 eventCount/lastType
+  const hookBySid = new Map<string, SessionSummary>();
+  for (const s of store.sessions()) {
+    if (s.cwd === cwd && !hookBySid.has(s.sessionId)) hookBySid.set(s.sessionId, s);
+  }
+  // 该 cwd 的 scanned sessions(真实 cwd:hookMap 优先,无则解码项目名),按 lastActive 倒序
+  const all = scanSessions()
+    .filter((s) => since <= 0 || s.lastActivity >= since)
+    .filter((s) => (hookMap.get(s.sessionId)?.cwd ?? s.cwd ?? decodeProjectCwd(s.project)) === cwd)
+    .sort((a, b) => b.lastActivity - a.lastActivity);
+
+  const total = all.length;
+  const start = (page - 1) * pageSize;
+  const pageItems = all.slice(start, start + pageSize);
+  const sessions: ProjectSession[] = pageItems.map((sc) => {
+    const h = hookBySid.get(sc.sessionId);
+    return {
+      sessionId: sc.sessionId,
+      cwd,
+      lastActive: Math.max(sc.lastActivity, h?.lastActive ?? 0),
+      eventCount: h?.eventCount ?? 0,
+      lastType: h?.lastType ?? null,
+      tokenTotal: sc.tokenTotal,
+      title: sc.title,
+      activeMs: sc.activeMs,
+      linesTotal: getSessionLines(store, sc.sessionId, sc.lastActivity),
+    };
+  });
+
+  return {
+    cwd,
+    sessions,
+    totalTokens: sumTokens(all.map((s) => s.tokenTotal)),
+    totalLines: sumLines(all.map((s) => getSessionLines(store, s.sessionId, s.lastActivity))),
+    sessionCount: total,
+    page,
+    pageSize,
+    total,
+  };
 }
 
 /** 上报结果:uploaded=true 已 POST;false=主动跳过(附 reason);抛错=网络/服务端失败。 */

@@ -1,35 +1,26 @@
 import { useEffect } from "react";
 import type { Dispatch, SetStateAction } from "react";
-import type { SessionSummary, StatsResponse } from "../types";
+import type { StatsResponse } from "../types";
 import type { ApiFn } from "./useApi";
 
-/** 每 2s 轮询 /api/stats + /api/sessions（启动即一次）。 */
-export function useStatsPolling(
-  api: ApiFn,
-  setStats: Dispatch<SetStateAction<StatsResponse | null>>,
-  setSessions: Dispatch<SetStateAction<SessionSummary[]>>,
-): void {
+/** stats 每 2s 轮询（Header 状态条：spool backlog / event rate，cheap DB count + log tail）。启动拉一次。
+ *  P3 起 sessions 不再全局轮询(改分级按需加载:会话/报表模块走 /api/projects + /api/sessions?cwd=)。 */
+export function useStatsPolling(api: ApiFn, setStats: Dispatch<SetStateAction<StatsResponse | null>>): void {
   useEffect(() => {
     let alive = true;
-    const refresh = async () => {
+    const refreshStats = async () => {
       try {
-        const [s, sess] = await Promise.all([
-          api<StatsResponse>("/api/stats"),
-          api<{ sessions: SessionSummary[] }>("/api/sessions"),
-        ]);
-        if (alive) {
-          setStats(s);
-          setSessions(sess.sessions);
-        }
+        const s = await api<StatsResponse>("/api/stats");
+        if (alive) setStats(s);
       } catch (e) {
-        console.warn("refresh", e);
+        console.warn("stats refresh", e);
       }
     };
-    void refresh();
-    const id = setInterval(refresh, 2000);
+    void refreshStats();
+    const statsId = setInterval(refreshStats, 2000);
     return () => {
       alive = false;
-      clearInterval(id);
+      clearInterval(statsId);
     };
-  }, [api, setStats, setSessions]);
+  }, [api, setStats]);
 }

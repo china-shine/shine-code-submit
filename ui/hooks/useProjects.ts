@@ -1,0 +1,39 @@
+// L1 项目列表 + 全局 totals(/api/projects)。OverviewModule 取 KPI 用。
+// 套 (api,key,active) 范式:loadedRef 防重复 + alive 取消 + 自管 {projects,totals,loading,error}。
+// 会话/报表模块的项目表分页走 PagedTable 直 fetch,不用此 hook。
+import { useEffect, useRef, useState } from "react";
+import type { ApiFn } from "./useApi";
+import type { ProjectSummary, ProjectsResponse, ReportTotals } from "../types";
+
+export function useProjects(api: ApiFn, active: boolean) {
+  const [projects, setProjects] = useState<ProjectSummary[]>([]);
+  const [totals, setTotals] = useState<ReportTotals | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const loadedRef = useRef(false);
+
+  useEffect(() => {
+    if (!active || loadedRef.current) return;
+    loadedRef.current = true;
+    let alive = true;
+    setLoading(true);
+    setError(null);
+    void (async () => {
+      try {
+        const r: ProjectsResponse = await api("/api/projects?page=1&pageSize=500");
+        if (!alive) return;
+        setProjects(r.projects);
+        setTotals(r.totals);
+      } catch (e) {
+        if (alive) setError(e instanceof Error ? e.message : String(e));
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [api, active]);
+
+  return { projects, totals, loading, error };
+}

@@ -19,7 +19,7 @@ export function SummaryView() {
     [sessions],
   );
   const tokenSum = useMemo(() => sumTokenUsage(sessions.map((s) => s.tokenTotal)), [sessions]);
-  const { commits, loading } = useAllCommits(api, sessions, true);
+  const { commits, loading } = useAllCommits(api, sessions.map((s) => s.cwd), true);
 
   const commitCount = commits.length;
   const added = commits.reduce((n, c) => n + (c.added || 0), 0);

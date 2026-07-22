@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import type { TranscriptMessage, TranscriptResponse } from "../types";
+import type { TokenUsage, TranscriptMessage, TranscriptResponse } from "../types";
 import type { ApiFn } from "./useApi";
 
 /** 拉某会话 transcript（/api/transcript）。active=true 且 sessionId 存在才拉。
- *  Step 3 下沉：返回自包含 {messages, loading, error}。loadedSidRef 换会话先清空防闪。 */
+ *  返回自包含 {messages, tokenTotal, loading, error}。loadedSidRef 换会话先清空防闪。 */
 export function useConversation(api: ApiFn, sessionId: string | null, active: boolean) {
   const [messages, setMessages] = useState<TranscriptMessage[]>([]);
+  const [tokenTotal, setTokenTotal] = useState<TokenUsage | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const loadedSidRef = useRef<string | null | undefined>(undefined);
@@ -14,6 +15,7 @@ export function useConversation(api: ApiFn, sessionId: string | null, active: bo
     if (!active || !sessionId) return;
     if (loadedSidRef.current !== sessionId) {
       setMessages([]);
+      setTokenTotal(null);
       loadedSidRef.current = sessionId;
     }
     let alive = true;
@@ -26,6 +28,7 @@ export function useConversation(api: ApiFn, sessionId: string | null, active: bo
         );
         if (alive) {
           setMessages(data.messages);
+          setTokenTotal(data.tokenTotal ?? null);
           setError(null);
         }
       } catch (e) {
@@ -39,5 +42,5 @@ export function useConversation(api: ApiFn, sessionId: string | null, active: bo
     };
   }, [api, sessionId, active]);
 
-  return { messages, loading, error };
+  return { messages, tokenTotal, loading, error };
 }

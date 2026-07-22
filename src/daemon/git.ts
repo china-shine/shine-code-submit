@@ -1,6 +1,6 @@
 // 在某 cwd 跑 git log 解析为提交列表（查看页「提交」视图用）。
 // 容错优先：非 git 仓库 / git 未装 / 超时 → commits 空数组 + error，绝不抛。
-import { GIT_TIMEOUT_MS } from "../shared/config";
+import { GIT_TIMEOUT_MS, GIT_CACHE_TTL_MS } from "../shared/config";
 import type { CommitFile, CommitLog, CommitsResponse } from "../shared/types";
 
 const SEP = "\x1f"; // unit separator，分隔 pretty 各字段，避免与 subject 内容冲突
@@ -31,25 +31,41 @@ export async function getCommits(cwd: string, limit = 200): Promise<CommitsRespo
   return { cwd, commits: parseLog(stdout) };
 }
 
+// git user.name / remote 极少变，按 cwd 缓存（TTL GIT_CACHE_TTL_MS），避免 buildReport 每项目重复 spawn 子进程。
+// 缓存结果含 null（错误/未配置 cwd 在 TTL 内不重试，也省 spawn）。cwd 数 = 项目数，Map 不会无限增长。
+interface GitCacheEntry { at: number; value: string | null }
+const gitUserCache = new Map<string, GitCacheEntry>();
+const gitRemoteCache = new Map<string, GitCacheEntry>();
+
 /** 取 cwd 配置的 git 用户名（user.name）；未配置 / git 不可用返回 null。
  *  git config 即使在非 git 目录也能读全局 user.name，故正常会返回全局用户名；都没配则 null。 */
 export async function getGitUser(cwd: string): Promise<string | null> {
+  const hit = gitUserCache.get(cwd);
+  if (hit && Date.now() - hit.at < GIT_CACHE_TTL_MS) return hit.value;
+  let value: string | null = null;
   try {
     const name = (await runGit(cwd, ["config", "user.name"])).trim();
-    return name || null;
+    value = name || null;
   } catch {
-    return null;
+    value = null;
   }
+  gitUserCache.set(cwd, { at: Date.now(), value });
+  return value;
 }
 
 /** 取 cwd 的 git remote origin URL；非 git 仓库 / 无 origin / git 不可用返回 null。 */
 export async function getGitRemote(cwd: string): Promise<string | null> {
+  const hit = gitRemoteCache.get(cwd);
+  if (hit && Date.now() - hit.at < GIT_CACHE_TTL_MS) return hit.value;
+  let value: string | null = null;
   try {
     const url = (await runGit(cwd, ["remote", "get-url", "origin"])).trim();
-    return url || null;
+    value = url || null;
   } catch {
-    return null;
+    value = null;
   }
+  gitRemoteCache.set(cwd, { at: Date.now(), value });
+  return value;
 }
 
 /** 跑 git 子进程，超时或非 0 退出 reject；stdout 文本 resolve。 */

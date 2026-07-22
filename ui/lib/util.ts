@@ -18,14 +18,15 @@ export function fmtTime(ts: number): string {
   return d.toLocaleTimeString() + "." + String(d.getMilliseconds()).padStart(3, "0");
 }
 
-/** 带日期的时间（提交跨天，需日期）：MM-DD HH:MM。 */
+/** 带日期的时间（提交跨天，需日期）：YYYY-MM-DD HH:MM。 */
 export function fmtDateTime(ts: number): string {
   const d = new Date(ts);
+  const yyyy = d.getFullYear();
   const mm = String(d.getMonth() + 1).padStart(2, "0");
   const dd = String(d.getDate()).padStart(2, "0");
   const hh = String(d.getHours()).padStart(2, "0");
   const mi = String(d.getMinutes()).padStart(2, "0");
-  return `${mm}-${dd} ${hh}:${mi}`;
+  return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
 }
 
 export function brief(s: unknown, n = 80): string {

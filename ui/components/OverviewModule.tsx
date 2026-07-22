@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { useApi } from "../hooks/useApi";
 import { useEvents } from "../hooks/useEvents";
 import { useAllCommits } from "../hooks/useAllCommits";
+import { useProjects } from "../hooks/useProjects";
 import { useApp } from "../state/AppContext";
 import { fmtDateTime, fmtTokens, rawTotal, shortDir } from "../lib/util";
-import type { ReportResponse } from "../types";
 
 interface TimelineItem {
   ts: number;
@@ -13,25 +13,16 @@ interface TimelineItem {
   cwd: string;
 }
 
-/** 概览首页：KPI 卡（token 总量来自 /api/report 扫描全部 transcript，= ccusage session 总量）+ 近期活动时间线。 */
+/** 概览首页:KPI(走 /api/projects 的 totals,ccusage 口径) + 近期活动时间线。
+ *  P3 起不再直拉 /api/report、不依赖全局 sessions;项目 cwds 来自 useProjects 喂 useAllCommits。 */
 export function OverviewModule() {
-  const { token, sessions, stats } = useApp();
+  const { token, stats } = useApp();
   const api = useApi(token);
   const { events } = useEvents(api, null, true);
-  const { commits } = useAllCommits(api, sessions, true);
+  const { projects, totals } = useProjects(api, true);
+  const { commits } = useAllCommits(api, projects.map((p) => p.cwd), true);
 
-  // token 总量走 /api/report（扫描所有 transcript，ccusage 口径），不用 hook session 的局部累加
-  const [report, setReport] = useState<ReportResponse | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    api<ReportResponse>("/api/report?since=0")
-      .then((d) => !cancelled && setReport(d))
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [api]);
-  const tot = report?.totals.tokens ?? null;
+  const tot = totals?.tokens ?? null;
 
   const recent = useMemo<TimelineItem[]>(() => {
     const es: TimelineItem[] = events.slice(0, 20).map((e) => ({
@@ -62,7 +53,7 @@ export function OverviewModule() {
         </div>
         <div className="kpi-card">
           <span className="kpi-label">会话数</span>
-          <b className="kpi-value">{report?.totals.sessions ?? sessions.length}</b>
+          <b className="kpi-value">{totals?.sessions ?? "…"}</b>
         </div>
         <div className="kpi-card">
           <span className="kpi-label">事件总数</span>

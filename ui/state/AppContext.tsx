@@ -32,13 +32,13 @@ const AppContext = createContext<AppContextValue | null>(null);
 
 export function AppProvider({ token, children }: { token: string; children: ReactNode }) {
   const [stats, setStats] = useState<StatsResponse | null>(null);
-  const [sessions, setSessions] = useState<SessionSummary[]>([]);
+  const [sessions] = useState<SessionSummary[]>([]);
   const [selectedSessionId, setSelectedSessionId] = useState<string | null>(null);
   const [activeModule, setActiveModule] = useState<ModuleId>("overview");
   const [navCollapsed, setNavCollapsed] = useState(false);
 
   const api = useApi(token);
-  useStatsPolling(api, setStats, setSessions);
+  useStatsPolling(api, setStats);
 
   const selectModule = useCallback((m: ModuleId) => {
     setActiveModule(m);

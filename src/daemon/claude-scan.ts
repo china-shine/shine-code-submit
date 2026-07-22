@@ -5,7 +5,7 @@ import { existsSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, join } from "node:path";
 
-import { getSessionTokenTotal, getSessionTitle, getSessionActiveMs, getSessionCwd } from "./token-cache";
+import { getSessionInfo } from "./token-cache";
 import type { TokenUsage } from "../shared/types";
 
 export interface ScannedSession {
@@ -101,16 +101,21 @@ function parentSessionInfo(
 }
 
 let scanCache: { at: number; data: ScannedSession[] } | null = null;
-const SCAN_CACHE_TTL_MS = 2000;
+const SCAN_CACHE_TTL_MS = 10_000; // 10s 兜底；hook 事件入库后 invalidateScanCache() 主动失效，新会话最坏 2s 后可见
 
 /** 扫描所有 Claude transcript，按 session 归组并算 token（ccusage 口径，含子代理）。
- *  贵的汇总走 getSessionTokenTotal 的 mtime 缓存，遍历只列文件。带 2s TTL 缓存（/api/sessions 每 2s 轮询）。 */
+ *  贵的汇总走 getSessionInfo 的 mtime 缓存，遍历只列文件。带 10s TTL 缓存 + hook 事件主动失效。 */
 export function scanSessions(): ScannedSession[] {
   const now = Date.now();
   if (scanCache && now - scanCache.at < SCAN_CACHE_TTL_MS) return scanCache.data;
   const data = collectScannedSessions();
   scanCache = { at: now, data };
   return data;
+}
+
+/** hook 事件入库后调用：清缓存让下次 scanSessions 重扫（新会话/新事件立即反映，不必等 TTL 到期）。 */
+export function invalidateScanCache(): void {
+  scanCache = null;
 }
 
 function collectScannedSessions(): ScannedSession[] {
@@ -131,7 +136,9 @@ function collectScannedSessions(): ScannedSession[] {
       } catch {
         continue;
       }
-      const tokenTotal = getSessionTokenTotal(file) ?? ZERO;
+      // 一次 getSessionInfo 取 4 字段(token/title/cwd/activeMs)，省掉原先 4 套缓存各 stat 一遍判命中
+      const si = getSessionInfo(file);
+      const tokenTotal = si?.tokenTotal ?? ZERO;
       // 0-token 的空 transcript（ccusage 不计入 session 数），跳过以对齐 ccusage 的 session 计数
       if (tokenTotal.input + tokenTotal.output + tokenTotal.cacheCreation + tokenTotal.cacheRead === 0) continue;
       out.push({
@@ -140,9 +147,9 @@ function collectScannedSessions(): ScannedSession[] {
         transcriptPath: file,
         lastActivity: mtimeMs,
         tokenTotal,
-        activeMs: getSessionActiveMs(file),
-        title: getSessionTitle(file),
-        cwd: getSessionCwd(file),
+        activeMs: si?.activeMs ?? 0,
+        title: si?.title ?? null,
+        cwd: si?.cwd ?? null,
       });
     }
   }

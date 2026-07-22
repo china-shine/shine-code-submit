@@ -164,3 +164,49 @@ export interface ReportResponse {
   projects: ReportProject[];
   totals: ReportTotals;
 }
+
+// ---- 分级懒加载:L1 项目列表(/api/projects) / L2 项目内 sessions(/api/sessions?cwd=) ----
+
+/** L1 项目汇总行(无 sessions 明细)。 */
+export interface ProjectSummary {
+  cwd: string;
+  name: string;
+  gitUser: string | null;
+  gitRemote: string | null;
+  sessionCount: number;
+  totalTokens: TokenUsage;
+  totalLines: LinesStat;
+  lastActive: number; // 项目级最后活跃 = max(sessions.lastActive)
+}
+
+/** GET /api/projects 响应(服务端分页)。 */
+export interface ProjectsResponse {
+  version: string;
+  generatedAt: number;
+  since: number;
+  gitUser: string | null;
+  totals: ReportTotals;
+  projects: ProjectSummary[]; // 当前页
+  page: number;
+  pageSize: number;
+  total: number; // 项目总数(分页用)
+}
+
+/** L2 项目内 session 行(SessionSummary 富化 title/activeMs/linesTotal)。 */
+export interface ProjectSession extends SessionSummary {
+  title?: string | null;
+  activeMs?: number;
+  linesTotal?: LinesStat | null;
+}
+
+/** GET /api/sessions?cwd= 响应(服务端分页)。 */
+export interface ProjectSessionsResponse {
+  cwd: string;
+  sessions: ProjectSession[]; // 当前页
+  totalTokens: TokenUsage;
+  totalLines: LinesStat;
+  sessionCount: number;
+  page: number;
+  pageSize: number;
+  total: number; // 该项目 session 总数(分页用)
+}
