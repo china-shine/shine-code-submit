@@ -19,6 +19,7 @@ import type {
 } from "../shared/types";
 import { deriveStableEventId } from "../shared/id";
 import { checkToken } from "./auth";
+import { gzipSync } from "node:zlib";
 import { parseTranscript, sumUsage } from "./transcript";
 import { scanSessions, findTranscriptPathByScan, invalidateScanCache, type ScannedSession } from "./claude-scan";
 import { getCommits } from "./git";
@@ -490,8 +491,8 @@ async function uploadReport(store: Store): Promise<UploadOutcome> {
   }
   await fetch(url, {
     method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(report),
+    headers: { "content-type": "application/json", "content-encoding": "gzip" },
+    body: gzipSync(Buffer.from(JSON.stringify(report), "utf8")),
     signal: AbortSignal.timeout(15000),
   });
   return { uploaded: true };

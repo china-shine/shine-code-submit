@@ -3,7 +3,7 @@
 // 编译(二进制)用内联 ui-assets(因二进制内无 ui/ 文件)。
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { gzipSync } from "node:zlib";
+import { gzipSync, gunzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
 import { saveReport, getStats, getSessions, getMember, type Granularity } from "./store";
 import type { ReportResponse } from "./types";
@@ -103,7 +103,11 @@ export function startServer() {
       if (path === "/api/report" && req.method === "POST") {
         let body: ReportResponse;
         try {
-          body = await req.json();
+          body = JSON.parse(
+            (req.headers.get("content-encoding") ?? "").toLowerCase().includes("gzip")
+              ? gunzipSync(Buffer.from(await req.arrayBuffer())).toString("utf8")
+              : await req.text(),
+          ) as ReportResponse;
         } catch {
           return json(req, { error: "bad json" }, 400);
         }
