@@ -2,6 +2,14 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.1.2 — 2026-07-22
+
+修复 install 拉起 daemon 的控制台弹窗(1.1.1 只修了 spawnDaemon,漏了 install 的 startDaemonWithBun)。
+
+### 改动
+- **install startDaemonWithBun 弹窗修复**:1.1.1 修了 daemonctl.spawnDaemon(Windows wscript VBS SW_HIDE),但 install.cjs 的 `startDaemonWithBun`(install/main.ts)仍用 `spawn(bunPath,[...],{shell:true,windowsHide})`,Windows shell:true 孙进程链(cmd→bun→daemon)windowsHide 管不到 → 升级后 daemon 仍弹黑框(`0.0.0.0:36666`)。改为复用 daemonctl.spawnHidden(export + 加 cwd 支持),install 场景也走 VBS SW_HIDE。本地验证:VBS 拉起的 bun.exe `MainWindowHandle=0`(无窗口)。
+- daemonctl.spawnHidden 导出(export)+ 加 opts.cwd 参数(Windows 经 VBS CurrentDirectory 设,非 Windows 传 spawn cwd)。
+
 ## 1.1.1 — 2026-07-22
 
 修复 Windows daemon 升级后控制台弹窗(0.0.0.0:36666)。

@@ -33,15 +33,17 @@ function quote(p: string): string {
 
 /** Windows 用 wscript VBS 隐藏 spawn(SW_HIDE):detached 的 console exe(daemon.exe)用 windowsHide 管不到(独立进程自分配控制台),
  *  改用 Wscript.Shell.Run "<cmd>", 0(SW_HIDE), False(不等) 强隐藏整条进程链。非 Windows 直接 spawn(shell)。
- *  daemon 常驻:wscript 自身无控制台 + SW_HIDE 隐藏被启动进程;wscript 退出,daemon 独立继续(类 updater.spawnSilentInstall)。 */
-function spawnHidden(commandLine: string): void {
+ *  daemon 常驻:wscript 自身无控制台 + SW_HIDE 隐藏被启动进程;wscript 退出,daemon 独立继续(类 updater.spawnSilentInstall)。
+ *  opts.cwd:Windows 经 VBS CurrentDirectory 设;非 Windows 传 spawn cwd。install(install.cjs node)的 startDaemonWithBun 也复用此。 */
+export function spawnHidden(commandLine: string, opts: { cwd?: string } = {}): void {
   if (process.platform !== "win32") {
-    spawn(commandLine, { detached: true, stdio: "ignore", shell: true }).unref();
+    spawn(commandLine, { detached: true, stdio: "ignore", shell: true, cwd: opts.cwd }).unref();
     return;
   }
   const vbsPath = join(DATA_DIR, "spawn-daemon-hidden.vbs");
-  const escaped = commandLine.replace(/"/g, '""'); // VBS 字符串内双引号转义
-  const vbs = `Set s = CreateObject("Wscript.Shell")\rs.Run "${escaped}", 0, False\r`;
+  const esc = (s: string) => s.replace(/"/g, '""'); // VBS 字符串内双引号转义
+  const cwdLine = opts.cwd ? `s.CurrentDirectory = "${esc(opts.cwd)}"\r` : "";
+  const vbs = `Set s = CreateObject("Wscript.Shell")\r${cwdLine}s.Run "${esc(commandLine)}", 0, False\r`;
   try {
     mkdirSync(DATA_DIR, { recursive: true });
     writeFileSync(vbsPath, vbs, "utf8");

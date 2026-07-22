@@ -12,7 +12,7 @@ import { ensureBun } from "./bun";
 import { cacheDir, deployPlugin } from "./deploy";
 import { enablePlugin, registerMarketplace, registerPlugin, unregisterAll } from "./register";
 import { PUBLIC_BASE_URL, SERVICE_VERSION } from "../shared/config";
-import { isOursAlive, openBrowser, probeDaemon, stopDaemon } from "../shared/daemonctl";
+import { isOursAlive, openBrowser, probeDaemon, spawnHidden, stopDaemon } from "../shared/daemonctl";
 import { ensureDirs } from "../shared/paths";
 import { readPidFile } from "../shared/pidfile";
 import { info, setSilent, warn } from "./log";
@@ -111,14 +111,9 @@ async function startDaemonWithBun(bunPath: string, cachePath: string): Promise<v
   }
   const daemonSrc = join(cachePath, "src", "daemon", "main.ts");
   try {
-    const child = spawn(bunPath, ["run", daemonSrc], {
-      detached: true,
-      stdio: "ignore",
-      windowsHide: true,
-      cwd: cachePath,
-      shell: process.platform === "win32",
-    });
-    child.unref();
+    // Windows 走 wscript VBS 隐藏(shell:true 孙进程 bun→daemon 弹窗,windowsHide 管不到),复用 daemonctl.spawnHidden
+    const q = (p: string): string => (/\s/.test(p) ? `"${p}"` : p);
+    spawnHidden(`${q(bunPath)} run ${q(daemonSrc)}`, { cwd: cachePath });
   } catch (err) {
     warn(`[shine-code-submit] 启动 daemon 失败:${err instanceof Error ? err.message : err}`);
     warn("  plugin 已注册,Claude Code 重启后 hook 会自动拉起 daemon");
