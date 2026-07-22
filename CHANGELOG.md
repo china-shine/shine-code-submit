@@ -2,6 +2,14 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.1.6 — 2026-07-22
+
+修复升级后 hook 仍跑旧代码的问题（marketplace 路径漂移）——这才是「升级后链接只在第一次显示」的真因。
+
+### 改动
+- **修 enablePlugin 路径漂移**：`register.ts` 的 `enablePlugin` 原逻辑只在「条目不存在」时写 `settings.json` 的 `extraKnownMarketplaces.shine-code-submit` path → 首次安装后，后续升级都不更新它，path 钉在首次安装的旧版本目录。Claude Code 按 `extraKnownMarketplaces` 加载 → hook 一直跑旧代码（链接只在首次/升级时显示）。改为**每次 install 无条件把 path 更新到当前版本 cachePath**（与 `registerMarketplace` 一致），杜绝漂移。
+- 影响：已装用户被自动升级拉到 1.1.6 时，install 会自动把 path 修正到 1.1.6 目录，重启 Claude Code 后生效。
+
 ## 1.1.5 — 2026-07-22
 
 每次打开 Claude 都显示 dashboard 链接（resume 也显示）。

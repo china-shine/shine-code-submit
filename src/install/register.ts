@@ -62,7 +62,7 @@ export function registerPlugin(cachePath: string): void {
   info(`[shine-code-submit] plugin 已注册 → ${file}`);
 }
 
-/** 启用 plugin:写 settings.json 的 enabledPlugins + extraKnownMarketplaces。幂等。解 #17832。 */
+/** 启用 plugin:写 settings.json 的 enabledPlugins + extraKnownMarketplaces（每次都把 path 更新到当前版本目录，修市场路径漂移）。解 #17832。 */
 export function enablePlugin(cachePath: string): void {
   const file = settingsPath();
   const data = readJsonDefault<Record<string, any>>(file, {});
@@ -71,11 +71,12 @@ export function enablePlugin(cachePath: string): void {
   data.enabledPlugins[key] = true;
 
   if (!data.extraKnownMarketplaces) data.extraKnownMarketplaces = {};
-  if (!data.extraKnownMarketplaces[MARKETPLACE_NAME]) {
-    data.extraKnownMarketplaces[MARKETPLACE_NAME] = {
-      source: { source: "directory", path: cachePath },
-    };
-  }
+  // 无条件覆盖 path 到当前版本目录：旧实现「条目已存在就跳过」→ 升级后 path 仍钉在首次安装的旧版本目录，
+  // Claude Code 按 extraKnownMarketplaces 加载 → hook 一直跑旧代码（市场路径漂移）。每次 install 都更新到最新
+  // cachePath（与 registerMarketplace 一致），杜绝漂移。
+  data.extraKnownMarketplaces[MARKETPLACE_NAME] = {
+    source: { source: "directory", path: cachePath },
+  };
   writeJsonAtomicWithBackup(file, data);
   info(`[shine-code-submit] 已启用(enabledPlugins)→ ${file}`);
 }
