@@ -89,6 +89,11 @@ export function SessionsModule() {
           </button>
         </span>
       </div>
+      {view === "l1" && (
+        <div className="field-hint" style={{ padding: "0.3rem 0.2rem" }}>
+          💡 点项目查看会话 → 点会话查看对话
+        </div>
+      )}
       <div style={{ flex: "1 1 0", minHeight: 0, display: "flex", flexDirection: "column" }}>
         {view === "l1" && (
           <PagedTable<ProjectSummary>

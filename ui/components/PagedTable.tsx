@@ -1,6 +1,6 @@
-// 通用服务端分页表格 + 序号列(全局连续 (page-1)*pageSize+idx+1,翻页连续)。
+// 通用服务端分页表格 + 序号列 + 可点击行尾箭头(▸ 钻取提示)。
 // L1 项目表 / L2 session 表共用(钻取导航)。fetchPage(page) 返回当前页 rows + total;复用 report-table/report-pager 样式。
-// 切换数据源(如 L2 换 cwd)由父组件用 key={cwd} 重挂载本组件实现(page 归 1 + 重新 fetch)。
+// 可点击行(onRowClick):hover 高亮(report-table 自带) + cursor pointer + 行尾 ▸ 提示"点这进入下一级"。
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
 export interface Column<T> {
@@ -32,7 +32,6 @@ export function PagedTable<T>({
   const [rows, setRows] = useState<T[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  // fetchPage 用 ref:父组件 inline 传新引用不会重复触发 effect,只有 page 变才 fetch
   const fetchRef = useRef(fetchPage);
   fetchRef.current = fetchPage;
 
@@ -57,7 +56,7 @@ export function PagedTable<T>({
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   const cur = Math.min(page, totalPages);
-  const colCount = columns.length + 1; // +1 为序号列
+  const colCount = columns.length + 1 + (onRowClick ? 1 : 0); // +序号 +▸(可点击行)
 
   return (
     <div style={{ display: "flex", flexDirection: "column", flex: "1 1 0", minHeight: 0 }}>
@@ -71,6 +70,7 @@ export function PagedTable<T>({
                   {c.header}
                 </th>
               ))}
+              {onRowClick && <th style={{ width: 28 }} />}
             </tr>
           </thead>
           <tbody>
@@ -91,26 +91,30 @@ export function PagedTable<T>({
                     ))}
                   </tr>
                 ))
-              : rows.length === 0 ? (
-              <tr>
-                <td colSpan={colCount}>{emptyText}</td>
-              </tr>
-            ) : (
-              rows.map((r, idx) => (
-                <tr
-                  key={rowKey(r)}
-                  className={onRowClick ? "clickable" : undefined}
-                  onClick={onRowClick ? () => onRowClick(r) : undefined}
-                >
-                  <td className="rt-idx">{(page - 1) * pageSize + idx + 1}</td>
-                  {columns.map((c) => (
-                    <td key={c.key} className={c.tdClassName}>
-                      {c.render(r)}
-                    </td>
+              : rows.length === 0
+                ? (
+                  <tr>
+                    <td colSpan={colCount}>{emptyText}</td>
+                  </tr>
+                )
+                : rows.map((r, idx) => (
+                    <tr
+                      key={rowKey(r)}
+                      className={onRowClick ? "clickable" : undefined}
+                      onClick={onRowClick ? () => onRowClick(r) : undefined}
+                      style={onRowClick ? { cursor: "pointer" } : undefined}
+                    >
+                      <td className="rt-idx">{(page - 1) * pageSize + idx + 1}</td>
+                      {columns.map((c) => (
+                        <td key={c.key} className={c.tdClassName}>
+                          {c.render(r)}
+                        </td>
+                      ))}
+                      {onRowClick && (
+                        <td style={{ color: "var(--muted)", textAlign: "center" }}>▸</td>
+                      )}
+                    </tr>
                   ))}
-                </tr>
-              ))
-            )}
           </tbody>
         </table>
       </div>

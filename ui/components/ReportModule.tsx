@@ -116,6 +116,11 @@ export function ReportModule() {
         </button>
         {uploadResult && <span className={uploadResult.ok ? "field-ok" : "field-err"}>{uploadResult.text}</span>}
       </div>
+      {!selCwd && (
+        <div className="field-hint" style={{ padding: "0.3rem 0.2rem" }}>
+          💡 点项目查看会话明细
+        </div>
+      )}
       <div style={{ flex: "1 1 0", minHeight: 0, display: "flex", flexDirection: "column" }}>
         {!selCwd ? (
           <PagedTable<ProjectSummary>
