@@ -1,6 +1,6 @@
 // Daemon 入口：组装 store/bus/stats/logger/spool/ws/server，写 pid 文件，启动并回捞一次。
 import { ensureDirs } from "../shared/paths";
-import { writePidFile, readPidFile, removePidFile } from "../shared/pidfile";
+import { writePidFile, readPidFile, removePidFile, readOrCreateToken } from "../shared/pidfile";
 import { SERVICE_NAME, SERVICE_VERSION, PORT, SPOOL_SCAN_INTERVAL_MS, LISTEN_HOST } from "../shared/config";
 import { isOursAlive } from "../shared/daemonctl";
 import { Store } from "./store";
@@ -33,7 +33,7 @@ async function main(): Promise<void> {
   const pid = {
     pid: process.pid,
     port: PORT,
-    token: crypto.randomUUID(),
+    token: readOrCreateToken(), // 持久 token：升级/重启复用，dashboard 链接不变
     startedAt,
   };
   const store = new Store();

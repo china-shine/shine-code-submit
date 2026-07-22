@@ -2,6 +2,17 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.1.3 — 2026-07-22
+
+dashboard 链接不再因 daemon 重启/自动升级失效（token 持久化）+ 升级后在命令行提示「已升级 + 链接」。
+
+### 改动
+- **token 持久化（根因修复）**：daemon 启动从 `crypto.randomUUID()`（每次重启换 token）改为 `readOrCreateToken()`——读 `DATA_DIR/daemon.token` 复用，没有/损坏才生成并落盘（0600）。daemon 重启/自动升级/崩溃恢复后 token 不变，SessionStart 打印的 dashboard 链接长期有效，不再出现升级后「连接中 / 缺少 token」。停 daemon 只删 `daemon.pid`、不删 `daemon.token`，token 跨 stop/start/重装均稳定。
+  - 一次性过渡：升级到 1.1.3 后首次重启会新建 `daemon.token`（新 token），旧链接失效一次，之后永久稳定。
+- **升级提示（命令行）**：SessionStart 时 hook 对比 `DATA_DIR/notice.json` 记录的版本与当前 `SERVICE_VERSION`，版本变了就在 systemMessage 打「✨ shine-code-submit 已升级到 vX + dashboard 链接」，同版本不提示。startup 始终打链接；resume 也覆盖升级提示（避免只 `--resume` 的用户漏掉）。受 Claude Code 限制，会话进行中的 hook 无法插可见文字，提示落在（重新）进入会话时。
+- 新增 `src/shared/paths.ts` 的 `TOKEN_FILE` / `NOTICE_FILE` 常量。
+- 验证：tsc 全过；token 复用 + upgradeNotice 四态（首次/同版本/升级/升级后）端到端跑通。
+
 ## 1.1.2 — 2026-07-22
 
 修复 install 拉起 daemon 的控制台弹窗(1.1.1 只修了 spawnDaemon,漏了 install 的 startDaemonWithBun)。

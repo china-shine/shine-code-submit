@@ -3,7 +3,8 @@
 //   2. 原子落盘 spool（tmp+rename）—— 唯一必成功环节
 //   3. 热转发 POST；连接失败才走故障路径（ensureDaemon：探测→认自己人→拉起→轮询 ready）→ 重读 token → 重试
 //   全程失败静默，退出码恒为 0（绝不影响 Claude Code）。
-import { ensureDirs } from "../shared/paths";
+import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { ensureDirs, DATA_DIR, NOTICE_FILE } from "../shared/paths";
 import { readToken } from "../shared/pidfile";
 import { writeSpoolFile } from "../shared/spool";
 import { BASE_URL, PUBLIC_BASE_URL, HOOK_POST_TIMEOUT_MS, SERVICE_VERSION } from "../shared/config";
@@ -48,18 +49,24 @@ async function main(): Promise<void> {
     process.stderr.write(`[shine-code-submit-hook] forward failed: ${safeMsg(err)}\n`);
   }
 
-  // 3. SessionStart（真·新开会话）时给用户打印 UI 入口：stdout 输出 JSON，
-  //    Claude Code 解析 systemMessage 字段直接显示给用户（裸 stdout 只注入
-  //    assistant 当 context，用户不可见）。仅 source=startup 打印，避免
-  //    resume/clear/compact 刷屏；daemon 未就绪读不到 token 则静默跳过。
+  // 3. SessionStart 时给用户打印 UI 入口：stdout 输出 JSON，Claude Code 解析 systemMessage
+  //    字段直接显示给用户（裸 stdout 只注入 assistant 当 context，用户不可见）。
+  //    · dashboard 链接仅 source=startup 打印（避免 resume/clear/compact 刷屏）；读不到 token（daemon 未就绪）则静默跳过。
+  //    · 升级提示（✨ 已升级 vX + 链接）在 startup 与 resume 各打【一次】：自动升级会重启 daemon，
+  //      但 token 持久、链接不变；用户重新进入 Claude 时凭 NOTICE_FILE 记录的版本差异感知到升级，
+  //      记录更新后同版本不再提示。resume 也覆盖，避免只 --resume 从不看提示的用户漏掉。
   if (event.type === "SessionStart") {
     const source = (event.payload as Record<string, unknown> | null | undefined)?.source;
-    if (source === "startup") {
+    const isStartup = source === "startup";
+    if (isStartup || source === "resume") {
       const token = readToken();
       if (token) {
-        const url = `${PUBLIC_BASE_URL}/ui?t=${token}`; // 网卡 IP：显示与打开浏览器用同一地址，局域网通用
-        process.stdout.write(JSON.stringify({ systemMessage: `Shine Dashboard: ${url}` }));
-        // openBrowser(url); // 自动弹浏览器暂时关闭——链接仍作 systemMessage 打印,用户可点开
+        const note = upgradeNotice(); // 升级→"✨ …vX\n"；首次/同版本→""；顺带落 NOTICE_FILE
+        if (note || isStartup) {
+          const url = `${PUBLIC_BASE_URL}/ui?t=${token}`; // 网卡 IP：显示与打开浏览器用同一地址，局域网通用
+          process.stdout.write(JSON.stringify({ systemMessage: `${note}Shine Dashboard: ${url}` }));
+          // openBrowser(url); // 自动弹浏览器暂时关闭——链接仍作 systemMessage 打印,用户可点开
+        }
       }
     }
   }
@@ -160,4 +167,32 @@ function safeMsg(v: unknown): string {
 }
 function truncate(s: string): string {
   return s.length > 500 ? `${s.slice(0, 500)}...` : s;
+}
+
+/**
+ * 升级提示：对比 NOTICE_FILE 记录的上次版本与当前 SERVICE_VERSION。
+ * - 同版本 → ""（不提示）。
+ * - 首次（无记录/损坏）→ ""（不报「已升级」），仅落当前版本。
+ * - 版本变了（升级/降级）→ "✨ shine-code-submit 已升级到 vX\n"，并更新记录（下次同版本不再提示）。
+ * 全程容错：任何读写失败均返回 ""，绝不影响 hook。
+ */
+function upgradeNotice(): string {
+  try {
+    let last = "";
+    try {
+      last = (JSON.parse(readFileSync(NOTICE_FILE, "utf8")) as { version?: string }).version ?? "";
+    } catch {
+      /* 无文件/损坏：视为首次 */
+    }
+    if (last === SERVICE_VERSION) return "";
+    try {
+      mkdirSync(DATA_DIR, { recursive: true });
+      writeFileSync(NOTICE_FILE, JSON.stringify({ version: SERVICE_VERSION }));
+    } catch {
+      /* 写失败：本次仍提示，下次启动再尝试记录 */
+    }
+    return last ? `✨ shine-code-submit 已升级到 v${SERVICE_VERSION}\n` : "";
+  } catch {
+    return "";
+  }
 }

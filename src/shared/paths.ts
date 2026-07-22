@@ -12,6 +12,8 @@ export const LOG_DIR = join(DATA_DIR, "log");
 export const DB_DIR = join(DATA_DIR, "db");
 
 export const PID_FILE = join(DATA_DIR, "daemon.pid");
+export const TOKEN_FILE = join(DATA_DIR, "daemon.token"); // 持久 token：daemon 重启/自动升级复用，dashboard 链接不变
+export const NOTICE_FILE = join(DATA_DIR, "notice.json"); // hook 记录上次提示的版本，用于感知升级
 export const LOG_FILE = join(LOG_DIR, "daemon.log");
 export const DB_FILE = join(DB_DIR, "events.sqlite");
 
