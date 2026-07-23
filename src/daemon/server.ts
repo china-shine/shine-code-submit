@@ -66,20 +66,20 @@ export function startServer(deps: ServerDeps) {
 
   // 自动上报:每分钟 tick;配置了 reportUrl + reportIntervalMin(>0) 且到点,则上报一次。
   // 配置实时读 settings,改 URL/间隔不用重启即生效。
-  let lastReportAt = Date.now();
   setInterval(async () => {
     let url: string | null;
     let intervalMin: number;
+    let lastReportAt: number;
     try {
       const s = readSettings();
       url = s.reportUrl ?? null;
       intervalMin = typeof s.reportIntervalMin === "number" ? s.reportIntervalMin : 0;
+      lastReportAt = s.lastReportAt ?? 0; // 持久化水位(替代内存变量,重启不重置)
     } catch {
       return;
     }
     if (!url || !intervalMin || intervalMin <= 0) return;
     if (Date.now() - lastReportAt < intervalMin * 60_000) return;
-    lastReportAt = Date.now();
     try {
       const r = await uploadReport(store);
       log.info(r.uploaded ? `auto report uploaded to ${url}` : `auto report skipped: ${r.reason}`);
@@ -484,9 +484,15 @@ async function uploadReport(store: Store): Promise<UploadOutcome> {
   const s = readSettings();
   const url = s.reportUrl;
   if (!url) return { uploaded: false, reason: "reportUrl 未配置" };
-  const report = await buildReport(store, 0);
+  const since = s.lastReportAt ?? 0; // 增量水位(0=全量,首次);成功/无变化后推进
+  const report = await buildReport(store, since);
   if (!report.gitUser) {
     return { uploaded: false, reason: "未采集到 git user.name,跳过上报(无上报身份)" };
+  }
+  // 增量无变化:跳过上报但推进水位(避免每 tick 重查;下次 intervalMin 后再查)
+  if (since > 0 && report.projects.length === 0) {
+    writeSettings({ ...readSettings(), lastReportAt: Date.now() });
+    return { uploaded: false, reason: "增量无变化" };
   }
   await fetch(url, {
     method: "POST",
@@ -494,6 +500,8 @@ async function uploadReport(store: Store): Promise<UploadOutcome> {
     body: gzipSync(Buffer.from(JSON.stringify(report), "utf8")),
     signal: AbortSignal.timeout(15000),
   });
+  // 成功才推进水位(失败下次重发同批增量,不丢)
+  writeSettings({ ...readSettings(), lastReportAt: Date.now() });
   return { uploaded: true };
 }
 
