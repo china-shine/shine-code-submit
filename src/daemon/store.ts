@@ -216,6 +216,11 @@ export class Store {
       .run(readOffset, entriesBlob, mtimeMs, sizeBytes, Date.now(), path);
   }
 
+  /** 文件已从磁盘删除(消费者读 ENOENT):删 SQLite 记录,避免永久 dirty、每 tick 重试刷屏。 */
+  deleteFile(path: string): void {
+    this.db.prepare(`DELETE FROM transcript_files WHERE path = ?`).run(path);
+  }
+
   /** 某 session 的所有文件行(父+子代理),供重算聚合 entries。 */
   filesForSession(sessionId: string): TranscriptFileRow[] {
     return this.db
@@ -262,6 +267,11 @@ export class Store {
         `UPDATE transcript_sessions SET token_input = ?, token_output = ?, token_cc = ?, token_cr = ?, active_ms = ?, last_activity = ?, mtime_key = ?, dirty = 0, last_computed_at = ? WHERE session_id = ?`,
       )
       .run(token.input, token.output, token.cacheCreation, token.cacheRead, activeMs, lastActivity, mtimeKey, Date.now(), sessionId);
+  }
+
+  /** session 的文件已全部删除:清掉 session 记录(否则 recompute 空集早退、永久 dirty 重算)。 */
+  deleteSession(sessionId: string): void {
+    this.db.prepare(`DELETE FROM transcript_sessions WHERE session_id = ?`).run(sessionId);
   }
 
   /** 父文件首读时写 title/cwd(append-only,首 64 行永不变,算一次即可)。 */

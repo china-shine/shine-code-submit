@@ -88,7 +88,18 @@ export class TranscriptConsumer {
     try {
       const dirtyFiles = this.store.dirtyFiles(MAX_FILES_PER_TICK);
       for (const f of dirtyFiles) {
-        try { this.consumeFile(f); } catch (e) { this.log.info(`consume ${f.path} failed`, e); }
+        try {
+          this.consumeFile(f);
+        } catch (e) {
+          if ((e as { code?: string })?.code === "ENOENT") {
+            // 文件已从磁盘删除:清掉 SQLite 残留记录(否则永久 dirty、每 tick 重试刷屏),并标 session 重算以剔除它
+            this.store.deleteFile(f.path);
+            this.store.markSessionDirty(f.session_id, f.project_id, f.parent_path);
+            this.log.info(`consume ${f.path} failed: file deleted, removed stale record`);
+          } else {
+            this.log.info(`consume ${f.path} failed`, e);
+          }
+        }
       }
       const dirtySessions = this.store.dirtySessions(MAX_SESSIONS_PER_TICK);
       for (const s of dirtySessions) {
@@ -120,7 +131,12 @@ export class TranscriptConsumer {
   /** 重算一个 session:聚合所有文件(父+子代理)entries → sessionUsageAndActiveFromEntries 全量算 → UPDATE 结果(清 dirty)。 */
   private recomputeSession(sessionId: string): void {
     const rows = this.store.filesForSession(sessionId);
-    if (rows.length === 0) return;
+    const hasParent = rows.some((r) => r.is_subagent === 0);
+    if (rows.length === 0 || !hasParent) {
+      // 文件全删,或父 transcript 已删只剩孤立子代理(ccusage 无父文件不识别该 session)→ 清理对齐
+      this.store.deleteSession(sessionId);
+      return;
+    }
     const allEntries: UsageDedupeEntry[] = [];
     let lastActivity = 0;
     const mtimeParts: string[] = [];
