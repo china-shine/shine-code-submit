@@ -113,7 +113,7 @@ export function ReportModule() {
         </button>
         <button
           type="button"
-          className="tab"
+          className="tab tab-upload"
           disabled={uploading}
           title="增量上报:只发变化的 session(和自动 tick 一致,省带宽)"
           onClick={() => doUpload(false)}
@@ -122,14 +122,16 @@ export function ReportModule() {
         </button>
         <button
           type="button"
-          className="tab"
+          className="tab tab-upload"
           disabled={uploading}
           title="全量上报:强制发所有 session(tokenserver 数据异常/漂移时用,重锚全量)"
           onClick={() => doUpload(true)}
         >
           ☁☁ {uploading ? "上报中…" : "全量"}
         </button>
-        {uploadResult && <span className={uploadResult.ok ? "field-ok" : "field-err"}>{uploadResult.text}</span>}
+        <span className={`upload-slot ${uploadResult ? (uploadResult.ok ? "field-ok" : "field-err") : ""}`}>
+          {uploadResult?.text ?? ""}
+        </span>
       </div>
       {!selCwd && (
         <div className="field-hint" style={{ padding: "0.3rem 0.2rem" }}>
