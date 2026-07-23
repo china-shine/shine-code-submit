@@ -108,7 +108,7 @@ export function ReportModule() {
         className="report-toolbar"
         style={{ display: "flex", gap: "0.6rem", alignItems: "center", flexWrap: "wrap", padding: "0.2rem 0.2rem 0.4rem" }}
       >
-        <button type="button" className="tab" onClick={refresh} title="重新加载数据">
+        <button type="button" className="tab tab-upload" onClick={refresh} title="重新加载数据">
           ↻ 刷新
         </button>
         <button

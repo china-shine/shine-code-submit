@@ -325,7 +325,7 @@ ul { list-style: none; margin: 0; padding: 0; }
 }
 .tab.active { color: var(--text); border-bottom-color: var(--accent-line); }
 .tab:hover { background: var(--hover); }
-.report-toolbar .tab { min-width: 4.5rem; text-align: center; }
+.report-toolbar .tab { width: 7rem; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .report-toolbar .tab-upload {
   background: var(--accent-line);
   color: #fff;
