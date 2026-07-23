@@ -1,5 +1,5 @@
 // 侧栏:品牌头 + 两项导航(数据总览/成员分析) + 底部 dark toggle。
-// 从 TokenWeb App.tsx 搬运(683-722),品牌名改回 "Token 上报"。
+// 从 TokenWeb App.tsx 搬运(683-722),品牌名 "AI效能平台"。
 import { LayoutDashboard, Users, Zap, Sun, Moon } from "lucide-react";
 
 const NAV_ITEMS = [
@@ -27,7 +27,7 @@ export function Sidebar({
           <div className="w-7 h-7 rounded-sm bg-gradient-to-br from-indigo-400 to-violet-500 flex items-center justify-center flex-shrink-0">
             <Zap className="w-4 h-4 text-white" />
           </div>
-          <div className="text-sm font-bold text-white tracking-tight">Token 上报</div>
+          <div className="text-sm font-bold text-white tracking-tight">AI效能平台</div>
         </div>
       </div>
 
