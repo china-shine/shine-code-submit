@@ -1,5 +1,5 @@
 // 部署 plugin 文件到 claude cache 目录,并跑 bun install 装运行时依赖(marked/react)。
-import { cpSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { pluginsRoot } from "./paths";
@@ -12,6 +12,35 @@ export const PLUGIN_NAME = "shine-code-submit";
 /** 部署目标版本目录:~/.claude/plugins/cache/shine-code-submit/shine-code-submit/<version>/ */
 export function cacheDir(version: string = SERVICE_VERSION): string {
   return join(pluginsRoot(), "cache", MARKETPLACE_NAME, PLUGIN_NAME, version);
+}
+
+/**
+ * 清同 plugin 下非当前版本的 cache 目录(升级残留)。尽力而为:失败只 log,绝不抛。
+ * 时机:由 runInstall 在确认新 daemon 运行正常(probe alive 且 version === SERVICE_VERSION)后调用——
+ *      保证"当前版本已能正常运行"才删旧;部署/启动失败则保留旧版可用(绝不两头空)。
+ * 安全性:活 daemon 启动时已把所有静态 import 加载进内存,运行时 I/O 全指向 DATA_DIR/~/.claude/projects,
+ *        绝不读 plugin cache 目录(Explore 已确认);故删旧 version 目录不影响在跑的进程。
+ */
+export function pruneOldVersions(): void {
+  const versionsDir = join(pluginsRoot(), "cache", MARKETPLACE_NAME, PLUGIN_NAME);
+  let entries: string[];
+  try {
+    entries = readdirSync(versionsDir);
+  } catch {
+    return; // 目录不存在(首次安装)或读不了,无事可做
+  }
+  for (const name of entries) {
+    if (name === SERVICE_VERSION) continue; // 保留当前版本(= cacheDir() 目录名)
+    const p = join(versionsDir, name);
+    try {
+      if (!statSync(p).isDirectory()) continue; // 只清目录,跳过文件
+      rmSync(p, { recursive: true, force: true });
+      info(`[shine-code-submit] 已清理旧版本目录: ${name}`);
+    } catch (e) {
+      // 删不掉(Windows 文件占用/权限)不强求,留给下次 install 或 Claude Code sweep
+      info(`[shine-code-submit] 清理 ${name} 跳过: ${e instanceof Error ? e.message : e}`);
+    }
+  }
 }
 
 /** 找 npm 包根:运行入口(dist/install.cjs)所在目录上溯到含 package.json + .claude-plugin 的目录。

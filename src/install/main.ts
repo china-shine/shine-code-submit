@@ -9,7 +9,7 @@ import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { ensureBun } from "./bun";
-import { cacheDir, deployPlugin } from "./deploy";
+import { cacheDir, deployPlugin, pruneOldVersions } from "./deploy";
 import { enablePlugin, registerMarketplace, registerPlugin, unregisterAll } from "./register";
 import { PUBLIC_BASE_URL, SERVICE_VERSION } from "../shared/config";
 import { isOursAlive, openBrowser, probeDaemon, spawnHidden, stopDaemon } from "../shared/daemonctl";
@@ -65,7 +65,14 @@ async function runInstall(): Promise<void> {
   registerPlugin(cachePath);
   enablePlugin(cachePath);
   ensureDirs();
-  await startDaemonWithBun(bunPath, cachePath);
+  const ready = await startDaemonWithBun(bunPath, cachePath);
+  if (ready) {
+    // 新 daemon 已 probe 确认运行正常(alive && version 匹配),才清旧 version——
+    // 保证当前版本已能跑再删旧,启动失败/超时则保留旧版可用,绝不两头空。
+    pruneOldVersions();
+  } else {
+    warn("[shine-code-submit] 新 daemon 未确认就绪,保留旧 version 目录不清理(下次成功启动后再清)");
+  }
   openDashboard();
   info("");
   info("✓ 安装完成。");
@@ -96,12 +103,14 @@ async function runStatus(): Promise<void> {
 }
 
 /** 用显式 bunPath 拉 daemon。不调 daemonctl.spawnDaemon——它用 process.execPath,install 场景是 node 会出错。
- *  版本感知:已是当前 SERVICE_VERSION 则复用;旧版在跑则停旧启新(daemon 自守,必须先停后启);没跑则直接启。 */
-async function startDaemonWithBun(bunPath: string, cachePath: string): Promise<void> {
+ *  版本感知:已是当前 SERVICE_VERSION 则复用;旧版在跑则停旧启新(daemon 自守,必须先停后启);没跑则直接启。
+ *  返回 true=daemon 已就绪(probe alive && version===当前);false=spawn 失败或 10s 内未就绪。
+ *  调用方(runInstall)据此决定是否清理旧 version——只有当前版本确认能跑才删旧。 */
+async function startDaemonWithBun(bunPath: string, cachePath: string): Promise<boolean> {
   const probe = await probeDaemon();
   if (probe.alive && probe.version === SERVICE_VERSION) {
     info(`[shine-code-submit] daemon 已是最新 v${SERVICE_VERSION},跳过启动`);
-    return;
+    return true;
   }
   if (probe.alive) {
     info(`[shine-code-submit] daemon 旧版 v${probe.version} 运行中,重启到 v${SERVICE_VERSION}...`);
@@ -117,7 +126,7 @@ async function startDaemonWithBun(bunPath: string, cachePath: string): Promise<v
   } catch (err) {
     warn(`[shine-code-submit] 启动 daemon 失败:${err instanceof Error ? err.message : err}`);
     warn("  plugin 已注册,Claude Code 重启后 hook 会自动拉起 daemon");
-    return;
+    return false;
   }
   const deadline = Date.now() + 10_000;
   while (Date.now() < deadline) {
@@ -125,12 +134,13 @@ async function startDaemonWithBun(bunPath: string, cachePath: string): Promise<v
     const p = await probeDaemon();
     if (p.alive && p.version === SERVICE_VERSION) {
       info("[shine-code-submit] daemon 已就绪");
-      return;
+      return true;
     }
   }
   warn(
     "[shine-code-submit] daemon 启动超时(10s)。plugin 已注册,可稍后手动 `shine-code-submit start` 或重启 claude。",
   );
+  return false;
 }
 
 function openDashboard(): void {
