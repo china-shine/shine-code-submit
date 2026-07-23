@@ -103,6 +103,11 @@ export function ReportModule() {
         <span style={{ marginLeft: "auto" }}>
           {totals ? `${totals.projects} 项目 · ${totals.sessions} 会话 · ${fmtUsageLabeled(totals.tokens)}` : "…"}
         </span>
+      </div>
+      <div
+        className="report-toolbar"
+        style={{ display: "flex", gap: "0.6rem", alignItems: "center", flexWrap: "wrap", padding: "0.2rem 0.2rem 0.4rem" }}
+      >
         <button type="button" className="tab" onClick={refresh} title="重新加载数据">
           ↻ 刷新
         </button>
