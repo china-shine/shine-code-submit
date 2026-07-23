@@ -3,9 +3,9 @@
 // 原先 token/title/cwd/activeMs 是 4 套独立缓存，同一批文件被 statSync 4 遍判命中。
 // 现合并为 1 套：按 transcriptPath 缓存「复合 mtime → 4 字段 bundle」，一次 stat 判命中、miss 时一次性算全 4 字段。
 // 调用方（claude-scan）对每文件只调一次 getSessionInfo 取多字段，省 3/4 stat。冷启动逐步填充，稳态全命中。异常返回 null。
-import { statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
-import { sumSessionUsage, sessionTranscriptFiles, readFirstUserText, readFirstCwd, sessionActiveMs } from "./transcript";
+import { sessionTranscriptFiles, sessionUsageAndActiveFromRaws, readFirstUserTextFromText, readFirstCwdFromText } from "./transcript";
 import type { TokenUsage } from "../shared/types";
 
 interface SessionInfo {
@@ -34,14 +34,29 @@ export function getSessionInfo(transcriptPath: string): SessionInfo | null {
   const hit = infoCache.get(transcriptPath);
   if (hit && hit.mtimeKey === mtimeKey) return hit;
 
+  // 每个文件 readFileSync 一次(父+子代理);父 raw 复用给 title/cwd,所有 raw 合并一次性算 token+activeMs。
+  // 替代旧实现:sumSessionUsage + sessionActiveMs 各遍历各读、readFirstUserText/readFirstCwd 各 readFileSync —— 父文件被读 4 次、dedupe 跑 2 遍。现在父文件只读 1 次、dedupe 1 次。
+  const raws: string[] = [];
+  for (const file of files) {
+    try {
+      raws.push(readFileSync(file, "utf8"));
+    } catch {
+      raws.push(""); // 单文件读失败用空串,其余照算
+    }
+  }
+  const parentRaw = raws[0] ?? "";
+
   let tokenTotal: TokenUsage | null = null;
   let title: string | null = null;
   let cwd: string | null = null;
   let activeMs = 0;
-  try { tokenTotal = sumSessionUsage(realPath); } catch { /* usage 算失败留 null */ }
-  try { title = readFirstUserText(realPath); } catch { /* 标题读失败留 null */ }
-  try { cwd = readFirstCwd(realPath); } catch { /* cwd 读失败留 null */ }
-  try { activeMs = sessionActiveMs(realPath); } catch { /* 时长算失败留 0 */ }
+  try {
+    const r = sessionUsageAndActiveFromRaws(raws);
+    tokenTotal = r.tokenTotal;
+    activeMs = r.activeMs;
+  } catch { /* usage/时长算失败留 null/0 */ }
+  try { title = readFirstUserTextFromText(parentRaw); } catch { /* 标题读失败留 null */ }
+  try { cwd = readFirstCwdFromText(parentRaw); } catch { /* cwd 读失败留 null */ }
 
   const info: SessionInfo = { mtimeKey, tokenTotal, title, cwd, activeMs };
   infoCache.set(transcriptPath, info);

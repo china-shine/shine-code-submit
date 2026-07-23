@@ -95,15 +95,7 @@ export function parseTranscript(transcriptPath: string): TranscriptMessage[] {
 
 /** 读 transcript,返回首条 user 消息文本(合并多行、去首尾空白、限长 200),作为「会话标题」。
  *  比 sessionId 更可读;只解析前 64 行(首条提问通常在前几行);无 user text 返回 null。 */
-export function readFirstUserText(transcriptPath: string): string | null {
-  const path = transcriptPath.replace(/^~/, homedir());
-  if (!existsSync(path)) return null;
-  let raw: string;
-  try {
-    raw = readFileSync(path, "utf8");
-  } catch {
-    return null;
-  }
+export function readFirstUserTextFromText(raw: string): string | null {
   for (const line of raw.split("\n").slice(0, 64)) {
     if (!line.trim()) continue;
     let obj: Record<string, unknown>;
@@ -135,15 +127,7 @@ export function readFirstUserText(transcriptPath: string): string | null {
 /** 读 transcript，返回首条 cwd 字段（Claude Code 写入的真实工作目录，无编码损失）。
  *  只解析前 64 行（cwd 通常在首行 summary）；无 cwd 字段返回 null。
  *  供扫描补真实 cwd，替代从项目目录名反推的有损解码（中文/空格/括号被编码成 - 会丢失）。 */
-export function readFirstCwd(transcriptPath: string): string | null {
-  const path = transcriptPath.replace(/^~/, homedir());
-  if (!existsSync(path)) return null;
-  let raw: string;
-  try {
-    raw = readFileSync(path, "utf8");
-  } catch {
-    return null;
-  }
+export function readFirstCwdFromText(raw: string): string | null {
   for (const line of raw.split("\n").slice(0, 64)) {
     if (!line.trim()) continue;
     let obj: Record<string, unknown>;
@@ -348,12 +332,10 @@ function pushDedupedEntry(
   addDedupeIndex(byMessage, messageId, newIdx);
 }
 
-/** 读单个 transcript 文件，返回通过 ccusage 全部门（usage 标记 / null 黑名单 / 解析 /
- * 严格时间戳 / 字段校验 / cache_creation 5m+1h 归并）的条目；未去重。 */
-function readUsageEntries(transcriptPath: string): UsageDedupeEntry[] {
-  const path = transcriptPath.replace(/^~/, homedir());
-  if (!existsSync(path)) return [];
-  const lines = readFileSync(path, "utf8").split("\n").filter(Boolean);
+/** 从已读的 transcript 文本解析 usage 条目，返回通过 ccusage 全部门（usage 标记 / null 黑名单 / 解析 /
+ * 严格时间戳 / 字段校验 / cache_creation 5m+1h 归并）的条目；未去重。不读文件——调用方 readFileSync 一次后传入,避免同一文件被多字段各读一遍。 */
+function readUsageEntriesFromText(raw: string): UsageDedupeEntry[] {
+  const lines = raw.split("\n").filter(Boolean);
   const entries: UsageDedupeEntry[] = [];
   for (const line of lines) {
     if (!line.includes('"usage":{')) continue;
@@ -394,13 +376,8 @@ function readUsageEntries(transcriptPath: string): UsageDedupeEntry[] {
   return entries;
 }
 
-/** 对条目集合做 ccusage 全局去重（message.id+requestId，含 sidechain 重放兜底）后求和。
- *  去重结果与插入顺序无关（偏好：非 sidechain → total 更大 → 带 speed）。 */
-function dedupeAndSum(entries: UsageDedupeEntry[]): TokenUsage {
-  const survivors: UsageDedupeEntry[] = [];
-  const byExact = new Map<string, number[]>();
-  const byMessage = new Map<string, number[]>();
-  for (const entry of entries) pushDedupedEntry(entry, survivors, byExact, byMessage);
+/** survivors 求和（token 四字段）。抽出来供 token 与 activeMs 共用同一次 dedupe 的 survivors。 */
+function sumSurvivors(survivors: UsageDedupeEntry[]): TokenUsage {
   const total: TokenUsage = { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 };
   for (const e of survivors) {
     total.input += e.input;
@@ -411,12 +388,24 @@ function dedupeAndSum(entries: UsageDedupeEntry[]): TokenUsage {
   return total;
 }
 
+/** 对条目集合做 ccusage 全局去重（message.id+requestId，含 sidechain 重放兜底）后求和。
+ *  去重结果与插入顺序无关（偏好：非 sidechain → total 更大 → 带 speed）。 */
+function dedupeAndSum(entries: UsageDedupeEntry[]): TokenUsage {
+  const survivors: UsageDedupeEntry[] = [];
+  const byExact = new Map<string, number[]>();
+  const byMessage = new Map<string, number[]>();
+  for (const entry of entries) pushDedupedEntry(entry, survivors, byExact, byMessage);
+  return sumSurvivors(survivors);
+}
+
 /**
  * 单个 transcript 文件的 token 总量（去重发生在该文件内）。
  * 对齐 ccusage 逐行逻辑；不依赖对话解析，避免漏掉无 text/thinking/tool_use 的 usage 行。
  */
 export function sumTranscriptUsage(transcriptPath: string): TokenUsage {
-  return dedupeAndSum(readUsageEntries(transcriptPath));
+  const path = transcriptPath.replace(/^~/, homedir());
+  if (!existsSync(path)) return { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 };
+  return dedupeAndSum(readUsageEntriesFromText(readFileSync(path, "utf8")));
 }
 
 /** 给定父 transcript 路径，返回实际存在的 [父文件, ...同目录 subagents/*.jsonl]
@@ -440,14 +429,34 @@ export function sessionTranscriptFiles(parentPath: string): string[] {
   return files;
 }
 
-/** 父 session 的 token 总量：父 transcript + 全部 subagents/*.jsonl，跨文件全局去重后求和。
- *  对齐 ccusage 的 session 口径（子代理 transcript 归并到父 session）。 */
-export function sumSessionUsage(parentPath: string): TokenUsage {
-  const entries: UsageDedupeEntry[] = [];
+/** 读 sessionTranscriptFiles 各文件文本（每个 readFileSync 一次）。供 sumSessionUsage/sessionActiveMs/sessionUsageAndActiveFromRaws 复用。 */
+function readTranscriptRaws(parentPath: string): string[] {
+  const raws: string[] = [];
   for (const file of sessionTranscriptFiles(parentPath)) {
-    for (const entry of readUsageEntries(file)) entries.push(entry);
+    try {
+      raws.push(readFileSync(file, "utf8"));
+    } catch {
+      /* 单文件读失败跳过，其余照算 */
+    }
   }
-  return dedupeAndSum(entries);
+  return raws;
+}
+
+/** 从已读的多个文件文本(父+子代理)一次性算 token + activeMs：合并 entries → 一次 ccusage 去重 → survivors 同时求和(token)与 burst(activeMs)。
+ *  替代分别调 sumSessionUsage + sessionActiveMs(两者各遍历各读各 dedupe)。算法与拆分版逐字节等价。 */
+export function sessionUsageAndActiveFromRaws(raws: string[]): { tokenTotal: TokenUsage; activeMs: number } {
+  const entries: UsageDedupeEntry[] = [];
+  for (const raw of raws) {
+    for (const entry of readUsageEntriesFromText(raw)) entries.push(entry);
+  }
+  const survivors = dedupedSurvivors(entries);
+  return { tokenTotal: sumSurvivors(survivors), activeMs: activeMsFromSurvivors(survivors) };
+}
+
+/** 父 session 的 token 总量：父 transcript + 全部 subagents/*.jsonl，跨文件全局去重后求和。
+ *  对齐 ccusage 的 session 口径（子代理 transcript 归并到父 session）。瘦封装,走 sessionUsageAndActiveFromRaws。 */
+export function sumSessionUsage(parentPath: string): TokenUsage {
+  return sessionUsageAndActiveFromRaws(readTranscriptRaws(parentPath)).tokenTotal;
 }
 
 // ---- gap-aware 活跃时长（「对话总时长」KPI 数据源）----
@@ -468,14 +477,9 @@ function dedupedSurvivors(entries: UsageDedupeEntry[]): UsageDedupeEntry[] {
   return survivors;
 }
 
-/** 某 session 的 gap-aware 活跃时长（ms）：父 transcript + subagents/*.jsonl 合并（与 token 同口径）。
- *  收集去重后的 timestamp，升序排序后按 GAP_MS 切 burst 累加；空 session 返回 0。 */
-export function sessionActiveMs(parentPath: string): number {
-  const entries: UsageDedupeEntry[] = [];
-  for (const file of sessionTranscriptFiles(parentPath)) {
-    for (const entry of readUsageEntries(file)) entries.push(entry);
-  }
-  const ts = dedupedSurvivors(entries)
+/** 从 survivors(已去重)算 gap-aware 活跃时长：收集 ts 升序后按 GAP_MS 切 burst 累加。与 token 共用同一次 dedupe 的 survivors。 */
+function activeMsFromSurvivors(survivors: UsageDedupeEntry[]): number {
+  const ts = survivors
     .map((e) => e.ts)
     .filter((t) => Number.isFinite(t))
     .sort((a, b) => a - b);
@@ -493,4 +497,10 @@ export function sessionActiveMs(parentPath: string): number {
   }
   active += prev - burstStart + BUFFER_MS; // 末尾 burst（单点时 prev-burstStart=0，得 BUFFER_MS=10min）
   return active;
+}
+
+/** 某 session 的 gap-aware 活跃时长（ms）：父 transcript + subagents/*.jsonl 合并（与 token 同口径）。
+ *  收集去重后的 timestamp，升序排序后按 GAP_MS 切 burst 累加；空 session 返回 0。瘦封装,走 sessionUsageAndActiveFromRaws。 */
+export function sessionActiveMs(parentPath: string): number {
+  return sessionUsageAndActiveFromRaws(readTranscriptRaws(parentPath)).activeMs;
 }
