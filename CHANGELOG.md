@@ -2,6 +2,14 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.1.7 — 2026-07-23
+
+升级时自动清理旧版本残留目录（daemon 运行确认后才删，绝不两头空）。
+
+### 改动
+- **部署后清理旧 version cache 目录**：每次 install/自动升级部署新版本到 `cache/shine-code-submit/shine-code-submit/<version>/` 后，删除非当前版本的 cache 目录及各自 `node_modules`，只保留当前版本——不再单靠 Claude Code `.last_inuse_sweep` 的不透明时机回收，避免旧版本目录长期堆积。
+- **daemon 运行确认后才删（门控）**：`startDaemonWithBun` 返回就绪状态（probe `alive && version === 当前`），`runInstall` 仅在 `ready=true` 时调 `pruneOldVersions`。启动失败/超时则保留旧版可用，绝不出现「旧的已删、新的没装成」两头空。
+
 ## 1.1.6 — 2026-07-22
 
 修复升级后 hook 仍跑旧代码的问题（marketplace 路径漂移）——这才是「升级后链接只在第一次显示」的真因。
