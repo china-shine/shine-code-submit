@@ -4,7 +4,7 @@
 import type { ScannedSession } from "./claude-scan";
 import { getGitUser, getGitRemote } from "./git";
 import { getSessionLines, sumLines } from "./lines";
-import type { Store } from "./store";
+import type { Store, TranscriptSessionRow } from "./store";
 import type { LinesStat, ProjectSummary, ReportProject, ReportSession, SessionSummary, TokenUsage } from "../shared/types";
 
 const ZERO_TOKEN: TokenUsage = { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 };
@@ -43,6 +43,20 @@ export function groupScannedByCwd(scanned: ScannedSession[], hookCwd: Map<string
     else byCwd.set(cwd, [s]);
   }
   return byCwd;
+}
+
+/** SQLite transcript_sessions 行 → ScannedSession(供 server.ts 复用 aggregate,口径与 scanSessions 一致)。 */
+export function rowToScannedSession(r: TranscriptSessionRow): ScannedSession {
+  return {
+    project: r.project_id,
+    sessionId: r.session_id,
+    transcriptPath: r.parent_path,
+    lastActivity: r.last_activity,
+    tokenTotal: { input: r.token_input, output: r.token_output, cacheCreation: r.token_cc, cacheRead: r.token_cr },
+    activeMs: r.active_ms,
+    title: r.title,
+    cwd: r.cwd,
+  };
 }
 
 /** 累加 TokenUsage 列表(可 null/undefined)。 */

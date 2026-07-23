@@ -64,7 +64,7 @@ export function claudeProjectsRoots(): string[] {
 }
 
 /** 递归收集 dir 下所有 *.jsonl 绝对路径。 */
-function collectJsonl(dir: string, out: string[]): void {
+export function collectJsonl(dir: string, out: string[]): void {
   let names: string[];
   try {
     names = readdirSync(dir);

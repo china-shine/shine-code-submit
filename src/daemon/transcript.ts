@@ -4,7 +4,7 @@
 // assistant 消息额外提取 message.usage（token 用量），供对话明细与会话级汇总。
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import type { TokenUsage, TranscriptMessage } from "../shared/types";
 
 // TranscriptMessage 已移至 shared/types（前端 React 也复用同一契约）；此处 re-export 保持向后兼容。
@@ -249,7 +249,7 @@ function numField(v: unknown): number {
   return typeof v === "number" && Number.isFinite(v) ? v : 0;
 }
 
-interface UsageDedupeEntry {
+export interface UsageDedupeEntry {
   messageId?: string;
   requestId?: string;
   isSidechain: boolean;
@@ -334,7 +334,7 @@ function pushDedupedEntry(
 
 /** 从已读的 transcript 文本解析 usage 条目，返回通过 ccusage 全部门（usage 标记 / null 黑名单 / 解析 /
  * 严格时间戳 / 字段校验 / cache_creation 5m+1h 归并）的条目；未去重。不读文件——调用方 readFileSync 一次后传入,避免同一文件被多字段各读一遍。 */
-function readUsageEntriesFromText(raw: string): UsageDedupeEntry[] {
+export function readUsageEntriesFromText(raw: string): UsageDedupeEntry[] {
   const lines = raw.split("\n").filter(Boolean);
   const entries: UsageDedupeEntry[] = [];
   for (const line of lines) {
@@ -442,15 +442,60 @@ function readTranscriptRaws(parentPath: string): string[] {
   return raws;
 }
 
-/** 从已读的多个文件文本(父+子代理)一次性算 token + activeMs：合并 entries → 一次 ccusage 去重 → survivors 同时求和(token)与 burst(activeMs)。
+/** 从已解析的全部 entries(父+子代理合并)一次性算 token + activeMs:一次 ccusage 去重 → survivors 同时求和与 burst。
+ *  与 sessionUsageAndActiveFromRaws 共用同一 dedupe 链;供消费者(持久化 entries)直接调,算法逐字节等价。 */
+export function sessionUsageAndActiveFromEntries(allEntries: UsageDedupeEntry[]): { tokenTotal: TokenUsage; activeMs: number } {
+  const survivors = dedupedSurvivors(allEntries);
+  return { tokenTotal: sumSurvivors(survivors), activeMs: activeMsFromSurvivors(survivors) };
+}
+
+/** 从已读的多个文件文本(父+子代理)一次性算 token + activeMs:合并 entries → sessionUsageAndActiveFromEntries。
  *  替代分别调 sumSessionUsage + sessionActiveMs(两者各遍历各读各 dedupe)。算法与拆分版逐字节等价。 */
 export function sessionUsageAndActiveFromRaws(raws: string[]): { tokenTotal: TokenUsage; activeMs: number } {
   const entries: UsageDedupeEntry[] = [];
   for (const raw of raws) {
     for (const entry of readUsageEntriesFromText(raw)) entries.push(entry);
   }
-  const survivors = dedupedSurvivors(entries);
-  return { tokenTotal: sumSurvivors(survivors), activeMs: activeMsFromSurvivors(survivors) };
+  return sessionUsageAndActiveFromEntries(entries);
+}
+
+/** 分类 transcript 绝对路径:父 / 子代理 / 忽略(泛化 claude-scan parentSessionInfo,供 watcher 用)。
+ *  父 = projects/<project>/<session>.jsonl;子代理 = projects/<project>/<session>/subagents/<x>.jsonl(归到父 session)。 */
+export type TranscriptPathKind = "parent" | "subagent" | "ignore";
+export interface ClassifiedTranscriptPath {
+  kind: TranscriptPathKind;
+  sessionId: string; // 所属父 session id(子代理→父)
+  projectId: string;
+  parentPath: string; // 父 transcript 路径(父=自身;子代理=父 .jsonl)
+}
+export function classifyTranscriptPath(absPath: string): ClassifiedTranscriptPath | null {
+  const parts = absPath.split(/[/\\]/);
+  const projectsIndex = parts.lastIndexOf("projects");
+  if (projectsIndex < 0) return null;
+  const rel = parts.slice(projectsIndex + 1);
+  if (rel.length < 2) return null;
+  const project = rel[0];
+  if (!project) return null;
+  // 父:projects/<project>/<session>.jsonl
+  if (rel.length === 2) {
+    const f = rel[1];
+    if (f && f.endsWith(".jsonl")) {
+      const sessionId = f.replace(/\.jsonl$/, "");
+      if (!sessionId) return null;
+      return { kind: "parent", sessionId, projectId: project, parentPath: absPath };
+    }
+    return null;
+  }
+  // 子代理:projects/<project>/<session>/subagents/<x>.jsonl
+  if (rel.length === 4) {
+    const sessionDir = rel[1];
+    const seg2 = rel[2];
+    const seg3 = rel[3];
+    if (sessionDir && seg2 === "subagents" && seg3 && seg3.endsWith(".jsonl")) {
+      return { kind: "subagent", sessionId: sessionDir, projectId: project, parentPath: dirname(dirname(absPath)) + ".jsonl" };
+    }
+  }
+  return null; // ignore
 }
 
 /** 父 session 的 token 总量：父 transcript + 全部 subagents/*.jsonl，跨文件全局去重后求和。

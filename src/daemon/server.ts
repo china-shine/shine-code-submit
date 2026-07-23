@@ -30,6 +30,7 @@ import {
   buildProjectDetail,
   buildProjectSummary,
   decodeProjectCwd,
+  rowToScannedSession,
   sumTokens,
 } from "./aggregate";
 import { readSettings, writeSettings } from "./settings";
@@ -339,8 +340,8 @@ function findTranscriptPath(store: Store, sessionId: string): string | null {
     const p = e.payload as Record<string, unknown> | null;
     if (p && typeof p.transcript_path === "string") return p.transcript_path;
   }
-  // hook 未提供 transcript_path 时回退扫描 projects/（保证对话视图能打开报表里的所有 session）
-  return findTranscriptPathByScan(sessionId);
+  // hook 未提供 transcript_path 时查 SQLite(消费者已发现);SQLite 也没有则扫描兜底
+  return store.getTranscriptSession(sessionId)?.parent_path ?? findTranscriptPathByScan(sessionId);
 }
 
 /** 构建 /api/report:token 扫所有 transcript(ccusage 口径),按项目聚合。
@@ -348,7 +349,7 @@ function findTranscriptPath(store: Store, sessionId: string): string | null {
  *  同名项目消歧 + sort 是 /api/report 专属展示上报逻辑(L1 项目表不消歧,用 cwd 列区分)。 */
 async function buildReport(store: Store, since: number): Promise<ReportResponse> {
   const hookCwd = buildHookCwdMap(store.sessions());
-  const scanned = scanSessions().filter((s) => since <= 0 || s.lastActivity >= since);
+  const scanned = store.getTranscriptSessions({ since, limit: 10000 }).map(rowToScannedSession);
   const byCwd = groupScannedByCwd(scanned, hookCwd);
 
   const projects = await Promise.all(
@@ -391,7 +392,7 @@ async function buildReport(store: Store, since: number): Promise<ReportResponse>
  *  项目数通常几十,先全算再 slice(totals 需全量);git/lines 走缓存,稳态快。 */
 async function getProjects(store: Store, since: number, page: number, pageSize: number): Promise<ProjectsResponse> {
   const hookCwd = buildHookCwdMap(store.sessions());
-  const scanned = scanSessions().filter((s) => since <= 0 || s.lastActivity >= since);
+  const scanned = store.getTranscriptSessions({ since, limit: 10000 }).map(rowToScannedSession);
   const byCwd = groupScannedByCwd(scanned, hookCwd);
 
   const all = await Promise.all(
@@ -441,8 +442,8 @@ async function getProjectSessions(
     if (s.cwd === cwd && !hookBySid.has(s.sessionId)) hookBySid.set(s.sessionId, s);
   }
   // 该 cwd 的 scanned sessions(真实 cwd:hookMap 优先,无则解码项目名),按 lastActive 倒序
-  const all = scanSessions()
-    .filter((s) => since <= 0 || s.lastActivity >= since)
+  const all = store.getTranscriptSessions({ since, limit: 10000 })
+    .map(rowToScannedSession)
     .filter((s) => (hookMap.get(s.sessionId)?.cwd ?? s.cwd ?? decodeProjectCwd(s.project)) === cwd)
     .sort((a, b) => b.lastActivity - a.lastActivity);
 
