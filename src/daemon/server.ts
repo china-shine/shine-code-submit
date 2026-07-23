@@ -22,7 +22,7 @@ import { checkToken } from "./auth";
 import { gzipSync } from "node:zlib";
 import { parseTranscript, sumUsage } from "./transcript";
 // claude-scan 现 only export claudeProjectsRoots/collectJsonl/parentSessionInfo/ScannedSession(供 watcher/consumer/aggregate);scanSessions 系列已删(P3)
-import { getCommits } from "./git";
+import { getCommits, getGitUser } from "./git";
 import { getSessionLines, sumLines } from "./lines";
 import {
   buildHookCwdMap,
@@ -271,7 +271,7 @@ export function startServer(deps: ServerDeps) {
       // 手动上报:构建报表并 POST 到 settings.reportUrl(与定时器同一逻辑)。
       if (path === "/api/report/upload" && req.method === "POST") {
         try {
-          const r = await uploadReport(store);
+          const r = await uploadReport(store, { full: true }); // 手动上报走全量(用户主动,确保上报所有)
           return json(r.uploaded ? { status: "ok" } : { status: "skipped", reason: r.reason });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
@@ -371,11 +371,24 @@ async function buildReport(store: Store, since: number): Promise<ReportResponse>
       b.totalTokens.input + b.totalTokens.output - (a.totalTokens.input + a.totalTokens.output),
   );
 
+  // gitUser:增量(since>0)时 projects 只含变化项目,可能无 gitUser 项目 → 从全量 scanned 任一 cwd 补取
+  // (getGitUser 读全局 user.name,任何 cwd 都行;全量 since=0 时 scanned 已全量,不重复查)
+  let gitUser = projects.find((p) => p.gitUser)?.gitUser ?? null;
+  if (!gitUser) {
+    const allForGit = since > 0 ? store.getTranscriptSessions({ limit: 10000 }).map(rowToScannedSession) : scanned;
+    for (const s of allForGit) {
+      const cwd = hookCwd.get(s.sessionId)?.cwd ?? s.cwd ?? decodeProjectCwd(s.project);
+      if (cwd) {
+        gitUser = await getGitUser(cwd);
+        if (gitUser) break;
+      }
+    }
+  }
   return {
     version: SERVICE_VERSION,
     generatedAt: Date.now(),
     since,
-    gitUser: projects.find((p) => p.gitUser)?.gitUser ?? null,
+    gitUser,
     projects,
     totals: {
       projects: projects.length,
@@ -480,17 +493,18 @@ type UploadOutcome = { uploaded: boolean; reason?: string };
 
 /** 构建 report 并 POST 到 settings.reportUrl(自动/手动上报共用)。
  *  无 reportUrl,或采集不到 git user.name(上报身份缺失,tokenserver 只会落「未知用户」) 则跳过不报,返回原因由调用方记日志/回前端;失败抛错。 */
-async function uploadReport(store: Store): Promise<UploadOutcome> {
+async function uploadReport(store: Store, opts?: { full?: boolean }): Promise<UploadOutcome> {
   const s = readSettings();
   const url = s.reportUrl;
   if (!url) return { uploaded: false, reason: "reportUrl 未配置" };
-  const since = s.lastReportAt ?? 0; // 增量水位(0=全量,首次);成功/无变化后推进
+  // 手动上报(opts.full)走全量 since=0;自动 tick 增量(since=lastReportAt)
+  const since = opts?.full ? 0 : (s.lastReportAt ?? 0);
   const report = await buildReport(store, since);
   if (!report.gitUser) {
     return { uploaded: false, reason: "未采集到 git user.name,跳过上报(无上报身份)" };
   }
-  // 增量无变化:跳过上报但推进水位(避免每 tick 重查;下次 intervalMin 后再查)
-  if (since > 0 && report.projects.length === 0) {
+  // 自动增量无变化:跳过但推进水位(避免每 tick 重查);手动全量(opts.full)不走此分支
+  if (!opts?.full && since > 0 && report.projects.length === 0) {
     writeSettings({ ...readSettings(), lastReportAt: Date.now() });
     return { uploaded: false, reason: "增量无变化" };
   }
