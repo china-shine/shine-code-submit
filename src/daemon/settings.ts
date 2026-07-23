@@ -13,6 +13,7 @@ export interface Settings {
   autoUpdateIntervalMin?: number | null; // 自动更新检测间隔(分钟);默认 60
   latestVersion?: string | null; // 缓存的 registry 最新版本(dashboard 显示用)
   lastReportAt?: number | null; // 上次上报时刻(增量水位,buildReport since=此值;0/空=全量)。持久化,重启不重置
+  lastFullReportAt?: number | null; // 上次全量上报时刻(定期校准用,每 24h 强制全量防 tokenserver 数据漂移)
 }
 
 /** 默认设置:上报到 tokenserver 公网地址,每 10 分钟一次。 */
@@ -23,6 +24,7 @@ const DEFAULTS: Settings = {
   autoUpdateIntervalMin: 60,
   latestVersion: null,
   lastReportAt: 0,
+  lastFullReportAt: 0,
 };
 
 /** 读设置;文件不存在/损坏返回默认值,已存字段覆盖默认(含 null)。 */

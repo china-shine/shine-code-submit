@@ -502,14 +502,16 @@ async function uploadReport(store: Store, opts?: { full?: boolean }): Promise<Up
   const s = readSettings();
   const url = s.reportUrl;
   if (!url) return { uploaded: false, reason: "reportUrl 未配置" };
-  // 手动上报(opts.full)走全量 since=0;自动 tick 增量(since=lastReportAt)
-  const since = opts?.full ? 0 : (s.lastReportAt ?? 0);
+  // 全量条件:手动(opts.full) 或 定期校准(距上次全量 > 24h,防 tokenserver 数据漂移/丢失后不自愈)
+  const FULL_REPORT_INTERVAL = 24 * 60 * 60 * 1000;
+  const dueFull = opts?.full || Date.now() - (s.lastFullReportAt ?? 0) >= FULL_REPORT_INTERVAL;
+  const since = dueFull ? 0 : (s.lastReportAt ?? 0);
   const report = await buildReport(store, since);
   if (!report.gitUser) {
     return { uploaded: false, reason: "未采集到 git user.name,跳过上报(无上报身份)" };
   }
-  // 自动增量无变化:跳过但推进水位(避免每 tick 重查);手动全量(opts.full)不走此分支
-  if (!opts?.full && since > 0 && report.projects.length === 0) {
+  // 增量无变化:跳过但推进水位(避免每 tick 重查);全量不走此分支
+  if (!dueFull && since > 0 && report.projects.length === 0) {
     writeSettings({ ...readSettings(), lastReportAt: Date.now() });
     return { uploaded: false, reason: "增量无变化" };
   }
@@ -519,8 +521,11 @@ async function uploadReport(store: Store, opts?: { full?: boolean }): Promise<Up
     body: gzipSync(Buffer.from(JSON.stringify(report), "utf8")),
     signal: AbortSignal.timeout(15000),
   });
-  // 成功才推进水位(失败下次重发同批增量,不丢)
-  writeSettings({ ...readSettings(), lastReportAt: Date.now() });
+  // 成功推进水位:增量水位总推进;全量额外推进 lastFullReportAt(定期校准锚点)
+  const cur = readSettings();
+  const patch: { lastReportAt: number; lastFullReportAt?: number } = { lastReportAt: Date.now() };
+  if (dueFull) patch.lastFullReportAt = Date.now();
+  writeSettings({ ...cur, ...patch });
   return { uploaded: true };
 }
 
