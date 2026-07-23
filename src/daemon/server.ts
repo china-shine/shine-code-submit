@@ -21,7 +21,7 @@ import { deriveStableEventId } from "../shared/id";
 import { checkToken } from "./auth";
 import { gzipSync } from "node:zlib";
 import { parseTranscript, sumUsage } from "./transcript";
-import { scanSessions, findTranscriptPathByScan, invalidateScanCache, type ScannedSession } from "./claude-scan";
+// claude-scan 现 only export claudeProjectsRoots/collectJsonl/parentSessionInfo/ScannedSession(供 watcher/consumer/aggregate);scanSessions 系列已删(P3)
 import { getCommits } from "./git";
 import { getSessionLines, sumLines } from "./lines";
 import {
@@ -166,8 +166,6 @@ export function startServer(deps: ServerDeps) {
           bus.emit(event);
           stats.recordEvent();
           log.info(`ingest http ${event.type}`);
-          // 新会话可能新增 session 文件，清扫描缓存让下次轮询立即可见（其余事件靠 10s TTL 兜底，避免高频失效）
-          if (event.type === "SessionStart") invalidateScanCache();
         }
         return json({ status: "ok", inserted, version: SERVICE_VERSION });
       }
@@ -224,8 +222,8 @@ export function startServer(deps: ServerDeps) {
         }
         // 旧行为(无 cwd):全量 SessionSummary[],P3 前端不再用,保留向后兼容。
         const hookMap = buildHookCwdMap(store.sessions());
-        const sessions: SessionSummary[] = scanSessions()
-          .filter((sc) => since <= 0 || sc.lastActivity >= since)
+        const sessions: SessionSummary[] = store.getTranscriptSessions({ since, limit: 10000 })
+          .map(rowToScannedSession)
           .map((sc) => {
             const h = hookMap.get(sc.sessionId);
             return {
@@ -340,8 +338,8 @@ function findTranscriptPath(store: Store, sessionId: string): string | null {
     const p = e.payload as Record<string, unknown> | null;
     if (p && typeof p.transcript_path === "string") return p.transcript_path;
   }
-  // hook 未提供 transcript_path 时查 SQLite(消费者已发现);SQLite 也没有则扫描兜底
-  return store.getTranscriptSession(sessionId)?.parent_path ?? findTranscriptPathByScan(sessionId);
+  // hook 未提供 transcript_path 时查 SQLite(消费者已发现);冷启动消费者未跑完 fullScanBackstop 时可能 null,前端重试即可
+  return store.getTranscriptSession(sessionId)?.parent_path ?? null;
 }
 
 /** 构建 /api/report:token 扫所有 transcript(ccusage 口径),按项目聚合。
