@@ -30,6 +30,7 @@ import {
   buildProjectDetail,
   buildProjectSummary,
   decodeProjectCwd,
+  normCwd,
   rowToScannedSession,
   sumTokens,
 } from "./aggregate";
@@ -456,12 +457,12 @@ async function getProjectSessions(
   // 该 cwd 的 hook sessions(per sessionId 取首个=最新),补 eventCount/lastType
   const hookBySid = new Map<string, SessionSummary>();
   for (const s of store.sessions()) {
-    if (s.cwd === cwd && !hookBySid.has(s.sessionId)) hookBySid.set(s.sessionId, s);
+    if (normCwd(s.cwd) === normCwd(cwd) && !hookBySid.has(s.sessionId)) hookBySid.set(s.sessionId, s);
   }
   // 该 cwd 的 scanned sessions(真实 cwd:hookMap 优先,无则解码项目名),按 lastActive 倒序
   const all = store.getTranscriptSessions({ since, limit: 10000 })
     .map(rowToScannedSession)
-    .filter((s) => (hookMap.get(s.sessionId)?.cwd ?? s.cwd ?? decodeProjectCwd(s.project)) === cwd)
+    .filter((s) => normCwd(hookMap.get(s.sessionId)?.cwd ?? s.cwd ?? decodeProjectCwd(s.project)) === normCwd(cwd))
     .sort((a, b) => b.lastActivity - a.lastActivity);
 
   const total = all.length;

@@ -33,14 +33,33 @@ export function buildHookCwdMap(hookSessions: SessionSummary[]): Map<string, Ses
   return m;
 }
 
-/** 按 cwd 分组扫描结果(真实 cwd:hookCwd 的 .cwd 优先,无则解码项目名)。返回 Map 保持插入序。 */
+/** 规范化 cwd 用于「相等」判定:Win/Mac 文件系统大小写不敏感 → toLowerCase,Win 另把 / 统一成 \。
+ *  仅用于比较与分组 key,【不用于显示】(显示保留原始 cwd,避免把 C:\ 渲染成 c:\)。
+ *  Linux 文件系统大小写敏感,原样返回。背景:hook 上报的盘符偶发小写(如 c:\…),与正常大写 C:\…
+ *  严格 === 不等,会把同一项目拆成两个 → session 在该项目里「凭空少一个」。 */
+export function normCwd(p: string | null | undefined): string {
+  if (!p) return "";
+  let n = p;
+  if (process.platform === "win32") n = n.replace(/\//g, "\\");
+  return process.platform === "win32" || process.platform === "darwin" ? n.toLowerCase() : n;
+}
+
+/** 按 cwd 分组扫描结果(真实 cwd:hookCwd 的 .cwd 优先,无则解码项目名)。返回 Map<显示cwd, sessions>保持插入序。
+ *  分组判定用 normCwd(大小写/斜杠归一),故 c:\X 与 C:\X 合并成同一组;显示 cwd 取该组首次遇到的原始值
+ *  (scanned 通常按 last_activity DESC,近期会话先入,显示多为规范大写形式)。 */
 export function groupScannedByCwd(scanned: ScannedSession[], hookCwd: Map<string, SessionSummary>): Map<string, ScannedSession[]> {
-  const byCwd = new Map<string, ScannedSession[]>();
+  const byCwd = new Map<string, ScannedSession[]>(); // 显示 cwd → sessions
+  const normToDisplay = new Map<string, string>(); // normCwd → 显示 cwd(首次遇到)
   for (const s of scanned) {
     const cwd = hookCwd.get(s.sessionId)?.cwd ?? s.cwd ?? decodeProjectCwd(s.project);
-    const arr = byCwd.get(cwd);
-    if (arr) arr.push(s);
-    else byCwd.set(cwd, [s]);
+    const norm = normCwd(cwd);
+    let display = normToDisplay.get(norm);
+    if (display === undefined) {
+      display = cwd;
+      normToDisplay.set(norm, display);
+      byCwd.set(display, []);
+    }
+    byCwd.get(display)!.push(s);
   }
   return byCwd;
 }
