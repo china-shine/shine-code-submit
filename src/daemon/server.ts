@@ -120,6 +120,11 @@ export function startServer(deps: ServerDeps) {
       const url = new URL(req.url);
       const path = url.pathname;
 
+      // favicon.ico:浏览器自动请求标签页图标,无图标 → 204(无鉴权,避免控制台 401 噪音)
+      if (path === "/favicon.ico") {
+        return new Response(null, { status: 204 });
+      }
+
       // ---- health（无鉴权）：Hook「认自己人」用 ----
       if (path === "/api/health" && req.method === "GET") {
         return json({
