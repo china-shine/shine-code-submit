@@ -276,8 +276,9 @@ export function startServer(deps: ServerDeps) {
       // 手动上报:构建报表并 POST 到 settings.reportUrl(与定时器同一逻辑)。
       if (path === "/api/report/upload" && req.method === "POST") {
         try {
-          const r = await uploadReport(store, { full: true }); // 手动上报走全量(用户主动,确保上报所有)
-          return json(r.uploaded ? { status: "ok" } : { status: "skipped", reason: r.reason });
+          const full = url.searchParams.get("full") === "1";
+          const r = await uploadReport(store, { full });
+          return json(r.uploaded ? { status: "ok", full } : { status: "skipped", reason: r.reason });
         } catch (e) {
           const msg = e instanceof Error ? e.message : String(e);
           return json({ error: msg }, 500);

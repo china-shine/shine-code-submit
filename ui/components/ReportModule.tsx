@@ -26,6 +26,26 @@ export function ReportModule() {
     reload();
     setRefreshKey((c) => c + 1);
   };
+  const doUpload = async (full: boolean) => {
+    setUploading(true);
+    setUploadResult(null);
+    try {
+      const r = await fetch(`${location.origin}/api/report/upload${full ? "?full=1" : ""}`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const j = await r.json().catch(() => ({}));
+      if (r.ok && j.status === "ok") setUploadResult({ ok: true, text: `${full ? "全量" : "增量"}上报成功` });
+      else if (r.ok && j.status === "skipped")
+        setUploadResult({ ok: false, text: `已跳过：${j.reason ?? "无 git 身份"}` });
+      else setUploadResult({ ok: false, text: j.error ?? `HTTP ${r.status}` });
+    } catch (e) {
+      setUploadResult({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setUploading(false);
+      setTimeout(() => setUploadResult(null), 3000);
+    }
+  };
 
   const projectCols: Column<ProjectSummary>[] = [
     { key: "name", header: "项目", render: (p) => <span title={p.cwd}>{p.name}</span> },
@@ -90,29 +110,19 @@ export function ReportModule() {
           type="button"
           className="tab"
           disabled={uploading}
-          title="手动上报报表到服务器(需先在「设置」配置上报地址)"
-          onClick={async () => {
-            setUploading(true);
-            setUploadResult(null);
-            try {
-              const r = await fetch(`${location.origin}/api/report/upload`, {
-                method: "POST",
-                headers: { Authorization: `Bearer ${token}` },
-              });
-              const j = await r.json().catch(() => ({}));
-              if (r.ok && j.status === "ok") setUploadResult({ ok: true, text: "上报成功" });
-              else if (r.ok && j.status === "skipped")
-                setUploadResult({ ok: false, text: `已跳过：${j.reason ?? "无 git 身份"}` });
-              else setUploadResult({ ok: false, text: j.error ?? `HTTP ${r.status}` });
-            } catch (e) {
-              setUploadResult({ ok: false, text: e instanceof Error ? e.message : String(e) });
-            } finally {
-              setUploading(false);
-              setTimeout(() => setUploadResult(null), 3000);
-            }
-          }}
+          title="增量上报:只发变化的 session(和自动 tick 一致,省带宽)"
+          onClick={() => doUpload(false)}
         >
-          ☁ {uploading ? "上报中…" : "上报"}
+          ☁ {uploading ? "上报中…" : "增量"}
+        </button>
+        <button
+          type="button"
+          className="tab"
+          disabled={uploading}
+          title="全量上报:强制发所有 session(tokenserver 数据异常/漂移时用,重锚全量)"
+          onClick={() => doUpload(true)}
+        >
+          ☁☁ {uploading ? "上报中…" : "全量"}
         </button>
         {uploadResult && <span className={uploadResult.ok ? "field-ok" : "field-err"}>{uploadResult.text}</span>}
       </div>
