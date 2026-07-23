@@ -2,6 +2,15 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.1.10 — 2026-07-23
+
+修两个让 dashboard「少会话 / 刷屏」的问题。
+
+### 改动
+- **cwd 大小写归一**:hook 上报盘符偶发小写与正常大写严格相等比较不等,会把同一项目拆成两个 → 该项目会话「凭空少一个」。新增 normCwd(Win/Mac 大小写不敏感 + Win 统一斜杠),项目分组与 L2 过滤统一归一,合并后保留原始 cwd 显示。
+- **清理已删/无父 transcript 残留**:文件删除后 SQLite 残留 dirty 记录,consumer 每 tick 重试 openSync 永久 ENOENT 刷屏。新增 deleteFile/deleteSession,ENOENT 清残留;recomputeSession 在文件全删或父 transcript 缺失(只剩孤儿子代理)时删 session,对齐 ccusage「无父不算 session」口径。
+- **验证**:对拍 ccusage claude session,98/98 session 逐字段(input/output/cacheCreation/cacheRead)全等,全局 delta 全 0。
+
 ## 1.1.9 — 2026-07-23
 
 报表上报 UI 优化。
