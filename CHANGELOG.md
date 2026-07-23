@@ -2,6 +2,19 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.1.8 — 2026-07-23
+
+transcript 性能架构升级:SQLite 数据中枢替代轮询 + 增量上报。
+
+### 改动
+- **SQLite 数据中枢(P1+P2+P3)**:watcher(fs.watch)监听 transcript 变化→标 SQLite dirty;消费者 2s tick 增量读尾部+全量算(算法不变,与 ccusage 字节级一致)→持久化 `transcript_files`/`transcript_sessions`;前端 API 改查 SQLite;5min 兜底全扫防漏。重启不重算(mtime 没变的 session 只读 SQLite),冷启动大幅降低;活跃 session 只读尾部增量。删除旧 `scanSessions`/`token-cache`/`infoCache` 轮询。
+- **增量上报**:`settings.lastReportAt` 持久化水位,`buildReport(since)` 只发变化 session(tokenserver upsert 幂等不改)。失败不推进水位不丢。
+- **定期全量校准**:`lastFullReportAt`,每 24h 强制全量一次,防 tokenserver 数据漂移。
+- **性能**:transcript 解析读一次+合并 dedupe(单次 miss 成本 1/4);build:dist 跳过 exe build(纯源码分发)。
+- **前端**:状态栏 `/api/stats` 改手动刷新(去 2s 自动轮询);favicon 返回 204(去浏览器 401)。
+- **修复**:增量上报 gitUser 从全量补取(增量不再误判无身份);手动上报走全量。
+- **验证**:97 session 全字段 + ccusage 直接对拍 97/97 字节级 PASS。
+
 ## 1.1.7 — 2026-07-23
 
 升级时自动清理旧版本残留目录（daemon 运行确认后才删，绝不两头空）。
