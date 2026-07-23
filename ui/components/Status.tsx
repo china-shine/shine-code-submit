@@ -5,7 +5,7 @@ import { fmtUsage, fmtUsageFull, sumTokenUsage } from "../lib/util";
 
 /** 顶栏运行状态：常驻版本号 + 全局 token + 速率/积压/错误徽章；pid/uptime/总计 收进 info popover。 */
 export function Status() {
-  const { stats, sessions } = useApp();
+  const { stats, sessions, refreshStats } = useApp();
   // 全局 token：累加已加载会话的 tokenTotal。仅最近 50 个被 enrich（见 SESSION_TOKEN_ENRICH_LIMIT），
   // 故为「最近活跃会话累计」而非历史全量；count 即实际覆盖的会话数，展示在 title 里。
   const token = useMemo(
@@ -27,6 +27,7 @@ export function Status() {
   return (
     <div className="status">
       <span className="st-ver">v{stats.version}</span>
+      <button type="button" className="tab" onClick={refreshStats} title="刷新状态">↻</button>
       {hasTokens && (
         <span
           className="st-tokens"

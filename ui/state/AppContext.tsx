@@ -22,6 +22,8 @@ export interface AppContextValue {
   selectedSessionId: string | null;       // 仅「会话」模块详情用
   activeModule: ModuleId;
   navCollapsed: boolean;
+  // 手动刷新 stats(/api/stats 不再自动轮询)
+  refreshStats: () => void;
   // setters
   setSelectedSessionId: Dispatch<SetStateAction<string | null>>;
   selectModule: (m: ModuleId) => void;
@@ -38,7 +40,7 @@ export function AppProvider({ token, children }: { token: string; children: Reac
   const [navCollapsed, setNavCollapsed] = useState(false);
 
   const api = useApi(token);
-  useStatsPolling(api, setStats);
+  const refreshStats = useStatsPolling(api, setStats);
 
   const selectModule = useCallback((m: ModuleId) => {
     setActiveModule(m);
@@ -51,6 +53,7 @@ export function AppProvider({ token, children }: { token: string; children: Reac
     selectedSessionId,
     activeModule,
     navCollapsed,
+    refreshStats,
     setSelectedSessionId,
     selectModule,
     setNavCollapsed,
