@@ -261,6 +261,8 @@ export interface StatsPayload {
   };
   activeMin: number; // 过滤后 lastActive min(范围徽章)
   activeMax: number; // 过滤后 lastActive max
+  dataMin: number; // 全量数据最早 lastActive(重置范围用,不受日期/members 过滤)
+  dataMax: number; // 全量数据最新 lastActive
   allMembers: string[]; // 全量 gitUser(成员下拉,不受 members 过滤)
   trend: DayBucket[]; // 按 granularity(TokenTrendChart)
   daily: DailyStat[]; // 固定 day(KpiCards sparkline)
@@ -292,6 +294,8 @@ interface MemberAcc {
 export function getStats(opts: FilterOpts & { granularity: Granularity }): StatsPayload {
   const rows = querySessions(opts);
   const names = projectNameMap();
+  // 全量数据范围(不受 from/to/members 过滤,重置按钮用)
+  const dataRange = (db.prepare("SELECT MIN(lastActive) AS min, MAX(lastActive) AS max FROM sessions").get() as { min: number; max: number }) ?? { min: 0, max: 0 };
 
   let tInput = 0,
     tOutput = 0,
@@ -430,6 +434,8 @@ export function getStats(opts: FilterOpts & { granularity: Granularity }): Stats
     },
     activeMin: rows.length ? activeMin : 0,
     activeMax: rows.length ? activeMax : 0,
+    dataMin: dataRange.min ?? 0,
+    dataMax: dataRange.max ?? 0,
     allMembers: (db.prepare("SELECT DISTINCT gitUser FROM sessions").all() as Array<{ gitUser: string }>)
       .map((r) => r.gitUser)
       .sort(),

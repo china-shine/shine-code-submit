@@ -9,14 +9,16 @@ export function MemberPage({
   startDate,
   endDate,
   selected,
-  setSelected,
+  onOpenMember,
+  onBack,
 }: {
   stats: StatsPayload;
   dark: boolean;
   startDate: string;
   endDate: string;
   selected: string | null;
-  setSelected: (g: string | null) => void;
+  onOpenMember: (g: string) => void;
+  onBack: () => void;
 }) {
   if (selected) {
     return (
@@ -26,9 +28,9 @@ export function MemberPage({
         startDate={startDate}
         endDate={endDate}
         teamStats={stats.totals}
-        onBack={() => setSelected(null)}
+        onBack={onBack}
       />
     );
   }
-  return <MemberListPage members={stats.members} onSelect={(g) => setSelected(g)} />;
+  return <MemberListPage members={stats.members} onSelect={onOpenMember} />;
 }

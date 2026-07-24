@@ -17,7 +17,8 @@ mkdirSync(BUILD_DIR, { recursive: true });
 console.log("0. compiling tailwind css");
 await $`bunx @tailwindcss/cli -i ${join(UI_DIR, "styles", "index.css")} -o ${join(BUILD_DIR, "style.css")} --minify`;
 const rdpCss = readFileSync(join(TS_ROOT, "node_modules", "react-day-picker", "src", "style.css"), "utf8");
-appendFileSync(join(BUILD_DIR, "style.css"), "\n/* react-day-picker default style */\n" + rdpCss);
+const RDP_TWEAK = "\n/* tokenserver tweak: smaller calendar */\n.rdp-root{--rdp-day-width:2rem;--rdp-day-height:2rem;--rdp-day_button-width:1.85rem;--rdp-day_button-height:1.85rem;--rdp-nav_button-width:1.5rem;--rdp-nav_button-height:1.5rem;}.rdp-root *{font-size:12px;}\n";
+appendFileSync(join(BUILD_DIR, "style.css"), "\n/* react-day-picker default style */\n" + rdpCss + RDP_TWEAK);
 console.log("0. rdp style appended");
 
 // 1. bundle UI

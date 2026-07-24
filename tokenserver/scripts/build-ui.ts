@@ -16,7 +16,9 @@ console.log("css compiled -> " + join(OUT_DIR, "style.css"));
 
 // 追加 react-day-picker 官方默认样式(纯 CSS,无 @import),随 /ui/style.css 一起下发(避开 build 不产 CSS 输出的问题)。
 const rdpCss = readFileSync(join(import.meta.dir, "..", "node_modules", "react-day-picker", "src", "style.css"), "utf8");
-appendFileSync(join(OUT_DIR, "style.css"), "\n/* react-day-picker default style */\n" + rdpCss);
+// 缩小日历字号(12px,匹配页面 text-xs)+ 格子尺寸变量,置于官方样式之后以覆盖
+const RDP_TWEAK = "\n/* tokenserver tweak: smaller calendar */\n.rdp-root{--rdp-day-width:2rem;--rdp-day-height:2rem;--rdp-day_button-width:1.85rem;--rdp-day_button-height:1.85rem;--rdp-nav_button-width:1.5rem;--rdp-nav_button-height:1.5rem;}.rdp-root *{font-size:12px;}\n";
+appendFileSync(join(OUT_DIR, "style.css"), "\n/* react-day-picker default style */\n" + rdpCss + RDP_TWEAK);
 console.log("rdp style appended -> " + join(OUT_DIR, "style.css"));
 
 const uiBuild = await Bun.build({

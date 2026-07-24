@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { DayPicker, type Matcher } from "react-day-picker";
 import { zhCN } from "date-fns/locale";
-import { ChevronDown, RefreshCw, Check, Calendar } from "lucide-react";
+import { ChevronDown, RefreshCw, Check, Calendar, RotateCcw } from "lucide-react";
 import { Avatar } from "../common/Avatar";
 import { toDateInput } from "../../lib/util";
 
@@ -69,6 +69,7 @@ export function TopBar({
   endDate,
   onStart,
   onEnd,
+  onReset,
   members,
   selectedMembers,
   onToggleMember,
@@ -80,6 +81,7 @@ export function TopBar({
   endDate: string;
   onStart: (s: string) => void;
   onEnd: (s: string) => void;
+  onReset: () => void;
   members: string[];
   selectedMembers: string[];
   onToggleMember: (g: string) => void;
@@ -96,6 +98,14 @@ export function TopBar({
         <DateField value={startDate} onChange={onStart} placeholder="开始日期" disabled={endDate ? { after: new Date(endDate + "T00:00:00") } : undefined} />
         <span className="text-xs text-muted-foreground">—</span>
         <DateField value={endDate} onChange={onEnd} placeholder="结束日期" disabled={startDate ? { before: new Date(startDate + "T00:00:00") } : undefined} />
+        <button
+          type="button"
+          onClick={onReset}
+          title="重置为全部数据范围"
+          className="flex items-center gap-1 px-2 py-1.5 rounded-sm border border-border text-xs text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+        >
+          <RotateCcw className="w-3.5 h-3.5" /> 重置
+        </button>
       </div>
 
       {/* 成员多选 */}

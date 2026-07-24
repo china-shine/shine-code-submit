@@ -52,6 +52,8 @@ export interface StatsPayload {
   };
   activeMin: number; // 过滤后 lastActive min(范围徽章)
   activeMax: number; // 过滤后 lastActive max
+  dataMin: number; // 全量最早 lastActive(重置用)
+  dataMax: number; // 全量最新 lastActive
   allMembers: string[]; // 全量 gitUser(成员下拉,不受 members 过滤)
   trend: DayBucket[]; // 按 granularity(TokenTrendChart)
   daily: DailyStat[]; // 固定 day(KpiCards sparkline)

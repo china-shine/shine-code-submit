@@ -62,6 +62,25 @@ export function App() {
   const pageTitle = page === "overview" ? "数据总览" : "成员分析";
   const toggleMember = (g: string) =>
     setSelectedMembers((prev) => (prev.includes(g) ? prev.filter((x) => x !== g) : [...prev, g]));
+  // 重置:开始=全量最早记录,结束=全量最新记录(=全部数据范围)
+  const resetRange = () => {
+    if (stats?.dataMin && stats?.dataMax) {
+      setStartDate(toDateInput(stats.dataMin));
+      setEndDate(toDateInput(stats.dataMax));
+    }
+  };
+
+  // 进入成员详情:推一个 history 项,浏览器返回(popstate)能退回成员列表
+  const selectMember = (u: string) => {
+    setSelMember(u);
+    setPage("member");
+    window.history.pushState({ member: u }, "");
+  };
+  useEffect(() => {
+    const onPop = () => setSelMember(null);
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
 
   return (
     <div
@@ -77,6 +96,7 @@ export function App() {
             endDate={endDate}
             onStart={setStartDate}
             onEnd={setEndDate}
+            onReset={resetRange}
             members={allGitUsers}
             selectedMembers={selectedMembers}
             onToggleMember={toggleMember}
@@ -99,10 +119,7 @@ export function App() {
                 pageSize={PAGE_SIZE}
                 onPageChange={loadPage}
                 dark={dark}
-                onSelectMember={(u) => {
-                  setSelMember(u);
-                  setPage("member");
-                }}
+                onSelectMember={selectMember}
               />
             )}
             {page === "member" && stats && (
@@ -112,7 +129,8 @@ export function App() {
                 startDate={startDate}
                 endDate={endDate}
                 selected={selMember}
-                setSelected={setSelMember}
+                onOpenMember={selectMember}
+                onBack={() => window.history.back()}
               />
             )}
           </main>
