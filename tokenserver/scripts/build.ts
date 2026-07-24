@@ -5,7 +5,7 @@
 // 2. 生成 src/ui-assets.ts(INDEX_HTML/APP_JS/STYLE_CSS 字符串,编译时内联)
 // 3. bun build --compile --target bun-linux-x64 src/main.ts -> bin/tokenserver-linux-x64
 import { $ } from "bun";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, readFileSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
 
 const TS_ROOT = join(import.meta.dir, "..");
@@ -13,9 +13,12 @@ const UI_DIR = join(TS_ROOT, "ui");
 const BUILD_DIR = join(UI_DIR, ".build");
 mkdirSync(BUILD_DIR, { recursive: true });
 
-// 0. 编译 tailwind css
+// 0. 编译 tailwind css + 追加 react-day-picker 官方样式(随 style.css 内联进二进制)
 console.log("0. compiling tailwind css");
 await $`bunx @tailwindcss/cli -i ${join(UI_DIR, "styles", "index.css")} -o ${join(BUILD_DIR, "style.css")} --minify`;
+const rdpCss = readFileSync(join(TS_ROOT, "node_modules", "react-day-picker", "src", "style.css"), "utf8");
+appendFileSync(join(BUILD_DIR, "style.css"), "\n/* react-day-picker default style */\n" + rdpCss);
+console.log("0. rdp style appended");
 
 // 1. bundle UI
 const uiBuild = await Bun.build({
