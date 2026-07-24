@@ -90,6 +90,7 @@ export function TopBar({
   onRefresh: () => void;
 }) {
   const [memberOpen, setMemberOpen] = useState(false);
+  const [spinning, setSpinning] = useState(false);
 
   return (
     <header className="h-14 bg-card border-b border-border flex items-center px-5 gap-3 sticky top-0 z-30 flex-shrink-0">
@@ -164,10 +165,14 @@ export function TopBar({
       <span className="text-xs text-muted-foreground font-mono whitespace-nowrap">{rangeText}</span>
 
       <button
-        onClick={onRefresh}
+        onClick={() => {
+          setSpinning(true);
+          onRefresh();
+          setTimeout(() => setSpinning(false), 500);
+        }}
         className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-sm border border-border text-xs text-muted-foreground hover:bg-muted transition-colors"
       >
-        <RefreshCw className="w-3.5 h-3.5" /> 刷新
+        <RefreshCw className={`w-3.5 h-3.5 ${spinning ? "animate-spin" : ""}`} /> 刷新
       </button>
     </header>
   );

@@ -18,7 +18,7 @@ export function MemberListPage({
       <table className="w-full text-xs">
         <thead className="border-b border-border">
           <tr>
-            {["成员", "最后同步", "活跃项目", "对话次数", "对话时长", "总 Token", "代码行", "效率 (行/M)", "操作"].map((h) => (
+            {["成员", "最后同步", "活跃项目", "对话次数", "对话时长", "总 Token", "代码变动行数", "效率 (行/M)", "操作"].map((h) => (
               <th key={h} className="text-left py-3 px-4 font-medium text-muted-foreground whitespace-nowrap">
                 {h}
               </th>

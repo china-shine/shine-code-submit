@@ -62,7 +62,7 @@ export interface StatsPayload {
     member: Array<{ gitUser: string; token: number }>;
     project: Array<{ cwd: string; name: string; token: number }>;
   };
-  codeRank: Array<{ gitUser: string; lines: number; convs: number; token: number }>;
+  codeRank: Array<{ gitUser: string; lines: number; added: number; deleted: number; modified: number; convs: number; token: number }>;
   sizeBuckets: Array<{ range: string; count: number }>;
   members: MemberAgg[];
 }

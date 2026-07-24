@@ -1,13 +1,14 @@
 // 成员详情:返回 + 头像 + 6 KPI + Token 使用趋势 + 与团队均值对比 + 该用户最近会话表。
 // 全部服务端化:KPI/趋势 = /api/member/:X;团队均值 = 全局 stats.totals;会话表 = /api/sessions?member=X(翻页查 DB)。
-import { useEffect, useState } from "react";
-import { ChevronRight } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { ChevronRight, MessageSquare, Clock, Coins, Code2, Folder, TrendingUp } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import type { MemberDetail, SessionsPage, StatsPayload } from "../../types";
 import { rawTotal, lineTotal, inoutTokens, fmtK, fmtFull, fmtDuration, C } from "../../lib/derive";
 import { fmtDate } from "../../lib/util";
 import { fetchMember, fetchSessions } from "../../lib/api";
 import { Avatar } from "../common/Avatar";
+import { MetricCard } from "../common/MetricCard";
 import { RecentSessionsTable } from "../overview/RecentSessionsTable";
 import { chartTheme } from "../overview/chartTheme";
 
@@ -90,18 +91,18 @@ export function MemberDetailPage({
     lines: teamMembers > 0 ? Math.round(lineTotal(teamStats.lines) / teamMembers) : 0,
   };
 
-  const kpis = [
-    { label: "对话次数", value: fmtFull(t.sessions), color: "text-indigo-600 dark:text-indigo-400" },
-    { label: "对话总时长", value: fmtDuration(t.activeMs), color: "text-orange-600 dark:text-orange-400" },
-    { label: "总 Token", value: fmtK(token), color: "text-violet-600 dark:text-violet-400" },
-    { label: "代码行数", value: fmtFull(lines), color: "text-teal-600 dark:text-teal-400" },
-    { label: "活跃项目", value: fmtFull(t.realProjects), color: "text-blue-600 dark:text-blue-400" },
-    { label: "Token 效率", value: `${eff} 行/M`, color: "text-foreground" },
+  const kpis: { title: string; value: string; sub?: string; icon: ReactNode; color: string }[] = [
+    { title: "对话次数", value: fmtFull(t.sessions), icon: <MessageSquare className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />, color: "bg-indigo-50 dark:bg-indigo-900/30" },
+    { title: "对话总时长", value: fmtDuration(t.activeMs), icon: <Clock className="w-4 h-4 text-orange-600 dark:text-orange-400" />, color: "bg-orange-50 dark:bg-orange-900/30" },
+    { title: "总 Token", value: fmtK(token), icon: <Coins className="w-4 h-4 text-violet-600 dark:text-violet-400" />, color: "bg-violet-50 dark:bg-violet-900/30" },
+    { title: "代码变动行数", value: fmtFull(lines), sub: `+${fmtFull(t.lines.added)} -${fmtFull(t.lines.deleted)} M${fmtFull(t.lines.modified)}`, icon: <Code2 className="w-4 h-4 text-teal-600 dark:text-teal-400" />, color: "bg-teal-50 dark:bg-teal-900/30" },
+    { title: "活跃项目", value: fmtFull(t.realProjects), icon: <Folder className="w-4 h-4 text-blue-600 dark:text-blue-400" />, color: "bg-blue-50 dark:bg-blue-900/30" },
+    { title: "Token 效率", value: `${eff} 行/M`, icon: <TrendingUp className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />, color: "bg-emerald-50 dark:bg-emerald-900/30" },
   ];
   const compare = [
     { label: "Token 消耗", personal: token, avg: teamAvg.token },
     { label: "对话次数", personal: t.sessions, avg: teamAvg.convs },
-    { label: "代码行数", personal: lines, avg: teamAvg.lines },
+    { label: "代码变动行数", personal: lines, avg: teamAvg.lines },
   ];
 
   return (
@@ -120,10 +121,7 @@ export function MemberDetailPage({
 
       <div className="grid grid-cols-6 gap-4">
         {kpis.map((m) => (
-          <div key={m.label} className="bg-card border border-border rounded p-4 text-center">
-            <div className={`text-xl font-bold font-mono ${m.color}`}>{m.value}</div>
-            <div className="text-xs text-muted-foreground mt-1">{m.label}</div>
-          </div>
+          <MetricCard key={m.title} title={m.title} value={m.value} sub={m.sub} icon={m.icon} color={m.color} />
         ))}
       </div>
 

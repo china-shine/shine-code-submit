@@ -41,9 +41,9 @@ export function KpiCards({ stats }: { stats: StatsPayload }) {
         extra={<MiniSparkline data={durSeries} color={C.dur} />}
       />
       <MetricCard
-        title="生成代码行数"
+        title="代码变动行数"
         value={fmtFull(lineTotal(t.lines))}
-        sub={`新增 ${fmtK(t.lines.added)} · 修改 ${fmtK(t.lines.modified)} · 删除 ${fmtK(t.lines.deleted)}`}
+        sub={`+${fmtFull(t.lines.added)} -${fmtFull(t.lines.deleted)} M${fmtFull(t.lines.modified)}`}
         icon={<Code2 className="w-4 h-4 text-teal-600 dark:text-teal-400" />}
         color="bg-teal-50 dark:bg-teal-900/30"
         extra={<MiniSparkline data={linesSeries} color={C.code} />}

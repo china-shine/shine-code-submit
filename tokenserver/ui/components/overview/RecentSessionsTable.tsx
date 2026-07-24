@@ -93,7 +93,7 @@ export function RecentSessionsTable({
           </colgroup>
           <thead>
             <tr className="border-b border-border">
-              {["最后活跃", "成员", "标题", "项目", "输入", "输出", "总 Token", "时长", "代码变更"].map((h) => (
+              {["最后活跃", "成员", "标题", "项目", "输入", "输出", "总 Token", "时长", "代码变动"].map((h) => (
                 <th key={h} className={`text-left py-2 pr-3 font-medium text-muted-foreground whitespace-nowrap${h === "标题" ? " w-[260px]" : ""}`}>
                   {h}
                 </th>
