@@ -41,7 +41,7 @@ export function SessionDetail({ sessionId, cwd }: { sessionId: string; cwd?: str
         />
       </div>
       <div className="detail-body">
-        <Conversation messages={messages} loading={loading} error={error} search={searchConv} />
+        <Conversation messages={messages} loading={loading} error={error} search={searchConv} tokenTotal={tokenTotal} />
       </div>
     </div>
   );

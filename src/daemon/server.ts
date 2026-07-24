@@ -20,7 +20,7 @@ import type {
 import { deriveStableEventId } from "../shared/id";
 import { checkToken } from "./auth";
 import { gzipSync } from "node:zlib";
-import { parseTranscript, sumUsage } from "./transcript";
+import { parseTranscript, sumSessionUsage } from "./transcript";
 // claude-scan 现 only export claudeProjectsRoots/collectJsonl/parentSessionInfo/ScannedSession(供 watcher/consumer/aggregate);scanSessions 系列已删(P3)
 import { getCommits, getGitUser } from "./git";
 import { getSessionLines, sumLines } from "./lines";
@@ -253,7 +253,9 @@ export function startServer(deps: ServerDeps) {
         if (!tp) return json({ error: "no transcript_path found for session" }, 404);
         try {
           const messages = parseTranscript(tp);
-          return json({ transcriptPath: tp, messages, tokenTotal: sumUsage(messages) });
+          // tokenTotal 走 sumSessionUsage(父 + subagents/*.jsonl,ccusage 去重),与会话列表/报表/SQLite 同口径;
+          // 不能用 sumUsage(messages)——它只读父文件、不去重、不过滤,用了 subagent 的会话会少算、重放行会多算。
+          return json({ transcriptPath: tp, messages, tokenTotal: sumSessionUsage(tp) });
         } catch (err) {
           return json({ error: "read transcript failed", detail: String(err) }, 500);
         }

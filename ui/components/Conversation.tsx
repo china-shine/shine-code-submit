@@ -1,6 +1,6 @@
 import { useMemo, type ReactNode } from "react";
 import { fmtTokens, fmtUsage, fmtUsageFull, sumUsage } from "../lib/util";
-import type { TranscriptMessage } from "../types";
+import type { TokenUsage, TranscriptMessage } from "../types";
 import { Icon } from "./Icon";
 import { Message } from "./Message";
 
@@ -34,18 +34,23 @@ export function Conversation({
   loading,
   error,
   search,
+  tokenTotal: tokenTotalProp,
 }: {
   messages: TranscriptMessage[];
   loading: boolean;
   error: string | null;
   search: string;
+  /** 会话级 token 总量。优先用父组件透传的后端口径(父 + subagents + ccusage 去重,与列表同口径);
+   *  未透传时回退到对当前 messages 求和(仅父文件、不去重)作兜底。 */
+  tokenTotal?: TokenUsage | null;
 }) {
   const q = search.trim().toLowerCase();
   const shown = useMemo(
     () => (q ? messages.filter((m) => msgMatches(m, q)) : messages),
     [messages, q],
   );
-  const tokenTotal = useMemo(() => sumUsage(messages), [messages]);
+  const computedTotal = useMemo(() => sumUsage(messages), [messages]);
+  const tokenTotal = tokenTotalProp ?? computedTotal;
 
   let body: ReactNode;
   // 仅首次加载（无缓存数据）才显骨架；切回已有数据时静默刷新，避免切换闪烁
