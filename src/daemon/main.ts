@@ -42,7 +42,7 @@ async function main(): Promise<void> {
   const stats = new Stats();
   const spool = new SpoolConsumer(store, bus, stats, log);
   const wsPool = new WebSocketPool(bus, stats);
-  // SQLite 数据中枢:watcher 标 dirty,消费者增量算。P1 并行(前端仍读 scanSessions 内存),P2 切 SQLite。
+  // SQLite 数据中枢:watcher 标 dirty,消费者增量算,前端读 transcript_sessions(P1+P2+P3 已落地,旧 scanSessions 轮询已删)。
   const watcher = new TranscriptWatcher(store);
   const consumer = new TranscriptConsumer(store);
 

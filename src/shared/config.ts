@@ -70,7 +70,7 @@ export const STATS_WINDOW_MS = 10_000;
 // /api/stats 附带的日志尾行数。
 export const LOG_TAIL_LINES = 200;
 
-// 日志按天轮转：超过此大小（字节）也触发轮转。
+// 日志按大小轮转：超过此阈值（字节）触发轮转（无按天逻辑）。
 export const LOG_ROTATE_BYTES = 5 * 1024 * 1024;
 
 // git log 子进程超时（提交视图 /api/commits）；超时返回空 + error，不阻塞查看页。
