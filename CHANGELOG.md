@@ -2,6 +2,14 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.1.11 — 2026-07-24
+
+修复会话详情页 token 与会话列表/报表对不上的问题(详情页曾用简化口径,漏算子代理、不去重)。
+
+### 改动
+- **会话详情页 token 口径对齐**:`/api/transcript` 的 `tokenTotal` 从 `sumUsage(messages)`(只读父 transcript、对每条 usage 直接相加、不去重不校验)改为 `sumSessionUsage(tp)`——纳入 `subagents/*.jsonl` 并走 ccusage 的 messageId+requestId 去重 + null 黑名单 + 严格时间戳校验,与会话列表/报表/SQLite 同口径。此前凡用过 Task/Explore 等 subagent 的会话,详情页都少算一大块;有重放/重试行的会话又会多算。
+- **详情页内部口径统一**:`Conversation` 底部「本会话累计」改用后端透传的会话级 `tokenTotal`,不再前端 `sumUsage(messages)` 重算,消除详情页顶部与底部分叉。
+
 ## 1.1.10 — 2026-07-23
 
 修两个让 dashboard「少会话 / 刷屏」的问题。
