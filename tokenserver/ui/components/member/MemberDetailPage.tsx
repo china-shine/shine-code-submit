@@ -10,22 +10,21 @@ import { fetchMember, fetchSessions } from "../../lib/api";
 import { Avatar } from "../common/Avatar";
 import { RecentSessionsTable } from "../overview/RecentSessionsTable";
 import { chartTheme } from "../overview/chartTheme";
-import type { Granularity, RangeKey } from "../shell/TopBar";
 
 const PAGE_SIZE = 20;
 
 export function MemberDetailPage({
   dark,
   gitUser,
-  granularity,
-  range,
+  startDate,
+  endDate,
   teamStats,
   onBack,
 }: {
   dark: boolean;
   gitUser: string;
-  granularity: Granularity;
-  range: RangeKey;
+  startDate: string;
+  endDate: string;
   teamStats: StatsPayload["totals"];
   onBack: () => void;
 }) {
@@ -33,13 +32,13 @@ export function MemberDetailPage({
   const [sessionsPage, setSessionsPage] = useState<SessionsPage | null>(null);
   const [pageNum, setPageNum] = useState(1);
 
-  // 进详情/range/granularity 变 → 拉单成员 + 会话首页
+  // 进详情/日期范围变 → 拉单成员 + 会话首页
   useEffect(() => {
     let cancelled = false;
     setMember(null);
     Promise.all([
-      fetchMember(gitUser, { range, granularity }),
-      fetchSessions({ range, members: [], member: gitUser, page: 1, pageSize: PAGE_SIZE }),
+      fetchMember(gitUser, { startDate, endDate }),
+      fetchSessions({ startDate, endDate, members: [], member: gitUser, page: 1, pageSize: PAGE_SIZE }),
     ])
       .then(([m, sp]) => {
         if (!cancelled) {
@@ -52,11 +51,11 @@ export function MemberDetailPage({
     return () => {
       cancelled = true;
     };
-  }, [gitUser, range, granularity]);
+  }, [gitUser, startDate, endDate]);
 
   const loadPage = async (n: number) => {
     try {
-      const sp = await fetchSessions({ range, members: [], member: gitUser, page: n, pageSize: PAGE_SIZE });
+      const sp = await fetchSessions({ startDate, endDate, members: [], member: gitUser, page: n, pageSize: PAGE_SIZE });
       setSessionsPage(sp);
       setPageNum(n);
     } catch {
@@ -81,7 +80,6 @@ export function MemberDetailPage({
   const inout = inoutTokens(t.token);
   const eff = inout > 0 ? Math.round((lines / inout) * 1_000_000) : 0;
   const trend = member.trend;
-  const granularityLabel = { day: "日", week: "周", month: "月" }[granularity];
   const range2 = trend.length > 0 ? `${trend[0].date} – ${trend[trend.length - 1].date}` : "—";
 
   // 团队均值(全局 teamStats;teamMembers 作分母)
@@ -132,7 +130,7 @@ export function MemberDetailPage({
       <div className="grid grid-cols-12 gap-4">
         <div className="col-span-8 bg-card border border-border rounded p-4">
           <h3 className="text-sm font-semibold text-foreground">Token 使用趋势</h3>
-          <p className="text-xs text-muted-foreground mt-0.5 mb-4">{range2} · 按会话最后活跃{granularityLabel}聚合</p>
+          <p className="text-xs text-muted-foreground mt-0.5 mb-4">{range2} · 按会话最后活跃日聚合</p>
           <ResponsiveContainer width="100%" height={200}>
             <AreaChart data={trend} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
               <defs>

@@ -1,21 +1,20 @@
 // 成员分析路由:selected 为空显示列表(用 stats.members),非空显示该成员详情(详情自己 fetchMember,团队均值复用 stats.totals)。
 import type { StatsPayload } from "../../types";
-import type { Granularity, RangeKey } from "../shell/TopBar";
 import { MemberListPage } from "./MemberListPage";
 import { MemberDetailPage } from "./MemberDetailPage";
 
 export function MemberPage({
   stats,
   dark,
-  granularity,
-  range,
+  startDate,
+  endDate,
   selected,
   setSelected,
 }: {
   stats: StatsPayload;
   dark: boolean;
-  granularity: Granularity;
-  range: RangeKey;
+  startDate: string;
+  endDate: string;
   selected: string | null;
   setSelected: (g: string | null) => void;
 }) {
@@ -24,8 +23,8 @@ export function MemberPage({
       <MemberDetailPage
         dark={dark}
         gitUser={selected}
-        granularity={granularity}
-        range={range}
+        startDate={startDate}
+        endDate={endDate}
         teamStats={stats.totals}
         onBack={() => setSelected(null)}
       />

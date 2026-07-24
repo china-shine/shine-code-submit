@@ -1,7 +1,6 @@
 // 数据总览:6 KPI(含 sparkline) + (趋势|构成饼图) + (Token排行|代码排行|会话规模分布) + 最近会话表。
-// 数据 = stats(全局聚合,后端 SQL)+ sessionsPage(分页),不再吃全量 users。granularity 透传给趋势图。
+// 数据 = stats(全局聚合,后端 SQL)+ sessionsPage(分页),不再吃全量 users。趋势图固定按日聚合。
 import type { StatsPayload, SessionsPage } from "../../types";
-import type { Granularity } from "../shell/TopBar";
 import { KpiCards } from "./KpiCards";
 import { TokenTrendChart } from "./TokenTrendChart";
 import { TokenCompositionPie } from "./TokenCompositionPie";
@@ -17,7 +16,6 @@ export function OverviewPage({
   pageSize,
   onPageChange,
   dark,
-  granularity,
   onSelectMember,
 }: {
   stats: StatsPayload;
@@ -26,7 +24,6 @@ export function OverviewPage({
   pageSize: number;
   onPageChange: (n: number) => void;
   dark: boolean;
-  granularity: Granularity;
   onSelectMember: (gitUser: string) => void;
 }) {
   return (
@@ -34,7 +31,7 @@ export function OverviewPage({
       <KpiCards stats={stats} />
 
       <div className="grid grid-cols-12 gap-4">
-        <TokenTrendChart trend={stats.trend} dark={dark} granularity={granularity} />
+        <TokenTrendChart trend={stats.trend} dark={dark} />
         <TokenCompositionPie composition={stats.composition} dark={dark} />
       </div>
 

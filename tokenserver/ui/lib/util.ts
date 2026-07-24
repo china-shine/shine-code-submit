@@ -49,3 +49,9 @@ export function fmtDateFull(ts: number): string {
   const mi = String(d.getMinutes()).padStart(2, "0");
   return `${yy}-${mm}-${dd} ${hh}:${mi}`;
 }
+
+/** 毫秒时间戳 → <input type="date"> 的 YYYY-MM-DD（本地时区）。 */
+export function toDateInput(ts: number): string {
+  const d = new Date(ts);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}

@@ -196,14 +196,15 @@ function bucketOf(ts: number, g: Granularity): { key: string; label: string } {
 
 interface FilterOpts {
   from: number;
+  to: number;
   members: string[];
 }
 
-/** 查 from + members 过滤的 sessions(未排序,不含 isRealProject 过滤)。*/
+/** 查 from..to + members 过滤的 sessions(未排序,不含 isRealProject 过滤)。*/
 function querySessions(opts: FilterOpts): SessionRow[] {
   let sql =
-    "SELECT sessionId, gitUser, cwd, lastActive, input, output, cacheCreation, cacheRead, added, deleted, modified, activeMs, title FROM sessions WHERE lastActive >= ?";
-  const params: (number | string)[] = [opts.from];
+    "SELECT sessionId, gitUser, cwd, lastActive, input, output, cacheCreation, cacheRead, added, deleted, modified, activeMs, title FROM sessions WHERE lastActive >= ? AND lastActive <= ?";
+  const params: (number | string)[] = [opts.from, opts.to];
   if (opts.members.length > 0) {
     sql += ` AND gitUser IN (${opts.members.map(() => "?").join(",")})`;
     params.push(...opts.members);
@@ -452,7 +453,7 @@ export function getSessions(
   page: number,
   pageSize: number,
 ): { rows: SessionRowOut[]; total: number; page: number; pageSize: number } {
-  const o: FilterOpts = opts.member ? { from: opts.from, members: [opts.member] } : opts;
+  const o: FilterOpts = opts.member ? { from: opts.from, to: opts.to, members: [opts.member] } : opts;
   const rows = querySessions(o)
     .filter((r) => r.input + r.output + r.cacheCreation + r.cacheRead > 0)
     .sort((a, b) => b.lastActive - a.lastActive);
@@ -481,8 +482,8 @@ export interface MemberDetail {
 }
 
 /** 单成员 KPI + 趋势(给 MemberDetailPage;团队均值复用全局 getStats.totals)。*/
-export function getMember(gitUser: string, opts: { from: number; granularity: Granularity }): MemberDetail {
-  const rows = querySessions({ from: opts.from, members: [gitUser] });
+export function getMember(gitUser: string, opts: { from: number; to: number; granularity: Granularity }): MemberDetail {
+  const rows = querySessions({ from: opts.from, to: opts.to, members: [gitUser] });
   let tInput = 0,
     tOutput = 0,
     tCC = 0,

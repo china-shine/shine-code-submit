@@ -1,24 +1,74 @@
-// 顶栏:粒度(日/周/月) + 时间范围(预设下拉) + 成员多选筛选 + 派生范围文本 + 刷新。
-// 三控件全部接真数据(由 App 层过滤后下传)。从 TokenWeb TopBar(727-784) 演化,把占位控件做成真功能。
-import { useState } from "react";
-import { ChevronDown, RefreshCw, Check } from "lucide-react";
+// 顶栏:时间范围(开始/结束日期) + 成员多选筛选 + 派生范围文本 + 刷新。
+// 趋势图固定按日聚合(日/周/月切换已移除)。三控件全部接真数据(由 App 层过滤后下传)。
+import { useEffect, useRef, useState } from "react";
+import { DayPicker, type Matcher } from "react-day-picker";
+import { zhCN } from "date-fns/locale";
+import { ChevronDown, RefreshCw, Check, Calendar } from "lucide-react";
 import { Avatar } from "../common/Avatar";
+import { toDateInput } from "../../lib/util";
 
 export type Granularity = "day" | "week" | "month";
-export type RangeKey = "7d" | "15d" | "30d" | "all";
 
-const RANGES: { key: RangeKey; label: string }[] = [
-  { key: "7d", label: "最近 7 天" },
-  { key: "15d", label: "最近 15 天" },
-  { key: "30d", label: "最近 30 天" },
-  { key: "all", label: "全部" },
-];
+const DATE_INPUT_CLS =
+  "px-2 py-1.5 rounded-sm border border-border text-xs text-foreground bg-card cursor-pointer hover:bg-muted transition-colors";
+
+/** 日期字段:YYYY-MM-DD 文本 + 日历图标;点击弹 react-day-picker 日历(zhCN 中文、周一起,用官方默认样式),选完回填。 */
+function DateField({ value, onChange, placeholder, disabled }: { value: string; onChange: (s: string) => void; placeholder: string; disabled?: Matcher }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    return () => document.removeEventListener("mousedown", onDoc);
+  }, [open]);
+
+  const selected = value ? new Date(value + "T00:00:00") : undefined;
+
+  return (
+    <div className="relative" ref={ref}>
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        className={`${DATE_INPUT_CLS} w-32 flex items-center justify-between gap-1`}
+      >
+        <span className={`truncate font-mono ${value ? "text-foreground" : "text-muted-foreground"}`}>{value || placeholder}</span>
+        <Calendar className="w-3.5 h-3.5 text-muted-foreground flex-shrink-0" />
+      </button>
+      {open && (
+        <div className="absolute top-full left-0 mt-1 z-50 bg-card border border-border rounded-sm shadow-lg">
+          <DayPicker
+            mode="single"
+            locale={zhCN}
+            weekStartsOn={1}
+            navLayout="around"
+            selected={selected}
+            disabled={disabled}
+            defaultMonth={selected ?? new Date()}
+            onSelect={(d) => {
+              if (d) {
+                onChange(toDateInput(d.getTime()));
+                setOpen(false);
+              }
+            }}
+            formatters={{
+              formatCaption: (m) => `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, "0")}`,
+            }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function TopBar({
-  granularity,
-  onGranularity,
-  range,
-  onRange,
+  startDate,
+  endDate,
+  onStart,
+  onEnd,
   members,
   selectedMembers,
   onToggleMember,
@@ -26,10 +76,10 @@ export function TopBar({
   rangeText,
   onRefresh,
 }: {
-  granularity: Granularity;
-  onGranularity: (g: Granularity) => void;
-  range: RangeKey;
-  onRange: (r: RangeKey) => void;
+  startDate: string;
+  endDate: string;
+  onStart: (s: string) => void;
+  onEnd: (s: string) => void;
   members: string[];
   selectedMembers: string[];
   onToggleMember: (g: string) => void;
@@ -41,33 +91,12 @@ export function TopBar({
 
   return (
     <header className="h-14 bg-card border-b border-border flex items-center px-5 gap-3 sticky top-0 z-30 flex-shrink-0">
-      {/* 粒度 */}
-      <div className="flex items-center gap-0.5 bg-muted rounded-sm p-0.5">
-        {(["day", "week", "month"] as const).map((g) => (
-          <button
-            key={g}
-            onClick={() => onGranularity(g)}
-            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${
-              granularity === g ? "bg-card shadow-sm text-foreground" : "text-muted-foreground hover:text-foreground"
-            }`}
-          >
-            {{ day: "日", week: "周", month: "月" }[g]}
-          </button>
-        ))}
+      {/* 时间范围:开始 / 结束日期(空=不限)。开始日历禁晚于结束日的、结束日历禁早于开始日的,保证 开始<=结束。 */}
+      <div className="flex items-center gap-1.5">
+        <DateField value={startDate} onChange={onStart} placeholder="开始日期" disabled={endDate ? { after: new Date(endDate + "T00:00:00") } : undefined} />
+        <span className="text-xs text-muted-foreground">—</span>
+        <DateField value={endDate} onChange={onEnd} placeholder="结束日期" disabled={startDate ? { before: new Date(startDate + "T00:00:00") } : undefined} />
       </div>
-
-      {/* 时间范围 */}
-      <select
-        value={range}
-        onChange={(e) => onRange(e.target.value as RangeKey)}
-        className="appearance-none px-3 py-1.5 pr-7 rounded-sm border border-border text-xs text-foreground bg-card cursor-pointer hover:bg-muted transition-colors"
-      >
-        {RANGES.map((r) => (
-          <option key={r.key} value={r.key}>
-            {r.label}
-          </option>
-        ))}
-      </select>
 
       {/* 成员多选 */}
       <div className="relative">

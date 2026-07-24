@@ -1,11 +1,11 @@
 // 主组件:overview = /api/stats + /api/sessions;member = stats(成员列表/团队均值)+ /api/member/:X(详情)+ /api/sessions(会话表)。
-// 手动刷新(TopBar 按钮),无自动轮询。不再拉 /api/reports 全量。全局过滤(range+members+granularity)下推后端。
+// 手动刷新(TopBar 按钮),无自动轮询。不再拉 /api/reports 全量。全局过滤(startDate/endDate+members)下推后端,趋势图固定按日。
 import { useEffect, useState } from "react";
 import type { StatsPayload, SessionsPage } from "../types";
 import { fetchStats, fetchSessions } from "../lib/api";
-import { fmtDate } from "../lib/util";
+import { fmtDate, toDateInput } from "../lib/util";
 import { Sidebar, type PageId } from "./shell/Sidebar";
-import { TopBar, type Granularity, type RangeKey } from "./shell/TopBar";
+import { TopBar } from "./shell/TopBar";
 import { OverviewPage } from "./overview/OverviewPage";
 import { MemberPage } from "./member/MemberPage";
 
@@ -20,15 +20,15 @@ export function App() {
   const [selMember, setSelMember] = useState<string | null>(null);
   const [meta, setMeta] = useState("加载中…");
 
-  const [granularity, setGranularity] = useState<Granularity>("day");
-  const [range, setRange] = useState<RangeKey>("all");
+  const [startDate, setStartDate] = useState(toDateInput(Date.now() - 30 * 86_400_000));
+  const [endDate, setEndDate] = useState(toDateInput(Date.now()));
   const [selectedMembers, setSelectedMembers] = useState<string[]>([]);
 
   const loadOverview = async () => {
     try {
       const [s, sp] = await Promise.all([
-        fetchStats({ range, members: selectedMembers, granularity }),
-        fetchSessions({ range, members: selectedMembers, page: 1, pageSize: PAGE_SIZE }),
+        fetchStats({ startDate, endDate, members: selectedMembers }),
+        fetchSessions({ startDate, endDate, members: selectedMembers, page: 1, pageSize: PAGE_SIZE }),
       ]);
       setStats(s);
       setSessionsPage(sp);
@@ -41,7 +41,7 @@ export function App() {
 
   const loadPage = async (n: number) => {
     try {
-      const sp = await fetchSessions({ range, members: selectedMembers, page: n, pageSize: PAGE_SIZE });
+      const sp = await fetchSessions({ startDate, endDate, members: selectedMembers, page: n, pageSize: PAGE_SIZE });
       setSessionsPage(sp);
       setPageNum(n);
     } catch (e) {
@@ -49,11 +49,11 @@ export function App() {
     }
   };
 
-  // 初始 + range/members/granularity 变 → 重调 overview(回 page 1)
+  // 初始 + 日期范围/members 变 → 重调 overview(回 page 1)
   useEffect(() => {
     loadOverview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [range, selectedMembers, granularity]);
+  }, [startDate, endDate, selectedMembers]);
 
   const ar = stats ? { min: stats.activeMin, max: stats.activeMax } : { min: 0, max: 0 };
   const rangeText = ar.max > 0 ? `${fmtDate(ar.min)} — ${fmtDate(ar.max)}` : "无数据";
@@ -73,10 +73,10 @@ export function App() {
 
         <div className="flex-1 flex flex-col min-w-0">
           <TopBar
-            granularity={granularity}
-            onGranularity={setGranularity}
-            range={range}
-            onRange={setRange}
+            startDate={startDate}
+            endDate={endDate}
+            onStart={setStartDate}
+            onEnd={setEndDate}
             members={allGitUsers}
             selectedMembers={selectedMembers}
             onToggleMember={toggleMember}
@@ -99,7 +99,6 @@ export function App() {
                 pageSize={PAGE_SIZE}
                 onPageChange={loadPage}
                 dark={dark}
-                granularity={granularity}
                 onSelectMember={(u) => {
                   setSelMember(u);
                   setPage("member");
@@ -110,8 +109,8 @@ export function App() {
               <MemberPage
                 stats={stats}
                 dark={dark}
-                granularity={granularity}
-                range={range}
+                startDate={startDate}
+                endDate={endDate}
                 selected={selMember}
                 setSelected={setSelMember}
               />

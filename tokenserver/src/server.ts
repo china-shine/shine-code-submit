@@ -37,10 +37,11 @@ function json(req: Request, body: unknown, status = 200): Response {
   return new Response(payload, { status, headers: base });
 }
 
-/** range=7d|15d|30d|all → from 时间戳(0=全部)。 */
-function parseRange(range: string | null): number {
-  const days = range === "7d" ? 7 : range === "15d" ? 15 : range === "30d" ? 30 : 0;
-  return days > 0 ? Date.now() - days * 86_400_000 : 0;
+/** start/end(YYYY-MM-DD)→ {from,to} 毫秒时间戳。from=开始日0点(空=0 不限起始);to=结束日23:59:59.999(空=MAX 不限结束)。 */
+function parseDateRange(startStr: string | null, endStr: string | null): { from: number; to: number } {
+  const from = startStr ? new Date(startStr + "T00:00:00").getTime() : 0;
+  const to = endStr ? new Date(endStr + "T00:00:00").getTime() + 86_400_000 - 1 : Number.MAX_SAFE_INTEGER;
+  return { from, to };
 }
 
 // 静态资源 gzip 压缩传输:app.js 647KB / style.css 402KB,不开 gzip 浏览器全程裸传 ~1MB。
@@ -120,30 +121,30 @@ export function startServer() {
 
       // 全局聚合(overview 6 组件用,小汇总不随会话数膨胀)
       if (path === "/api/stats" && req.method === "GET") {
-        const from = parseRange(url.searchParams.get("range"));
+        const { from, to } = parseDateRange(url.searchParams.get("start"), url.searchParams.get("end"));
         const members = (url.searchParams.get("members") ?? "").split(",").filter(Boolean);
         const gRaw = url.searchParams.get("granularity");
         const granularity: Granularity = gRaw === "week" || gRaw === "month" ? gRaw : "day";
-        return json(req, getStats({ from, members, granularity }));
+        return json(req, getStats({ from, to, members, granularity }));
       }
 
       // 会话明细分页(RecentSessionsTable 翻页查 DB)
       if (path === "/api/sessions" && req.method === "GET") {
-        const from = parseRange(url.searchParams.get("range"));
+        const { from, to } = parseDateRange(url.searchParams.get("start"), url.searchParams.get("end"));
         const members = (url.searchParams.get("members") ?? "").split(",").filter(Boolean);
         const member = url.searchParams.get("member") ?? undefined;
         const page = Math.max(1, parseInt(url.searchParams.get("page") ?? "1", 10) || 1);
         const pageSize = Math.max(1, parseInt(url.searchParams.get("pageSize") ?? "20", 10) || 20);
-        return json(req, getSessions({ from, members, member }, page, pageSize));
+        return json(req, getSessions({ from, to, members, member }, page, pageSize));
       }
 
       // 单成员 KPI + 趋势(MemberDetailPage;团队均值复用 /api/stats)
       if (path.startsWith("/api/member/") && req.method === "GET") {
         const gitUser = decodeURIComponent(path.slice("/api/member/".length));
-        const from = parseRange(url.searchParams.get("range"));
+        const { from, to } = parseDateRange(url.searchParams.get("start"), url.searchParams.get("end"));
         const gRaw = url.searchParams.get("granularity");
         const granularity: Granularity = gRaw === "week" || gRaw === "month" ? gRaw : "day";
-        return json(req, getMember(gitUser, { from, granularity }));
+        return json(req, getMember(gitUser, { from, to, granularity }));
       }
 
       const asset = await serveAsset(path, req);
