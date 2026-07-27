@@ -18,7 +18,7 @@ export function MemberListPage({
       <table className="w-full text-xs">
         <thead className="border-b border-border">
           <tr>
-            {["成员", "最后同步", "活跃项目", "对话次数", "对话时长", "总 Token", "代码变动行数", "效率 (行/M)", "操作"].map((h) => (
+            {["成员", "最后同步", "上报版本", "活跃项目", "对话次数", "对话时长", "总 Token", "代码变动行数", "效率 (行/M)", "操作"].map((h) => (
               <th key={h} className="text-left py-3 px-4 font-medium text-muted-foreground whitespace-nowrap">
                 {h}
               </th>
@@ -28,7 +28,7 @@ export function MemberListPage({
         <tbody>
           {members.length === 0 ? (
             <tr>
-              <td colSpan={9} className="py-6 text-center text-muted-foreground">
+              <td colSpan={10} className="py-6 text-center text-muted-foreground">
                 暂无成员数据
               </td>
             </tr>
@@ -51,6 +51,7 @@ export function MemberListPage({
                     </div>
                   </td>
                   <td className="py-3 px-4 font-mono text-muted-foreground whitespace-nowrap">{fmtDate(u.lastActive)}</td>
+                  <td className="py-3 px-4 font-mono text-muted-foreground whitespace-nowrap">{u.version || "—"}</td>
                   <td className="py-3 px-4 font-mono text-foreground text-center">{u.realProjects}</td>
                   <td className="py-3 px-4 font-mono text-indigo-600 dark:text-indigo-400">{u.sessionCount}</td>
                   <td className="py-3 px-4 font-mono text-orange-600 dark:text-orange-400 whitespace-nowrap">{fmtDuration(u.activeMs)}</td>

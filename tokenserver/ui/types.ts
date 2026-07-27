@@ -40,6 +40,7 @@ export interface MemberAgg {
   totalTokens: TokenUsage;
   totalLines: LinesStat;
   codeLines: { added: number; deleted: number }; // git_changes 分母(AI 占比)
+  version: string; // 该成员最新上报的 daemon 版本
 }
 export interface StatsPayload {
   totals: {

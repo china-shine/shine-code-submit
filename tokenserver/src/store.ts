@@ -28,6 +28,7 @@ db.exec(`
     gitRemote TEXT,
     lastActive INTEGER DEFAULT 0,
     updatedAt INTEGER DEFAULT 0,
+    version TEXT,
     PRIMARY KEY (gitUser, cwd)
   );
   CREATE TABLE IF NOT EXISTS sessions (
@@ -71,6 +72,12 @@ db.exec(`
   if (!have.has("title")) db.exec(`ALTER TABLE sessions ADD COLUMN title TEXT`);
   if (!have.has("activeMs")) db.exec(`ALTER TABLE sessions ADD COLUMN activeMs INTEGER DEFAULT 0`);
 }
+// 旧库迁移:projects 加 version 列(daemon 上报版本号)
+{
+  const pcols = db.prepare("PRAGMA table_info(projects)").all() as Array<{ name: string }>;
+  const phave = new Set(pcols.map((c) => c.name));
+  if (!phave.has("version")) db.exec(`ALTER TABLE projects ADD COLUMN version TEXT`);
+}
 
 const ZERO: TokenUsage = { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 };
 const ZERO_LINES: LinesStat = { added: 0, deleted: 0, modified: 0 };
@@ -91,13 +98,14 @@ interface SessionRow {
 }
 
 const upsertProject = db.query(`
-  INSERT INTO projects (gitUser, cwd, name, gitRemote, lastActive, updatedAt)
-  VALUES (?, ?, ?, ?, ?, ?)
+  INSERT INTO projects (gitUser, cwd, name, gitRemote, lastActive, updatedAt, version)
+  VALUES (?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(gitUser, cwd) DO UPDATE SET
     name = excluded.name,
     gitRemote = excluded.gitRemote,
     lastActive = MAX(projects.lastActive, excluded.lastActive),
-    updatedAt = excluded.updatedAt
+    updatedAt = excluded.updatedAt,
+    version = excluded.version
 `);
 const upsertSession = db.query(`
   INSERT INTO sessions (sessionId, gitUser, cwd, lastActive, input, output, cacheCreation, cacheRead, added, deleted, modified, activeMs, title, updatedAt)
@@ -135,7 +143,7 @@ export function saveReport(raw: ReportResponse): void {
         (m, s) => Math.max(m, s.lastActive),
         0,
       );
-      upsertProject.run(gitUser, p.cwd, p.name ?? null, p.gitRemote ?? null, projLastActive, now);
+      upsertProject.run(gitUser, p.cwd, p.name ?? null, p.gitRemote ?? null, projLastActive, now, raw.version ?? null);
       for (const s of p.sessions ?? []) {
         const t = s.tokenTotal ?? ZERO;
         const l = s.linesTotal ?? ZERO_LINES;
@@ -289,6 +297,7 @@ export interface MemberAgg {
   totalTokens: TokenUsage;
   totalLines: LinesStat;
   codeLines: { added: number; deleted: number }; // git_changes 分母(AI 占比)
+  version: string; // 该成员最新上报的 daemon 版本
 }
 export interface StatsPayload {
   totals: {
@@ -339,6 +348,11 @@ export function getStats(opts: FilterOpts & { granularity: Granularity }): Stats
   const rows = querySessions(opts);
   const gitRows = queryGitChanges(opts);
   const names = projectNameMap();
+  // 每成员最新上报的 daemon 版本(projects.version,report 级,同 gitUser 各 cwd 相同;MAX 取最新)
+  const projVersions = new Map<string, string>();
+  for (const r of db.prepare("SELECT gitUser, MAX(version) AS version FROM projects GROUP BY gitUser").all() as Array<{ gitUser: string; version: string | null }>) {
+    if (r.version) projVersions.set(r.gitUser, r.version);
+  }
   // 全量数据范围(不受 from/to/members 过滤,重置按钮用)
   const dataRange = (db.prepare("SELECT MIN(lastActive) AS min, MAX(lastActive) AS max FROM sessions").get() as { min: number; max: number }) ?? { min: 0, max: 0 };
 
@@ -458,6 +472,7 @@ export function getStats(opts: FilterOpts & { granularity: Granularity }): Stats
       totalTokens: { input: mm.input, output: mm.output, cacheCreation: mm.cc, cacheRead: mm.cr },
       totalLines: { added: mm.added, deleted: mm.deleted, modified: mm.modified },
       codeLines: { added: mm.gitAdded, deleted: mm.gitDeleted },
+      version: projVersions.get(gitUser) ?? "",
       _raw: raw,
     };
   });
