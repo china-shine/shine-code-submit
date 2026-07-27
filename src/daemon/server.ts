@@ -360,7 +360,7 @@ async function buildReport(store: Store, since: number): Promise<ReportResponse>
   const byCwd = groupScannedByCwd(scanned, hookCwd);
 
   const projects = await Promise.all(
-    [...byCwd.entries()].map(([cwd, ss]) => buildProjectDetail(cwd, ss, store)),
+    [...byCwd.entries()].map(([cwd, ss]) => buildProjectDetail(cwd, ss, store, since)),
   );
 
   // 同名项目消歧：用「父目录/项目名」区分（如两个 test → workspace/test、ai/test）
@@ -523,7 +523,7 @@ async function uploadReport(store: Store, opts?: { full?: boolean }): Promise<Up
     method: "POST",
     headers: { "content-type": "application/json", "content-encoding": "gzip" },
     body: gzipSync(Buffer.from(JSON.stringify(report), "utf8")),
-    signal: AbortSignal.timeout(15000),
+    signal: AbortSignal.timeout(60000),
   });
   // 成功推进水位:增量水位总推进;全量额外推进 lastFullReportAt(定期校准锚点)
   const cur = readSettings();

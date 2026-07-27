@@ -2,6 +2,15 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.1.12 — 2026-07-27
+
+新增「AI 代码占比」指标 + 升级自动全量回填历史。
+
+### 改动
+- **AI 代码占比(tokenserver 新 KPI)**:占比 = AI 代码行 / git commit 代码变化行,cap 100% + 标「估算」。daemon `buildProjectDetail` 跑 `git log --since --numstat` 拉项目该窗口所有 commit(无状态 + commit hash 幂等),tokenserver 新增 `git_changes` 表落库,`getStats`/`getMember` 双表聚合;占比卡副标显示分子分母(直接数字)。详见 `tokenserver/数据说明.md` §9。
+- **升级自动全量回填**:daemon 启动检测 `SERVICE_VERSION` 变化 → 重置 `lastFullReportAt=0` → 下次上报自动全量(`since=0`),回填本项目历史 gitCommits(无需手动 full)。依赖发版 bump version 触发。
+- **大项目全量不超时/413**:上报超时 15s→60s;tokenserver `maxRequestBodySize` 256MB;`git log --max-count` 2000→10000。
+
 ## 1.1.11 — 2026-07-24
 
 修复会话详情页 token 与会话列表/报表对不上的问题(详情页曾用简化口径,漏算子代理、不去重)。

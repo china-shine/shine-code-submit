@@ -1,10 +1,10 @@
 // 成员详情:返回 + 头像 + 6 KPI + Token 使用趋势 + 与团队均值对比 + 该用户最近会话表。
 // 全部服务端化:KPI/趋势 = /api/member/:X;团队均值 = 全局 stats.totals;会话表 = /api/sessions?member=X(翻页查 DB)。
 import { useEffect, useState, type ReactNode } from "react";
-import { ChevronRight, MessageSquare, Clock, Coins, Code2, Folder, TrendingUp } from "lucide-react";
+import { ChevronRight, MessageSquare, Clock, Coins, Code2, Folder, TrendingUp, Bot } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
 import type { MemberDetail, SessionsPage, StatsPayload } from "../../types";
-import { rawTotal, lineTotal, inoutTokens, fmtK, fmtFull, fmtDuration, C } from "../../lib/derive";
+import { rawTotal, lineTotal, inoutTokens, fmtK, fmtFull, fmtDuration, fmtPct, C } from "../../lib/derive";
 import { fmtDate } from "../../lib/util";
 import { fetchMember, fetchSessions } from "../../lib/api";
 import { Avatar } from "../common/Avatar";
@@ -80,6 +80,9 @@ export function MemberDetailPage({
   const lines = lineTotal(t.lines);
   const inout = inoutTokens(t.token);
   const eff = inout > 0 ? Math.round((lines / inout) * 1_000_000) : 0;
+  // AI 代码占比:AI 行(分子) / git 变化行(分母);估算口径,cap 100%,分母 0 → N/A
+  const churn = t.codeLines.added + t.codeLines.deleted;
+  const aiRatio = churn > 0 ? lines / churn : NaN;
   const trend = member.trend;
   const range2 = trend.length > 0 ? `${trend[0].date} – ${trend[trend.length - 1].date}` : "—";
 
@@ -98,6 +101,7 @@ export function MemberDetailPage({
     { title: "代码变动行数", value: fmtFull(lines), sub: `+${fmtFull(t.lines.added)} -${fmtFull(t.lines.deleted)} M${fmtFull(t.lines.modified)}`, icon: <Code2 className="w-4 h-4 text-teal-600 dark:text-teal-400" />, color: "bg-teal-50 dark:bg-teal-900/30" },
     { title: "活跃项目", value: fmtFull(t.realProjects), icon: <Folder className="w-4 h-4 text-blue-600 dark:text-blue-400" />, color: "bg-blue-50 dark:bg-blue-900/30" },
     { title: "Token 效率", value: `${eff} 行/M`, icon: <TrendingUp className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />, color: "bg-emerald-50 dark:bg-emerald-900/30" },
+    { title: "AI 代码占比", value: fmtPct(aiRatio), sub: `AI ${fmtFull(lines)} / 共 ${fmtFull(churn)} 行 · 估算`, icon: <Bot className="w-4 h-4 text-rose-600 dark:text-rose-400" />, color: "bg-rose-50 dark:bg-rose-900/30" },
   ];
   const compare = [
     { label: "Token 消耗", personal: token, avg: teamAvg.token },
@@ -119,7 +123,7 @@ export function MemberDetailPage({
         </div>
       </div>
 
-      <div className="grid grid-cols-6 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
         {kpis.map((m) => (
           <MetricCard key={m.title} title={m.title} value={m.value} sub={m.sub} icon={m.icon} color={m.color} />
         ))}

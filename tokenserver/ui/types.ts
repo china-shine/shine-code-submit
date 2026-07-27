@@ -39,12 +39,14 @@ export interface MemberAgg {
   activeMs: number;
   totalTokens: TokenUsage;
   totalLines: LinesStat;
+  codeLines: { added: number; deleted: number }; // git_changes 分母(AI 占比)
 }
 export interface StatsPayload {
   totals: {
     token: TokenUsage;
     rawTotal: number;
     lines: LinesStat;
+    codeLines: { added: number; deleted: number }; // git_changes 分母(AI 占比)
     activeMs: number;
     sessions: number;
     members: number;
@@ -99,6 +101,7 @@ export interface MemberDetail {
     token: TokenUsage;
     rawTotal: number;
     lines: LinesStat;
+    codeLines: { added: number; deleted: number }; // git_changes 分母(AI 占比)
     activeMs: number;
     sessions: number;
     realProjects: number;

@@ -78,3 +78,11 @@ export function fmtDuration(ms: number): string {
   const m = totalMin % 60;
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
+
+/** 百分比格式化:ratio 为 0-1 小数(可 >1)→ "XX.X%",cap 100%(AI 占比估算口径)。
+ *  分母为 0 时调用方传 NaN/Infinity → 返回 "N/A"。 */
+export function fmtPct(ratio: number, digits = 1): string {
+  if (!Number.isFinite(ratio)) return "N/A";
+  const pct = Math.min(100, Math.max(0, ratio * 100));
+  return pct.toFixed(digits) + "%";
+}

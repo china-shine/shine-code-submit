@@ -10,6 +10,7 @@ import { Logger } from "./logger";
 import { SpoolConsumer } from "./spool-consumer";
 import { WebSocketPool } from "./ws";
 import { startServer } from "./server";
+import { readSettings, writeSettings } from "./settings";
 import { serveUi } from "./ui";
 import { TranscriptWatcher } from "./watcher";
 import { TranscriptConsumer } from "./transcript-consumer";
@@ -90,6 +91,16 @@ async function main(): Promise<void> {
   // 若先写 pid 文件再 bind，bind 失败的实例会覆盖/删除 pid 文件，导致 listening 实例与 pid 文件
   // 不一致（cli stop/restart/ui 据此取 token 会失效）。bind 成功才意味着本实例胜出。
   writePidFile(pid);
+
+  // 升级检测:version 变了 → 重置 lastFullReportAt=0,下次上报 tick 自动 dueFull 全量,
+  // 回填历史 gitCommits(git log --since=0 拉本项目全量 commit)。hash PK 幂等,失败重试(水位不推进)。
+  {
+    const s0 = readSettings();
+    if (s0.lastDaemonVersion !== SERVICE_VERSION) {
+      writeSettings({ ...s0, lastDaemonVersion: SERVICE_VERSION, lastFullReportAt: 0 });
+      log.info(`daemon upgraded (${s0.lastDaemonVersion ?? "(none)"} → ${SERVICE_VERSION}); next report will be full (backfill gitCommits)`);
+    }
+  }
 
   // SQLite 数据中枢启动:watcher 监听文件变化标 dirty,消费者 2s tick 增量算 + 5min 兜底全扫。
   watcher.start();

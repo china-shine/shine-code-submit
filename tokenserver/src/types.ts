@@ -23,6 +23,13 @@ export interface ReportSession {
   activeMs?: number; // gap-aware 活跃时长(ms);旧 daemon 上报可能缺失
 }
 
+export interface GitCommitStat {
+  hash: string;
+  ts: number;
+  added: number;
+  deleted: number;
+}
+
 export interface ReportProject {
   cwd: string;
   name: string;
@@ -32,6 +39,7 @@ export interface ReportProject {
   sessions: ReportSession[];
   totalTokens: TokenUsage;
   totalLines: LinesStat;
+  gitCommits?: GitCommitStat[];
   gitError?: string;
 }
 

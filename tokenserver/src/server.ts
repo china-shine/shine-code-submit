@@ -93,6 +93,7 @@ export function startServer() {
   return Bun.serve({
     hostname: HOST,
     port: PORT,
+    maxRequestBodySize: 256 * 1024 * 1024, // 256MB:全量回填(sessions + 上万 commit)防 413
     async fetch(req) {
       const url = new URL(req.url);
       const path = url.pathname;

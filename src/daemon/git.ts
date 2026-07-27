@@ -31,6 +31,28 @@ export async function getCommits(cwd: string, limit = 200): Promise<CommitsRespo
   return { cwd, commits: parseLog(stdout) };
 }
 
+/**
+ * 拉取某时间窗口 [sinceTs, untilTs] 内的非 merge 提交及其 +/- 行数(AI 代码占比分母用)。
+ * 复用 parseLog(输出格式与 getCommits 一致)。--max-count 兜底防 since=0(全量上报) dump 整个 repo 历史。
+ * 容错优先:非 git 仓库 / git 未装 / 超时 → 返回 [](绝不抛,上报链路不被 git 故障拖垮)。
+ */
+export async function getCommitsInRange(
+  cwd: string,
+  sinceTs: number,
+  untilTs: number,
+  maxCount = 10000,
+): Promise<CommitLog[]> {
+  const args = ["log", "--no-merges", "--numstat", `--pretty=format:%H${SEP}%cI${SEP}%an${SEP}%s`];
+  if (sinceTs > 0) args.push(`--since=${new Date(sinceTs).toISOString()}`);
+  if (untilTs > 0) args.push(`--until=${new Date(untilTs).toISOString()}`);
+  args.push(`--max-count=${Math.max(1, Math.floor(maxCount) || 2000)}`);
+  try {
+    return parseLog(await runGit(cwd, args));
+  } catch {
+    return [];
+  }
+}
+
 // git user.name / remote 极少变，按 cwd 缓存（TTL GIT_CACHE_TTL_MS），避免 buildReport 每项目重复 spawn 子进程。
 // 缓存结果含 null（错误/未配置 cwd 在 TTL 内不重试，也省 spawn）。cwd 数 = 项目数，Map 不会无限增长。
 interface GitCacheEntry { at: number; value: string | null }

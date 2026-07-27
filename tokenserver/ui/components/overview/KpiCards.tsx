@@ -1,8 +1,8 @@
 // 6 KPI 卡。总Token/对话次数/代码行/时长 四卡带 sparkline(按日序列)。时长为 gap-aware 估算。
 // 数据 = stats.totals(全局聚合)+ stats.daily(按日 sparkline),不再现场 globalTotals/dailyStats。
-import { Coins, Activity, Clock, Code2, Users, Cpu } from "lucide-react";
+import { Coins, Activity, Clock, Code2, Users, Cpu, Bot } from "lucide-react";
 import type { StatsPayload } from "../../types";
-import { fmtK, fmtFull, fmtDuration, lineTotal, C } from "../../lib/derive";
+import { fmtK, fmtFull, fmtDuration, lineTotal, fmtPct, C } from "../../lib/derive";
 import { MetricCard } from "../common/MetricCard";
 import { MiniSparkline } from "../common/MiniSparkline";
 
@@ -13,9 +13,12 @@ export function KpiCards({ stats }: { stats: StatsPayload }) {
   const sessionSeries = ds.map((d) => d.sessions);
   const linesSeries = ds.map((d) => d.lines);
   const durSeries = ds.map((d) => d.dur);
+  // AI 代码占比:AI 行(分子) / git 变化行(分母);估算口径,cap 100%,分母 0 → N/A
+  const churn = t.codeLines.added + t.codeLines.deleted;
+  const aiRatio = churn > 0 ? lineTotal(t.lines) / churn : NaN;
 
   return (
-    <div className="grid grid-cols-6 gap-4">
+    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
       <MetricCard
         title="总 Token 消耗"
         value={fmtK(t.rawTotal)}
@@ -61,6 +64,13 @@ export function KpiCards({ stats }: { stats: StatsPayload }) {
         sub="跨用户真项目数"
         icon={<Cpu className="w-4 h-4 text-cyan-600 dark:text-cyan-400" />}
         color="bg-cyan-50 dark:bg-cyan-900/30"
+      />
+      <MetricCard
+        title="AI 代码占比"
+        value={fmtPct(aiRatio)}
+        sub={`AI ${fmtFull(lineTotal(t.lines))} / 共 ${fmtFull(churn)} 行 · 估算`}
+        icon={<Bot className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />}
+        color="bg-emerald-50 dark:bg-emerald-900/30"
       />
     </div>
   );

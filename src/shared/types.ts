@@ -134,6 +134,15 @@ export interface ReportSession {
   activeMs?: number; // gap-aware 活跃时长(ms):messageId 去重 + 1h gap 截断 + 10min buffer;旧 daemon 上报可能缺失
 }
 
+/** 报告里单个 git commit 的代码变化行(AI 代码占比的分母来源,来自 git log --numstat)。
+ *  hash 是幂等键(tokenserver git_changes 表主键,全量重扫去重);ts 为提交时间(%cI);added/deleted 为该 commit 合计。 */
+export interface GitCommitStat {
+  hash: string;
+  ts: number;
+  added: number;
+  deleted: number;
+}
+
 /** 报告里单个项目(=cwd)的聚合行。 */
 export interface ReportProject {
   cwd: string;
@@ -143,7 +152,8 @@ export interface ReportProject {
   sessionCount: number;
   sessions: ReportSession[]; // 每会话 token 明细
   totalTokens: TokenUsage; // 该项目 token 合计
-  totalLines: LinesStat; // 该项目代码变更行数合计
+  totalLines: LinesStat; // 该项目 AI 代码变更行数合计(分子)
+  gitCommits?: GitCommitStat[]; // 该项目该窗口所有 commit 的代码变化行(分母);非 git 仓库/超时为空
   gitError?: string;
 }
 

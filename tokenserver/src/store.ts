@@ -48,6 +48,17 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_sessions_user_cwd ON sessions(gitUser, cwd);
   CREATE INDEX IF NOT EXISTS idx_projects_gitUser ON projects(gitUser);
+  CREATE TABLE IF NOT EXISTS git_changes (
+    hash TEXT NOT NULL,
+    gitUser TEXT NOT NULL,
+    cwd TEXT NOT NULL,
+    ts INTEGER NOT NULL,
+    added INTEGER DEFAULT 0,
+    deleted INTEGER DEFAULT 0,
+    PRIMARY KEY (hash)
+  );
+  CREATE INDEX IF NOT EXISTS idx_gitchanges_ts ON git_changes(ts);
+  CREATE INDEX IF NOT EXISTS idx_gitchanges_user_cwd ON git_changes(gitUser, cwd, ts);
 `);
 
 // 旧库迁移:sessions 加 added/deleted/modified 列(无迁移机制,PRAGMA 检查 + ADD COLUMN)
@@ -107,6 +118,11 @@ const upsertSession = db.query(`
     updatedAt = excluded.updatedAt
   WHERE excluded.lastActive >= sessions.lastActive OR excluded.cwd IS NOT sessions.cwd
 `);
+const upsertGitChange = db.query(`
+  INSERT INTO git_changes (hash, gitUser, cwd, ts, added, deleted)
+  VALUES (?, ?, ?, ?, ?, ?)
+  ON CONFLICT(hash) DO NOTHING
+`);
 
 /** 存储一次上报:拆分逐条 upsert。 */
 export function saveReport(raw: ReportResponse): void {
@@ -128,6 +144,10 @@ export function saveReport(raw: ReportResponse): void {
           t.input, t.output, t.cacheCreation, t.cacheRead,
           l.added, l.deleted, l.modified, s.activeMs ?? 0, s.title ?? null, now,
         );
+      }
+      // 该项目该窗口所有 commit 的代码变化行(AI 占比分母);hash 幂等,全量重扫不重
+      for (const c of p.gitCommits ?? []) {
+        upsertGitChange.run(c.hash, gitUser, p.cwd, c.ts, c.added, c.deleted);
       }
     }
   });
@@ -212,6 +232,26 @@ function querySessions(opts: FilterOpts): SessionRow[] {
   return db.prepare(sql).all(...params) as SessionRow[];
 }
 
+interface GitChangeRow {
+  ts: number;
+  gitUser: string;
+  cwd: string;
+  added: number;
+  deleted: number;
+}
+
+/** 查 from..to + members 过滤的 git_changes(commit 代码变化行,AI 占比分母;与 querySessions 同过滤口径)。*/
+function queryGitChanges(opts: FilterOpts): GitChangeRow[] {
+  let sql =
+    "SELECT ts, gitUser, cwd, added, deleted FROM git_changes WHERE ts >= ? AND ts <= ?";
+  const params: (number | string)[] = [opts.from, opts.to];
+  if (opts.members.length > 0) {
+    sql += ` AND gitUser IN (${opts.members.map(() => "?").join(",")})`;
+    params.push(...opts.members);
+  }
+  return db.prepare(sql).all(...params) as GitChangeRow[];
+}
+
 /** projects 表 (gitUser\0cwd)→name 映射(项目榜/会话表展示名 fallback,前端 displayProjectName 再清洗)。*/
 function projectNameMap(): Map<string, string> {
   const rows = db.prepare("SELECT gitUser, cwd, name FROM projects").all() as Array<{
@@ -248,12 +288,14 @@ export interface MemberAgg {
   activeMs: number;
   totalTokens: TokenUsage;
   totalLines: LinesStat;
+  codeLines: { added: number; deleted: number }; // git_changes 分母(AI 占比)
 }
 export interface StatsPayload {
   totals: {
     token: TokenUsage;
     rawTotal: number;
     lines: LinesStat;
+    codeLines: { added: number; deleted: number }; // git_changes 分母(AI 占比)
     activeMs: number;
     sessions: number;
     members: number;
@@ -288,11 +330,14 @@ interface MemberAcc {
   convs: number;
   lastActive: number;
   cwds: Set<string>; // 仅真项目
+  gitAdded: number; // git_changes 分母(commit 新增行)
+  gitDeleted: number; // git_changes 分母(commit 删除行)
 }
 
 /** 全局聚合(复刻 derive.ts globalTotals/dailyStats/bucketByGranularity/tokenRank/codeRank/sessionSizeBuckets/countRealProjects)。*/
 export function getStats(opts: FilterOpts & { granularity: Granularity }): StatsPayload {
   const rows = querySessions(opts);
+  const gitRows = queryGitChanges(opts);
   const names = projectNameMap();
   // 全量数据范围(不受 from/to/members 过滤,重置按钮用)
   const dataRange = (db.prepare("SELECT MIN(lastActive) AS min, MAX(lastActive) AS max FROM sessions").get() as { min: number; max: number }) ?? { min: 0, max: 0 };
@@ -304,7 +349,9 @@ export function getStats(opts: FilterOpts & { granularity: Granularity }): Stats
     tActive = 0,
     tAdded = 0,
     tDeleted = 0,
-    tModified = 0;
+    tModified = 0,
+    tGitAdded = 0,
+    tGitDeleted = 0;
   let activeMin = Infinity,
     activeMax = -Infinity;
   const trendMap = new Map<string, DayBucket>();
@@ -351,7 +398,7 @@ export function getStats(opts: FilterOpts & { granularity: Granularity }): Stats
     // member 累加(全部 session)
     let m = memberAcc.get(r.gitUser);
     if (!m) {
-      m = { input: 0, output: 0, cc: 0, cr: 0, added: 0, deleted: 0, modified: 0, activeMs: 0, convs: 0, lastActive: 0, cwds: new Set() };
+      m = { input: 0, output: 0, cc: 0, cr: 0, added: 0, deleted: 0, modified: 0, activeMs: 0, convs: 0, lastActive: 0, cwds: new Set(), gitAdded: 0, gitDeleted: 0 };
       memberAcc.set(r.gitUser, m);
     }
     m.input += r.input;
@@ -384,6 +431,19 @@ export function getStats(opts: FilterOpts & { granularity: Granularity }): Stats
     }
   }
 
+  // git_changes 分母累加(全局 + 按 member,与 sessions 同 from/to/members 口径)
+  for (const g of gitRows) {
+    tGitAdded += g.added;
+    tGitDeleted += g.deleted;
+    let m = memberAcc.get(g.gitUser);
+    if (!m) {
+      m = { input: 0, output: 0, cc: 0, cr: 0, added: 0, deleted: 0, modified: 0, activeMs: 0, convs: 0, lastActive: 0, cwds: new Set(), gitAdded: 0, gitDeleted: 0 };
+      memberAcc.set(g.gitUser, m);
+    }
+    m.gitAdded += g.added;
+    m.gitDeleted += g.deleted;
+  }
+
   const token: TokenUsage = { input: tInput, output: tOutput, cacheCreation: tCC, cacheRead: tCR };
   const lines: LinesStat = { added: tAdded, deleted: tDeleted, modified: tModified };
 
@@ -397,6 +457,7 @@ export function getStats(opts: FilterOpts & { granularity: Granularity }): Stats
       activeMs: mm.activeMs,
       totalTokens: { input: mm.input, output: mm.output, cacheCreation: mm.cc, cacheRead: mm.cr },
       totalLines: { added: mm.added, deleted: mm.deleted, modified: mm.modified },
+      codeLines: { added: mm.gitAdded, deleted: mm.gitDeleted },
       _raw: raw,
     };
   });
@@ -430,6 +491,7 @@ export function getStats(opts: FilterOpts & { granularity: Granularity }): Stats
       token,
       rawTotal: tInput + tOutput + tCC + tCR,
       lines,
+      codeLines: { added: tGitAdded, deleted: tGitDeleted },
       activeMs: tActive,
       sessions: rows.length,
       members: memberAcc.size,
@@ -483,6 +545,7 @@ export interface MemberDetail {
     token: TokenUsage;
     rawTotal: number;
     lines: LinesStat;
+    codeLines: { added: number; deleted: number }; // git_changes 分母(AI 占比)
     activeMs: number;
     sessions: number;
     realProjects: number;
@@ -493,6 +556,7 @@ export interface MemberDetail {
 /** 单成员 KPI + 趋势(给 MemberDetailPage;团队均值复用全局 getStats.totals)。*/
 export function getMember(gitUser: string, opts: { from: number; to: number; granularity: Granularity }): MemberDetail {
   const rows = querySessions({ from: opts.from, to: opts.to, members: [gitUser] });
+  const gitRows = queryGitChanges({ from: opts.from, to: opts.to, members: [gitUser] });
   let tInput = 0,
     tOutput = 0,
     tCC = 0,
@@ -500,7 +564,9 @@ export function getMember(gitUser: string, opts: { from: number; to: number; gra
     tActive = 0,
     tAdded = 0,
     tDeleted = 0,
-    tModified = 0;
+    tModified = 0,
+    tGitAdded = 0,
+    tGitDeleted = 0;
   let lastActive = 0;
   const realCwds = new Set<string>();
   const trendMap = new Map<string, DayBucket>();
@@ -525,6 +591,10 @@ export function getMember(gitUser: string, opts: { from: number; to: number; gra
     tr.ts = r.lastActive;
     trendMap.set(tb.key, tr);
   }
+  for (const g of gitRows) {
+    tGitAdded += g.added;
+    tGitDeleted += g.deleted;
+  }
   return {
     gitUser,
     lastActive,
@@ -532,6 +602,7 @@ export function getMember(gitUser: string, opts: { from: number; to: number; gra
       token: { input: tInput, output: tOutput, cacheCreation: tCC, cacheRead: tCR },
       rawTotal: tInput + tOutput + tCC + tCR,
       lines: { added: tAdded, deleted: tDeleted, modified: tModified },
+      codeLines: { added: tGitAdded, deleted: tGitDeleted },
       activeMs: tActive,
       sessions: rows.length,
       realProjects: realCwds.size,

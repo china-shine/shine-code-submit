@@ -2,7 +2,7 @@
 // 保证 /api/report、/api/projects(L1)、/api/sessions?cwd=(L2) 三者项目分组与 token/lines 口径完全一致。
 // buildReport 复用这里的函数 → 上报链路零回归。
 import type { ScannedSession } from "./claude-scan";
-import { getGitUser, getGitRemote } from "./git";
+import { getCommitsInRange, getGitUser, getGitRemote } from "./git";
 import { getSessionLines, sumLines } from "./lines";
 import type { Store, TranscriptSessionRow } from "./store";
 import type { LinesStat, ProjectSummary, ReportProject, ReportSession, SessionSummary, TokenUsage } from "../shared/types";
@@ -105,9 +105,14 @@ function toReportSession(s: ScannedSession, store: Store): ReportSession {
 }
 
 /** 构建完整项目(含 sessions[],/api/report 用)。git 异步取(有 5min 缓存)。 */
-export async function buildProjectDetail(cwd: string, ss: ScannedSession[], store: Store): Promise<ReportProject> {
+export async function buildProjectDetail(cwd: string, ss: ScannedSession[], store: Store, since: number): Promise<ReportProject> {
   const sessions = ss.map((s) => toReportSession(s, store));
-  const [gitUser, gitRemote] = await Promise.all([getGitUser(cwd), getGitRemote(cwd)]);
+  // gitUser/gitRemote/commits 并行(天然批次);commits = 该窗口所有 commit 的代码变化行(AI 占比分母)
+  const [gitUser, gitRemote, commits] = await Promise.all([
+    getGitUser(cwd),
+    getGitRemote(cwd),
+    getCommitsInRange(cwd, since, Date.now()),
+  ]);
   return {
     cwd,
     name: shortName(cwd),
@@ -117,6 +122,7 @@ export async function buildProjectDetail(cwd: string, ss: ScannedSession[], stor
     sessions,
     totalTokens: sumTokens(sessions.map((r) => r.tokenTotal)),
     totalLines: sumLines(sessions.map((r) => r.linesTotal)),
+    gitCommits: commits.map((c) => ({ hash: c.hash, ts: c.time, added: c.added, deleted: c.deleted })),
   };
 }
 
