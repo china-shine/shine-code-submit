@@ -95,6 +95,8 @@ export interface CommitFile {
   path: string;
   added: number;
   deleted: number;
+  addedLines?: string[]; // added 行内容(-p 解析才有,行级 AI 匹配用;numstat 模式无)
+  deletedLines?: string[]; // deleted 行内容(同上)
 }
 
 /** 单条 git commit（/api/commits 返回）。added/deleted 为其下 files 的合计。 */
@@ -141,6 +143,7 @@ export interface GitCommitStat {
   ts: number;
   added: number;
   deleted: number;
+  aiAdded?: number; // 该 commit added 行中 AI 写的行数(行级匹配:transcript AI 行 ∩ git added 行);缺省 0
 }
 
 /** 报告里单个项目(=cwd)的聚合行。 */

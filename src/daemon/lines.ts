@@ -1,6 +1,8 @@
 // 会话级代码变更行数统计:从 PostToolUse 事件的 tool_response.structuredPatch 数 +/- 行。
 // added 纯增 / deleted 纯删 / modified 一删一加配对(min(plus,minus)),三者不重复。
 // 按 sessionId + lastActive 缓存(仿 token-cache),lastActive 不变命中,避免查看页轮询重复查 DB。
+import { relative } from "node:path";
+import { GIT_CACHE_TTL_MS } from "../shared/config";
 import type { Store } from "./store";
 import type { LinesStat } from "../shared/types";
 
@@ -80,4 +82,74 @@ export function sumLines(arr: Array<LinesStat | null | undefined>): LinesStat {
     }
   }
   return t;
+}
+
+/** 规范化文件路径:绝对路径转相对 cwd,统一分隔符为 /,小写(Win 大小写不敏感)。
+ *  用于对齐 AI 的 tool_input.file_path(绝对)与 git 的 path(相对 cwd),供行级匹配查表。 */
+export function normRelPath(cwd: string, p: string): string {
+  let rel = p;
+  if (/^(?:[A-Za-z]:[\\/]|[\\/])/.test(p)) {
+    try {
+      const r = relative(cwd, p);
+      if (r) rel = r;
+    } catch {
+      /* relative 失败保留原值 */
+    }
+  }
+  return rel.split(/[\\/]/).join("/").toLowerCase();
+}
+
+interface AiLinesCacheEntry { at: number; lines: Map<string, Set<string>>; }
+const aiLinesCache = new Map<string, AiLinesCacheEntry>();
+
+/** 提取某项目"AI 写过的所有行内容"(按规范化文件路径分组),供 buildProjectDetail 行级匹配 commit added 行。
+ *  全量扫描该 cwd 的 PostToolUse(Edit/Write/MultiEdit/NotebookEdit):取 structuredPatch 的 + 行(去前缀);
+ *  Write 新建文件(patch 空)fallback tool_input.content 全文行。分页突破 query 的 2000 cap。
+ *  项目级 TTL 缓存(GIT_CACHE_TTL_MS)。 */
+export function getProjectAILines(store: Store, cwd: string): Map<string, Set<string>> {
+  const hit = aiLinesCache.get(cwd);
+  if (hit && Date.now() - hit.at < GIT_CACHE_TTL_MS) return hit.lines;
+  const aiLines = new Map<string, Set<string>>();
+  const PAGE = 2000;
+  let offset = 0;
+  for (;;) {
+    const events = store.query({ cwd, type: "PostToolUse", limit: PAGE, offset });
+    if (events.length === 0) break;
+    for (const ev of events) {
+      const p = ev.payload as Record<string, unknown> | null;
+      if (!p) continue;
+      const toolName = typeof p.tool_name === "string" ? p.tool_name : "";
+      if (!CODE_TOOLS.has(toolName)) continue;
+      const input = (p.tool_input as Record<string, unknown> | null | undefined) ?? undefined;
+      const fp = input?.file_path ?? input?.notebook_path;
+      if (typeof fp !== "string" || !fp) continue;
+      const np = normRelPath(cwd, fp);
+      let set = aiLines.get(np);
+      if (!set) {
+        set = new Set();
+        aiLines.set(np, set);
+      }
+      const resp = p.tool_response as Record<string, unknown> | null | undefined;
+      const patch = resp?.structuredPatch as Patch;
+      if (Array.isArray(patch) && patch.length > 0) {
+        for (const hunk of patch) {
+          const ls = hunk?.lines;
+          if (!Array.isArray(ls)) continue;
+          for (const l of ls) {
+            if (typeof l === "string") {
+              if (l.startsWith("+") && !l.startsWith("+++")) set.add(l.slice(1));
+              else if (l.startsWith("-") && !l.startsWith("---")) set.add(l.slice(1));
+            }
+          }
+        }
+      } else if (typeof input?.content === "string") {
+        // Write 新建文件:patch 空,fallback content 全文行
+        for (const l of input.content.split("\n")) set.add(l);
+      }
+    }
+    if (events.length < PAGE) break;
+    offset += PAGE;
+  }
+  aiLinesCache.set(cwd, { at: Date.now(), lines: aiLines });
+  return aiLines;
 }

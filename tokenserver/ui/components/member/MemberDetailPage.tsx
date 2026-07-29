@@ -81,13 +81,14 @@ export function MemberDetailPage({
   const lines = lineTotal(t.lines);
   const inout = inoutTokens(t.token);
   const eff = inout > 0 ? Math.round((lines / inout) * 1_000_000) : 0;
-  // AI 代码占比:AI 行(分子) / git 变化行(分母);估算口径,cap 100%,分母 0 → N/A
+  // AI 代码占比(commit 粒度):isAI commit 行(分子) / 所有 commit 行(分母);cap 100%,分母 0 → N/A
   const churn = t.codeLines.added + t.codeLines.deleted;
-  const aiRatio = churn > 0 ? lines / churn : NaN;
-  // AI 占比按日序列(分子 d.lines / 分母 d.gitAdded+d.gitDeleted;分母 0 → 0;cap 100%)
+  const aiChurn = t.aiCodeLines.added + t.aiCodeLines.deleted;
+  const aiRatio = churn > 0 ? aiChurn / churn : NaN;
+  // AI 占比按日序列(分子 d.aiGit / 分母 d.git;分母 0 → 0;cap 100%)
   const ratioSeries = member.daily.map((d) => {
     const denom = d.gitAdded + d.gitDeleted;
-    return denom > 0 ? Math.min(1, d.lines / denom) : 0;
+    return denom > 0 ? Math.min(1, (d.aiGitAdded + d.aiGitDeleted) / denom) : 0;
   });
   const trend = member.trend;
   const range2 = trend.length > 0 ? `${trend[0].date} – ${trend[trend.length - 1].date}` : "—";
@@ -107,7 +108,7 @@ export function MemberDetailPage({
     { title: "代码变动行数", value: fmtFull(lines), sub: `+${fmtFull(t.lines.added)} -${fmtFull(t.lines.deleted)} M${fmtFull(t.lines.modified)}`, icon: <Code2 className="w-4 h-4 text-teal-600 dark:text-teal-400" />, color: "bg-teal-50 dark:bg-teal-900/30" },
     { title: "活跃项目", value: fmtFull(t.realProjects), icon: <Folder className="w-4 h-4 text-blue-600 dark:text-blue-400" />, color: "bg-blue-50 dark:bg-blue-900/30" },
     { title: "Token 效率", value: `${eff} 行/M`, icon: <TrendingUp className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />, color: "bg-emerald-50 dark:bg-emerald-900/30" },
-    { title: "AI 代码占比", value: fmtPct(aiRatio), sub: `AI ${fmtFull(lines)} / 共 ${fmtFull(churn)} 行 · 估算`, icon: <Bot className="w-4 h-4 text-rose-600 dark:text-rose-400" />, color: "bg-rose-50 dark:bg-rose-900/30", extra: <MiniSparkline data={ratioSeries} color="#f43f5e" /> },
+    { title: "AI 代码占比", value: fmtPct(aiRatio), sub: `AI ${fmtFull(aiChurn)} / 共 ${fmtFull(churn)} 行`, icon: <Bot className="w-4 h-4 text-rose-600 dark:text-rose-400" />, color: "bg-rose-50 dark:bg-rose-900/30", extra: <MiniSparkline data={ratioSeries} color="#f43f5e" /> },
   ];
   const compare = [
     { label: "Token 消耗", personal: token, avg: teamAvg.token },

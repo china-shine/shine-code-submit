@@ -3,7 +3,7 @@
 // buildReport 复用这里的函数 → 上报链路零回归。
 import type { ScannedSession } from "./claude-scan";
 import { getCommitsInRange, getGitUser, getGitRemote } from "./git";
-import { getSessionLines, sumLines } from "./lines";
+import { getSessionLines, getProjectAILines, normRelPath, sumLines } from "./lines";
 import type { Store, TranscriptSessionRow } from "./store";
 import type { LinesStat, ProjectSummary, ReportProject, ReportSession, SessionSummary, TokenUsage } from "../shared/types";
 
@@ -108,6 +108,7 @@ function toReportSession(s: ScannedSession, store: Store): ReportSession {
 export async function buildProjectDetail(cwd: string, ss: ScannedSession[], store: Store, since: number): Promise<ReportProject> {
   const sessions = ss.map((s) => toReportSession(s, store));
   // gitUser/gitRemote/commits 并行(天然批次);commits = 该窗口所有 commit 的代码变化行(AI 占比分母)
+  const aiLines = getProjectAILines(store, cwd);
   const [gitUser, gitRemote, commits] = await Promise.all([
     getGitUser(cwd),
     getGitRemote(cwd),
@@ -122,7 +123,17 @@ export async function buildProjectDetail(cwd: string, ss: ScannedSession[], stor
     sessions,
     totalTokens: sumTokens(sessions.map((r) => r.tokenTotal)),
     totalLines: sumLines(sessions.map((r) => r.linesTotal)),
-    gitCommits: commits.map((c) => ({ hash: c.hash, ts: c.time, added: c.added, deleted: c.deleted })),
+    gitCommits: commits.map((c) => {
+      let aiAdded = 0;
+      for (const f of c.files) {
+        const set = aiLines.get(normRelPath(cwd, f.path));
+        if (set) {
+          for (const l of f.addedLines ?? []) if (set.has(l)) aiAdded++;
+          for (const l of f.deletedLines ?? []) if (set.has(l)) aiAdded++;
+        }
+      }
+      return { hash: c.hash, ts: c.time, added: c.added, deleted: c.deleted, aiAdded };
+    }),
   };
 }
 

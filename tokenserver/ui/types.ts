@@ -32,6 +32,8 @@ export interface DailyStat {
   dur: number;
   gitAdded: number; // git_changes 分母(commit 新增行,AI 占比 sparkline)
   gitDeleted: number; // git_changes 分母(commit 删除行)
+  aiGitAdded: number; // isAI commit 行(commit 粒度 AI 占比分子)
+  aiGitDeleted: number; // isAI commit 行(分子)
 }
 export interface MemberAgg {
   gitUser: string;
@@ -42,6 +44,7 @@ export interface MemberAgg {
   totalTokens: TokenUsage;
   totalLines: LinesStat;
   codeLines: { added: number; deleted: number }; // git_changes 分母(AI 占比)
+  aiCodeLines: { added: number; deleted: number }; // isAI commit 行(成员级分子)
   version: string; // 该成员最新上报的 daemon 版本
 }
 export interface StatsPayload {
@@ -50,6 +53,7 @@ export interface StatsPayload {
     rawTotal: number;
     lines: LinesStat;
     codeLines: { added: number; deleted: number }; // git_changes 分母(AI 占比)
+    aiCodeLines: { added: number; deleted: number }; // isAI commit 行(commit 粒度 AI 占比分子)
     activeMs: number;
     sessions: number;
     members: number;
@@ -105,6 +109,7 @@ export interface MemberDetail {
     rawTotal: number;
     lines: LinesStat;
     codeLines: { added: number; deleted: number }; // git_changes 分母(AI 占比)
+    aiCodeLines: { added: number; deleted: number }; // isAI commit 行(commit 粒度 AI 占比分子)
     activeMs: number;
     sessions: number;
     realProjects: number;

@@ -73,6 +73,7 @@ export interface QueryOpts {
   type?: string;
   since?: number;
   limit?: number;
+  offset?: number;
 }
 
 /** transcript_files 行(文件级,每 .jsonl 一行)。 */
@@ -149,11 +150,12 @@ export class Store {
     if (typeof opts.since === "number") { where.push("timestamp >= ?"); params.push(opts.since); }
     const clause = where.length ? `WHERE ${where.join(" AND ")}` : "";
     const limit = Math.min(Math.max(opts.limit ?? 200, 1), 2000);
+    const offset = Math.max(opts.offset ?? 0, 0);
     const rows = this.db
       .prepare(
-        `SELECT event_id, session_id, type, timestamp, cwd, pid, payload FROM events ${clause} ORDER BY timestamp DESC LIMIT ?`,
+        `SELECT event_id, session_id, type, timestamp, cwd, pid, payload FROM events ${clause} ORDER BY timestamp DESC LIMIT ? OFFSET ?`,
       )
-      .all(...params, limit);
+      .all(...params, limit, offset);
     return rows.map(rowToEvent);
   }
 

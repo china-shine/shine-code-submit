@@ -13,13 +13,14 @@ export function KpiCards({ stats }: { stats: StatsPayload }) {
   const sessionSeries = ds.map((d) => d.sessions);
   const linesSeries = ds.map((d) => d.lines);
   const durSeries = ds.map((d) => d.dur);
-  // AI 代码占比:AI 行(分子) / git 变化行(分母);估算口径,cap 100%,分母 0 → N/A
+  // AI 代码占比(commit 粒度):isAI commit 行(分子) / 所有 commit 行(分母);cap 100%,分母 0 → N/A
   const churn = t.codeLines.added + t.codeLines.deleted;
-  const aiRatio = churn > 0 ? lineTotal(t.lines) / churn : NaN;
-  // 按日占比序列(分子 d.lines / 分母 d.gitAdded+d.gitDeleted;分母 0 → 0;cap 100% 与卡片口径一致)
+  const aiChurn = t.aiCodeLines.added + t.aiCodeLines.deleted;
+  const aiRatio = churn > 0 ? aiChurn / churn : NaN;
+  // 按日占比序列(分子 d.aiGit / 分母 d.git;分母 0 → 0;cap 100%)
   const ratioSeries = ds.map((d) => {
     const denom = d.gitAdded + d.gitDeleted;
-    return denom > 0 ? Math.min(1, d.lines / denom) : 0;
+    return denom > 0 ? Math.min(1, (d.aiGitAdded + d.aiGitDeleted) / denom) : 0;
   });
 
   return (
@@ -73,7 +74,7 @@ export function KpiCards({ stats }: { stats: StatsPayload }) {
       <MetricCard
         title="AI 代码占比"
         value={fmtPct(aiRatio)}
-        sub={`AI ${fmtFull(lineTotal(t.lines))} / 共 ${fmtFull(churn)} 行 · 估算`}
+        sub={`AI ${fmtFull(aiChurn)} / 共 ${fmtFull(churn)} 行`}
         icon={<Bot className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />}
         color="bg-emerald-50 dark:bg-emerald-900/30"
         extra={<MiniSparkline data={ratioSeries} color="#10b981" />}

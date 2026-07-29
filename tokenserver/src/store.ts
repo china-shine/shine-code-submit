@@ -56,11 +56,18 @@ db.exec(`
     ts INTEGER NOT NULL,
     added INTEGER DEFAULT 0,
     deleted INTEGER DEFAULT 0,
+    aiAdded INTEGER DEFAULT 0,
     PRIMARY KEY (hash)
   );
   CREATE INDEX IF NOT EXISTS idx_gitchanges_ts ON git_changes(ts);
   CREATE INDEX IF NOT EXISTS idx_gitchanges_user_cwd ON git_changes(gitUser, cwd, ts);
 `);
+
+// 旧库迁移:git_changes 加 aiAdded 列(行级 AI 占比分子:该 commit added 行中 AI 写的行数)
+{
+  const gcCols = db.prepare("PRAGMA table_info(git_changes)").all() as Array<{ name: string }>;
+  if (!gcCols.some((c) => c.name === "aiAdded")) db.exec("ALTER TABLE git_changes ADD COLUMN aiAdded INTEGER DEFAULT 0");
+}
 
 // 旧库迁移:sessions 加 added/deleted/modified 列(无迁移机制,PRAGMA 检查 + ADD COLUMN)
 {
@@ -127,9 +134,9 @@ const upsertSession = db.query(`
   WHERE excluded.lastActive >= sessions.lastActive OR excluded.cwd IS NOT sessions.cwd
 `);
 const upsertGitChange = db.query(`
-  INSERT INTO git_changes (hash, gitUser, cwd, ts, added, deleted)
-  VALUES (?, ?, ?, ?, ?, ?)
-  ON CONFLICT(hash) DO NOTHING
+  INSERT INTO git_changes (hash, gitUser, cwd, ts, added, deleted, aiAdded)
+  VALUES (?, ?, ?, ?, ?, ?, ?)
+  ON CONFLICT(hash) DO UPDATE SET aiAdded = MAX(git_changes.aiAdded, excluded.aiAdded)
 `);
 
 /** 存储一次上报:拆分逐条 upsert。 */
@@ -155,7 +162,7 @@ export function saveReport(raw: ReportResponse): void {
       }
       // 该项目该窗口所有 commit 的代码变化行(AI 占比分母);hash 幂等,全量重扫不重
       for (const c of p.gitCommits ?? []) {
-        upsertGitChange.run(c.hash, gitUser, p.cwd, c.ts, c.added, c.deleted);
+        upsertGitChange.run(c.hash, gitUser, p.cwd, c.ts, c.added, c.deleted, c.aiAdded ?? 0);
       }
     }
   });
@@ -246,12 +253,13 @@ interface GitChangeRow {
   cwd: string;
   added: number;
   deleted: number;
+  aiAdded: number;
 }
 
 /** 查 from..to + members 过滤的 git_changes(commit 代码变化行,AI 占比分母;与 querySessions 同过滤口径)。*/
 function queryGitChanges(opts: FilterOpts): GitChangeRow[] {
   let sql =
-    "SELECT ts, gitUser, cwd, added, deleted FROM git_changes WHERE ts >= ? AND ts <= ?";
+    "SELECT ts, gitUser, cwd, added, deleted, aiAdded FROM git_changes WHERE ts >= ? AND ts <= ?";
   const params: (number | string)[] = [opts.from, opts.to];
   if (opts.members.length > 0) {
     sql += ` AND gitUser IN (${opts.members.map(() => "?").join(",")})`;
@@ -289,6 +297,8 @@ export interface DailyStat {
   dur: number;
   gitAdded: number; // git_changes 分母(commit 新增行,AI 占比 sparkline)
   gitDeleted: number; // git_changes 分母(commit 删除行)
+  aiGitAdded: number; // isAI commit 行(commit 粒度 AI 占比分子)
+  aiGitDeleted: number; // isAI commit 行(分子)
 }
 export interface MemberAgg {
   gitUser: string;
@@ -299,6 +309,7 @@ export interface MemberAgg {
   totalTokens: TokenUsage;
   totalLines: LinesStat;
   codeLines: { added: number; deleted: number }; // git_changes 分母(AI 占比)
+  aiCodeLines: { added: number; deleted: number }; // isAI commit 行(成员级分子)
   version: string; // 该成员最新上报的 daemon 版本
 }
 export interface StatsPayload {
@@ -307,6 +318,7 @@ export interface StatsPayload {
     rawTotal: number;
     lines: LinesStat;
     codeLines: { added: number; deleted: number }; // git_changes 分母(AI 占比)
+    aiCodeLines: { added: number; deleted: number }; // isAI commit 行(commit 粒度 AI 占比分子)
     activeMs: number;
     sessions: number;
     members: number;
@@ -343,6 +355,8 @@ interface MemberAcc {
   cwds: Set<string>; // 仅真项目
   gitAdded: number; // git_changes 分母(commit 新增行)
   gitDeleted: number; // git_changes 分母(commit 删除行)
+  gitAiAdded: number; // isAI commit 行(成员级 AI 占比分子)
+  gitAiDeleted: number; // isAI commit 行(分子)
 }
 
 /** 全局聚合(复刻 derive.ts globalTotals/dailyStats/bucketByGranularity/tokenRank/codeRank/sessionSizeBuckets/countRealProjects)。*/
@@ -367,7 +381,8 @@ export function getStats(opts: FilterOpts & { granularity: Granularity }): Stats
     tDeleted = 0,
     tModified = 0,
     tGitAdded = 0,
-    tGitDeleted = 0;
+    tGitDeleted = 0,
+    tGitAiAdded = 0;
   let activeMin = Infinity,
     activeMax = -Infinity;
   const trendMap = new Map<string, DayBucket>();
@@ -403,7 +418,7 @@ export function getStats(opts: FilterOpts & { granularity: Granularity }): Stats
 
     // daily(固定 day,KpiCards sparkline)
     const dk = bucketOf(r.lastActive, "day");
-    const ds = dailyMap.get(dk.key) ?? { date: dk.label, ts: r.lastActive, total: 0, sessions: 0, lines: 0, dur: 0, gitAdded: 0, gitDeleted: 0 };
+    const ds = dailyMap.get(dk.key) ?? { date: dk.label, ts: r.lastActive, total: 0, sessions: 0, lines: 0, dur: 0, gitAdded: 0, gitDeleted: 0, aiGitAdded: 0, aiGitDeleted: 0 };
     ds.total += t;
     ds.sessions += 1;
     ds.lines += r.added + r.deleted + r.modified;
@@ -414,7 +429,7 @@ export function getStats(opts: FilterOpts & { granularity: Granularity }): Stats
     // member 累加(全部 session)
     let m = memberAcc.get(r.gitUser);
     if (!m) {
-      m = { input: 0, output: 0, cc: 0, cr: 0, added: 0, deleted: 0, modified: 0, activeMs: 0, convs: 0, lastActive: 0, cwds: new Set(), gitAdded: 0, gitDeleted: 0 };
+      m = { input: 0, output: 0, cc: 0, cr: 0, added: 0, deleted: 0, modified: 0, activeMs: 0, convs: 0, lastActive: 0, cwds: new Set(), gitAdded: 0, gitDeleted: 0, gitAiAdded: 0, gitAiDeleted: 0 };
       memberAcc.set(r.gitUser, m);
     }
     m.input += r.input;
@@ -451,20 +466,23 @@ export function getStats(opts: FilterOpts & { granularity: Granularity }): Stats
   for (const g of gitRows) {
     tGitAdded += g.added;
     tGitDeleted += g.deleted;
+    tGitAiAdded += g.aiAdded;
     // 按日桶累加分母(只累加到已有 session 的日桶,不新建 → 避免给 token/会话等 sparkline 插 0 谷)
     const gk = bucketOf(g.ts, "day");
     const gds = dailyMap.get(gk.key);
     if (gds) {
       gds.gitAdded += g.added;
       gds.gitDeleted += g.deleted;
+      gds.aiGitAdded += g.aiAdded;
     }
     let m = memberAcc.get(g.gitUser);
     if (!m) {
-      m = { input: 0, output: 0, cc: 0, cr: 0, added: 0, deleted: 0, modified: 0, activeMs: 0, convs: 0, lastActive: 0, cwds: new Set(), gitAdded: 0, gitDeleted: 0 };
+      m = { input: 0, output: 0, cc: 0, cr: 0, added: 0, deleted: 0, modified: 0, activeMs: 0, convs: 0, lastActive: 0, cwds: new Set(), gitAdded: 0, gitDeleted: 0, gitAiAdded: 0, gitAiDeleted: 0 };
       memberAcc.set(g.gitUser, m);
     }
     m.gitAdded += g.added;
     m.gitDeleted += g.deleted;
+    m.gitAiAdded += g.aiAdded;
   }
 
   const token: TokenUsage = { input: tInput, output: tOutput, cacheCreation: tCC, cacheRead: tCR };
@@ -481,6 +499,7 @@ export function getStats(opts: FilterOpts & { granularity: Granularity }): Stats
       totalTokens: { input: mm.input, output: mm.output, cacheCreation: mm.cc, cacheRead: mm.cr },
       totalLines: { added: mm.added, deleted: mm.deleted, modified: mm.modified },
       codeLines: { added: mm.gitAdded, deleted: mm.gitDeleted },
+      aiCodeLines: { added: mm.gitAiAdded, deleted: mm.gitAiDeleted },
       version: projVersions.get(gitUser) ?? "",
       _raw: raw,
     };
@@ -516,6 +535,7 @@ export function getStats(opts: FilterOpts & { granularity: Granularity }): Stats
       rawTotal: tInput + tOutput + tCC + tCR,
       lines,
       codeLines: { added: tGitAdded, deleted: tGitDeleted },
+      aiCodeLines: { added: tGitAiAdded, deleted: 0 },
       activeMs: tActive,
       sessions: rows.length,
       members: memberAcc.size,
@@ -570,6 +590,7 @@ export interface MemberDetail {
     rawTotal: number;
     lines: LinesStat;
     codeLines: { added: number; deleted: number }; // git_changes 分母(AI 占比)
+    aiCodeLines: { added: number; deleted: number }; // isAI commit 行(commit 粒度 AI 占比分子)
     activeMs: number;
     sessions: number;
     realProjects: number;
@@ -591,7 +612,8 @@ export function getMember(gitUser: string, opts: { from: number; to: number; gra
     tDeleted = 0,
     tModified = 0,
     tGitAdded = 0,
-    tGitDeleted = 0;
+    tGitDeleted = 0,
+    tGitAiAdded = 0;
   let lastActive = 0;
   const realCwds = new Set<string>();
   const trendMap = new Map<string, DayBucket>();
@@ -619,7 +641,7 @@ export function getMember(gitUser: string, opts: { from: number; to: number; gra
 
     // daily(固定 day,AI 占比 sparkline 分子)
     const dk = bucketOf(r.lastActive, "day");
-    const ds = dailyMap.get(dk.key) ?? { date: dk.label, ts: r.lastActive, total: 0, sessions: 0, lines: 0, dur: 0, gitAdded: 0, gitDeleted: 0 };
+    const ds = dailyMap.get(dk.key) ?? { date: dk.label, ts: r.lastActive, total: 0, sessions: 0, lines: 0, dur: 0, gitAdded: 0, gitDeleted: 0, aiGitAdded: 0, aiGitDeleted: 0 };
     ds.total += t;
     ds.sessions += 1;
     ds.lines += r.added + r.deleted + r.modified;
@@ -630,12 +652,14 @@ export function getMember(gitUser: string, opts: { from: number; to: number; gra
   for (const g of gitRows) {
     tGitAdded += g.added;
     tGitDeleted += g.deleted;
+    tGitAiAdded += g.aiAdded;
     // 按日桶累加分母(只累加到已有 session 的日桶,不新建 → 避免给 token sparkline 插 0 谷)
     const gk = bucketOf(g.ts, "day");
     const gds = dailyMap.get(gk.key);
     if (gds) {
       gds.gitAdded += g.added;
       gds.gitDeleted += g.deleted;
+      gds.aiGitAdded += g.aiAdded;
     }
   }
   return {
@@ -646,6 +670,7 @@ export function getMember(gitUser: string, opts: { from: number; to: number; gra
       rawTotal: tInput + tOutput + tCC + tCR,
       lines: { added: tAdded, deleted: tDeleted, modified: tModified },
       codeLines: { added: tGitAdded, deleted: tGitDeleted },
+      aiCodeLines: { added: tGitAiAdded, deleted: 0 },
       activeMs: tActive,
       sessions: rows.length,
       realProjects: realCwds.size,

@@ -42,14 +42,34 @@ export async function getCommitsInRange(
   untilTs: number,
   maxCount = 10000,
 ): Promise<CommitLog[]> {
-  const args = ["log", "--no-merges", "--numstat", `--pretty=format:%H${SEP}%cI${SEP}%an${SEP}%s`];
+  const args = ["log", "--no-merges", "-p", "--unified=0", `--pretty=format:%H${SEP}%cI${SEP}%an${SEP}%s`];
   if (sinceTs > 0) args.push(`--since=${new Date(sinceTs).toISOString()}`);
   if (untilTs > 0) args.push(`--until=${new Date(untilTs).toISOString()}`);
   args.push(`--max-count=${Math.max(1, Math.floor(maxCount) || 2000)}`);
   try {
-    return parseLog(await runGit(cwd, args));
+    return parseLogPatch(await runGit(cwd, args));
   } catch {
     return [];
+  }
+}
+
+/** 拉某时间窗口内 message 含 Co-Authored-By: Claude 的 commit hash 集合(commit 粒度 AI 占比的分子识别)。
+ *  git log --grep 匹配整个 message(含 body,trailer 在 body);容错:非 git 仓库/超时 → 空集(绝不抛)。 */
+export async function getAICommitHashes(
+  cwd: string,
+  sinceTs: number,
+  untilTs: number,
+  maxCount = 10000,
+): Promise<Set<string>> {
+  const args = ["log", "--no-merges", "--grep=Co-Authored-By: Claude", "--format=%H"];
+  if (sinceTs > 0) args.push(`--since=${new Date(sinceTs).toISOString()}`);
+  if (untilTs > 0) args.push(`--until=${new Date(untilTs).toISOString()}`);
+  args.push(`--max-count=${Math.max(1, Math.floor(maxCount) || 2000)}`);
+  try {
+    const stdout = await runGit(cwd, args);
+    return new Set(stdout.split("\n").filter((h) => h.length > 0));
+  } catch {
+    return new Set();
   }
 }
 
@@ -149,6 +169,55 @@ function parseLog(stdout: string): CommitLog[] {
     }
   }
   if (cur) commits.push(cur);
+  return commits;
+}
+
+/** 解析 `git log -p --unified=0`:每 commit 后跟 diff(--git/---/+++/+/- 行)。
+ *  与 parseLog(--numstat)不同:逐行归集 added 行内容(addedLines),供行级 AI 匹配。
+ *  pretty 头(含 SEP)开启新 commit;`+++ b/path` 定当前文件;`+x`(非+++)→ added 行(内容 x)。 */
+function parseLogPatch(stdout: string): CommitLog[] {
+  const commits: CommitLog[] = [];
+  let cur: CommitLog | null = null;
+  let curFile: CommitFile | null = null;
+  for (const line of stdout.split("\n")) {
+    if (line.includes(SEP)) {
+      const i1 = line.indexOf(SEP);
+      const i2 = line.indexOf(SEP, i1 + 1);
+      const i3 = line.indexOf(SEP, i2 + 1);
+      curFile = null;
+      cur = {
+        hash: line.slice(0, i1),
+        time: parseIso(line.slice(i1 + 1, i2)),
+        author: line.slice(i2 + 1, i3),
+        subject: line.slice(i3 + 1),
+        files: [],
+        added: 0,
+        deleted: 0,
+      };
+      commits.push(cur);
+    } else if (line.startsWith("diff --git ")) {
+      if (!cur) continue;
+      curFile = { path: "", added: 0, deleted: 0, addedLines: [], deletedLines: [] };
+      cur.files.push(curFile);
+    } else if (line.startsWith("+++ ")) {
+      const p = line.slice(4);
+      if (curFile && p !== "/dev/null") curFile.path = p.startsWith("b/") ? p.slice(2) : p;
+    } else if (line.startsWith("+") && !line.startsWith("+++")) {
+      if (cur && curFile) {
+        cur.added++;
+        curFile.added++;
+        curFile.addedLines?.push(line.slice(1));
+      }
+    } else if (line.startsWith("-") && !line.startsWith("---")) {
+      if (cur) {
+        cur.deleted++;
+        if (curFile) {
+          curFile.deleted++;
+          curFile.deletedLines?.push(line.slice(1));
+        }
+      }
+    }
+  }
   return commits;
 }
 
