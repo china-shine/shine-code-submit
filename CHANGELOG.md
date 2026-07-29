@@ -2,6 +2,16 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.1.13 — 2026-07-29
+
+AI 代码占比改行级精确（transcript ∩ git）+ 按日 sparkline + 成员列表显示客户端版本号。
+
+### 改动
+- **AI 占比行级精确**:分子从 commit 标记(Co-Authored-By)改为行级内容匹配——daemon 从 transcript PostToolUse 的 structuredPatch 提取 AI 改动行(按文件,+/- 行都算),git log -p 采 commit 的 added/deleted 行内容,行内容相交算 aiAdded。认行不认 commit,添加/修改/删除都计入,手动 commit 的 AI 代码也能识别。新增 daemon `lines.ts`(`getProjectAILines`:项目级 AI 行集合 + 分页突破 query 2000 cap + GIT_CACHE_TTL 缓存、`normRelPath` 路径归一);shared types `CommitFile.addedLines/deletedLines`、`GitCommitStat.aiAdded`;tokenserver `git_changes` 加 `aiAdded` 列(ALTER 迁移)+ upsert `ON CONFLICT DO UPDATE SET aiAdded=MAX`(嵌套项目重复上报取较大);`getStats/getMember` 占比分子改 ΣaiAdded;前端占比分子改用 aiCodeLines。
+- **AI 占比按日 sparkline**:总览占比卡 + 成员详情页展示 AI 占比按日趋势。
+- **成员列表显示客户端版本号**:成员列表展示各成员客户端上报的 shine-code-submit 版本号。
+- ⚠️ **数据格式变更**(tokenserver 与 daemon 须配套升级):`gitCommits` 每条新增 `aiAdded`。部署顺序**先 tokenserver 后 daemon**——旧 tokenserver 收新 daemon 上报会因 `aiAdded` 列不存在 SQL 报错;新 tokenserver + 旧 daemon 不报错但占比偏低。用户 daemon 升级到 1.1.13 并重启后,自动全量回填(since=0)历史 commit 的 aiAdded(依赖本次 bump version 触发,upsert MAX 幂等覆盖),无需手动 full。
+
 ## 1.1.12 — 2026-07-27
 
 新增「AI 代码占比」指标 + 升级自动全量回填历史。
