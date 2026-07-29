@@ -30,6 +30,8 @@ export interface DailyStat {
   sessions: number;
   lines: number;
   dur: number;
+  gitAdded: number; // git_changes 分母(commit 新增行,AI 占比 sparkline)
+  gitDeleted: number; // git_changes 分母(commit 删除行)
 }
 export interface MemberAgg {
   gitUser: string;
@@ -108,4 +110,5 @@ export interface MemberDetail {
     realProjects: number;
   };
   trend: DayBucket[];
+  daily: DailyStat[]; // 固定 day(AI 占比 sparkline)
 }

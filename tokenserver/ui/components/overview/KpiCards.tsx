@@ -16,6 +16,11 @@ export function KpiCards({ stats }: { stats: StatsPayload }) {
   // AI 代码占比:AI 行(分子) / git 变化行(分母);估算口径,cap 100%,分母 0 → N/A
   const churn = t.codeLines.added + t.codeLines.deleted;
   const aiRatio = churn > 0 ? lineTotal(t.lines) / churn : NaN;
+  // 按日占比序列(分子 d.lines / 分母 d.gitAdded+d.gitDeleted;分母 0 → 0;cap 100% 与卡片口径一致)
+  const ratioSeries = ds.map((d) => {
+    const denom = d.gitAdded + d.gitDeleted;
+    return denom > 0 ? Math.min(1, d.lines / denom) : 0;
+  });
 
   return (
     <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
@@ -71,6 +76,7 @@ export function KpiCards({ stats }: { stats: StatsPayload }) {
         sub={`AI ${fmtFull(lineTotal(t.lines))} / 共 ${fmtFull(churn)} 行 · 估算`}
         icon={<Bot className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />}
         color="bg-emerald-50 dark:bg-emerald-900/30"
+        extra={<MiniSparkline data={ratioSeries} color="#10b981" />}
       />
     </div>
   );

@@ -9,6 +9,7 @@ import { fmtDate } from "../../lib/util";
 import { fetchMember, fetchSessions } from "../../lib/api";
 import { Avatar } from "../common/Avatar";
 import { MetricCard } from "../common/MetricCard";
+import { MiniSparkline } from "../common/MiniSparkline";
 import { RecentSessionsTable } from "../overview/RecentSessionsTable";
 import { chartTheme } from "../overview/chartTheme";
 
@@ -83,6 +84,11 @@ export function MemberDetailPage({
   // AI 代码占比:AI 行(分子) / git 变化行(分母);估算口径,cap 100%,分母 0 → N/A
   const churn = t.codeLines.added + t.codeLines.deleted;
   const aiRatio = churn > 0 ? lines / churn : NaN;
+  // AI 占比按日序列(分子 d.lines / 分母 d.gitAdded+d.gitDeleted;分母 0 → 0;cap 100%)
+  const ratioSeries = member.daily.map((d) => {
+    const denom = d.gitAdded + d.gitDeleted;
+    return denom > 0 ? Math.min(1, d.lines / denom) : 0;
+  });
   const trend = member.trend;
   const range2 = trend.length > 0 ? `${trend[0].date} – ${trend[trend.length - 1].date}` : "—";
 
@@ -94,14 +100,14 @@ export function MemberDetailPage({
     lines: teamMembers > 0 ? Math.round(lineTotal(teamStats.lines) / teamMembers) : 0,
   };
 
-  const kpis: { title: string; value: string; sub?: string; icon: ReactNode; color: string }[] = [
+  const kpis: { title: string; value: string; sub?: string; icon: ReactNode; color: string; extra?: ReactNode }[] = [
     { title: "对话次数", value: fmtFull(t.sessions), icon: <MessageSquare className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />, color: "bg-indigo-50 dark:bg-indigo-900/30" },
     { title: "对话总时长", value: fmtDuration(t.activeMs), icon: <Clock className="w-4 h-4 text-orange-600 dark:text-orange-400" />, color: "bg-orange-50 dark:bg-orange-900/30" },
     { title: "总 Token", value: fmtK(token), icon: <Coins className="w-4 h-4 text-violet-600 dark:text-violet-400" />, color: "bg-violet-50 dark:bg-violet-900/30" },
     { title: "代码变动行数", value: fmtFull(lines), sub: `+${fmtFull(t.lines.added)} -${fmtFull(t.lines.deleted)} M${fmtFull(t.lines.modified)}`, icon: <Code2 className="w-4 h-4 text-teal-600 dark:text-teal-400" />, color: "bg-teal-50 dark:bg-teal-900/30" },
     { title: "活跃项目", value: fmtFull(t.realProjects), icon: <Folder className="w-4 h-4 text-blue-600 dark:text-blue-400" />, color: "bg-blue-50 dark:bg-blue-900/30" },
     { title: "Token 效率", value: `${eff} 行/M`, icon: <TrendingUp className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />, color: "bg-emerald-50 dark:bg-emerald-900/30" },
-    { title: "AI 代码占比", value: fmtPct(aiRatio), sub: `AI ${fmtFull(lines)} / 共 ${fmtFull(churn)} 行 · 估算`, icon: <Bot className="w-4 h-4 text-rose-600 dark:text-rose-400" />, color: "bg-rose-50 dark:bg-rose-900/30" },
+    { title: "AI 代码占比", value: fmtPct(aiRatio), sub: `AI ${fmtFull(lines)} / 共 ${fmtFull(churn)} 行 · 估算`, icon: <Bot className="w-4 h-4 text-rose-600 dark:text-rose-400" />, color: "bg-rose-50 dark:bg-rose-900/30", extra: <MiniSparkline data={ratioSeries} color="#f43f5e" /> },
   ];
   const compare = [
     { label: "Token 消耗", personal: token, avg: teamAvg.token },
@@ -125,7 +131,7 @@ export function MemberDetailPage({
 
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-4">
         {kpis.map((m) => (
-          <MetricCard key={m.title} title={m.title} value={m.value} sub={m.sub} icon={m.icon} color={m.color} />
+          <MetricCard key={m.title} title={m.title} value={m.value} sub={m.sub} icon={m.icon} color={m.color} extra={m.extra} />
         ))}
       </div>
 

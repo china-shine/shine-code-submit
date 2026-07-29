@@ -287,6 +287,8 @@ export interface DailyStat {
   sessions: number;
   lines: number;
   dur: number;
+  gitAdded: number; // git_changes 分母(commit 新增行,AI 占比 sparkline)
+  gitDeleted: number; // git_changes 分母(commit 删除行)
 }
 export interface MemberAgg {
   gitUser: string;
@@ -401,7 +403,7 @@ export function getStats(opts: FilterOpts & { granularity: Granularity }): Stats
 
     // daily(固定 day,KpiCards sparkline)
     const dk = bucketOf(r.lastActive, "day");
-    const ds = dailyMap.get(dk.key) ?? { date: dk.label, ts: r.lastActive, total: 0, sessions: 0, lines: 0, dur: 0 };
+    const ds = dailyMap.get(dk.key) ?? { date: dk.label, ts: r.lastActive, total: 0, sessions: 0, lines: 0, dur: 0, gitAdded: 0, gitDeleted: 0 };
     ds.total += t;
     ds.sessions += 1;
     ds.lines += r.added + r.deleted + r.modified;
@@ -445,10 +447,17 @@ export function getStats(opts: FilterOpts & { granularity: Granularity }): Stats
     }
   }
 
-  // git_changes 分母累加(全局 + 按 member,与 sessions 同 from/to/members 口径)
+  // git_changes 分母累加(全局 + 按 member + 按日,与 sessions 同 from/to/members 口径)
   for (const g of gitRows) {
     tGitAdded += g.added;
     tGitDeleted += g.deleted;
+    // 按日桶累加分母(只累加到已有 session 的日桶,不新建 → 避免给 token/会话等 sparkline 插 0 谷)
+    const gk = bucketOf(g.ts, "day");
+    const gds = dailyMap.get(gk.key);
+    if (gds) {
+      gds.gitAdded += g.added;
+      gds.gitDeleted += g.deleted;
+    }
     let m = memberAcc.get(g.gitUser);
     if (!m) {
       m = { input: 0, output: 0, cc: 0, cr: 0, added: 0, deleted: 0, modified: 0, activeMs: 0, convs: 0, lastActive: 0, cwds: new Set(), gitAdded: 0, gitDeleted: 0 };
@@ -566,6 +575,7 @@ export interface MemberDetail {
     realProjects: number;
   };
   trend: DayBucket[];
+  daily: DailyStat[]; // 固定 day(AI 占比 sparkline)
 }
 
 /** 单成员 KPI + 趋势(给 MemberDetailPage;团队均值复用全局 getStats.totals)。*/
@@ -585,6 +595,7 @@ export function getMember(gitUser: string, opts: { from: number; to: number; gra
   let lastActive = 0;
   const realCwds = new Set<string>();
   const trendMap = new Map<string, DayBucket>();
+  const dailyMap = new Map<string, DailyStat>();
   for (const r of rows) {
     const t = r.input + r.output + r.cacheCreation + r.cacheRead;
     tInput += r.input;
@@ -605,10 +616,27 @@ export function getMember(gitUser: string, opts: { from: number; to: number; gra
     tr.total += t;
     tr.ts = r.lastActive;
     trendMap.set(tb.key, tr);
+
+    // daily(固定 day,AI 占比 sparkline 分子)
+    const dk = bucketOf(r.lastActive, "day");
+    const ds = dailyMap.get(dk.key) ?? { date: dk.label, ts: r.lastActive, total: 0, sessions: 0, lines: 0, dur: 0, gitAdded: 0, gitDeleted: 0 };
+    ds.total += t;
+    ds.sessions += 1;
+    ds.lines += r.added + r.deleted + r.modified;
+    ds.dur += r.activeMs;
+    ds.ts = r.lastActive;
+    dailyMap.set(dk.key, ds);
   }
   for (const g of gitRows) {
     tGitAdded += g.added;
     tGitDeleted += g.deleted;
+    // 按日桶累加分母(只累加到已有 session 的日桶,不新建 → 避免给 token sparkline 插 0 谷)
+    const gk = bucketOf(g.ts, "day");
+    const gds = dailyMap.get(gk.key);
+    if (gds) {
+      gds.gitAdded += g.added;
+      gds.gitDeleted += g.deleted;
+    }
   }
   return {
     gitUser,
@@ -623,5 +651,6 @@ export function getMember(gitUser: string, opts: { from: number; to: number; gra
       realProjects: realCwds.size,
     },
     trend: [...trendMap.values()].sort((a, b) => a.ts - b.ts),
+    daily: [...dailyMap.values()].sort((a, b) => a.ts - b.ts),
   };
 }
