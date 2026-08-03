@@ -1,0 +1,41 @@
+---
+name: daily
+description: 生成今天的工时日报(从禅道提交记录 efforts 汇总),输出 HTML 到 reports/,含 AI 日总结。Use when 用户要求生成日报、今天的工时汇总、写日报,或运行 /daily。
+---
+
+# ZenPilot 日报
+
+生成**今天**的工时日报,数据来自禅道的提交记录(`/tasks/{id}/estimate` 的 efforts,非本地会话),与禅道页面一致。输出为**自包含 HTML**,写入当前目录下的 `reports/日报-YYYY-MM-DD.html`(同日重跑覆盖,不堆积),并在底部附 **AI 日总结**。
+
+脚本在 report skill:`<Base directory>/../report/scripts/zentao.ts`。**用绝对路径在当前项目目录下调用、不要 cd**(脚本靠 `process.cwd()` 识别“当前目录”作为 `reports/` 落点)。
+
+## 流程
+
+1. 运行:
+   ```
+   bun "<Base directory>/../report/scripts/zentao.ts" daily
+   ```
+   stdout 是 JSON:`{ ok, file, title, empty, text }`。
+2. **生成 AI 日总结**(若 `empty: true` 跳过本步):**先分析再提炼,不要复述表格已有的工作内容**。只写两块:
+   - **今日重心**:一句话判断今天的主线/节点
+   - **明日建议**:只给具体工作方向(联调/验证/收尾),不要空话
+   
+   关键:每条带**判断 / 数字**,不要把表格内容换个说法重述。
+   
+   把总结写入 HTML:先 Read 该 HTML 文件,再用 Edit 将其中的 `<!--AI_SUMMARY-->` 占位替换为(区块样式已内置):
+   ```
+       <section class="ai-summary">
+         <h2>AI 日总结</h2>
+         <p>今日汇总……</p>
+         <h3>重点产出</h3><ul><li>……</li></ul>
+         <h3>明日关注</h3><ul><li>……</li></ul>
+       </section>
+   ```
+3. 把 `text`(精简纯文本摘要)**放进代码块**展示给用户,并告知 **HTML 文件路径**(`file`,浏览器可直接打开;Windows 可 `start <file>`),说明底部含 AI 日总结。
+4. 询问是否要调整文案/格式;若 `empty: true`(该范围内没有禅道提交记录),提示用户先 `/shine-code-submit:report` 提交工时后重跑(覆盖同名文件)。
+
+## 内容
+
+日报表格列:**任务(#ID,可点击跳禅道任务页) | 工时 | 工作内容**;表尾「合计」;底部「AI 日总结」区块。
+
+> 数据按「指派给我 + 未删除 + 日期=今天」过滤;跨所有项目聚合。支持 `--from`/`--to` 指定日期(回看某天)。

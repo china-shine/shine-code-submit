@@ -1,0 +1,6 @@
+{
+  "url": "https://zentao.example.com",
+  "account": "你的禅道账号",
+  "password": "你的禅道密码",
+  "projectIds": [123, 456]
+}

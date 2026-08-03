@@ -1,0 +1,96 @@
+---
+name: report
+description: 汇总当天 Claude Code 会话统计(工时/token/代码量),智能判断每段工作归属的禅道项目与任务,经用户确认后调用禅道 API 填报工时。Use when 用户要求填报工时、上报工时、报工、提交禅道工时,或运行 /report。
+---
+
+# ZenPilot 工时填报
+
+把当天的编码会话数据归属到禅道任务并填报工时。
+
+> **调用约定**:脚本 = `<Base directory>/scripts/zentao.ts`(Base directory 见启动信息)。**所有命令都在当前项目目录下用绝对路径调用、不要 cd 到插件目录**——脚本靠 `process.cwd()` 识别项目,数据按项目隔离写入 `~/.zenpilot/projects/<编码项目路径>/`。若已 cd,加 `--cwd "$PWD"`。
+
+## 前置检查
+
+1. 运行 `bun "<Base directory>/scripts/zentao.ts" check`,确认配置有效并输出当前登录用户。
+   失败时引导用户先运行 `/shine-code-submit:setup` 完成禅道配置,然后停止。
+
+## 流程
+
+确定性逻辑(会话采集、防重过滤、分支任务号归属、工时换算、草稿渲染、批量提交)全部在脚本里,AI 只做三件事:语义匹配、生成文案、与用户交互。流程顺序被 collect → plan → render → commit 锁死,render/commit 会拒绝含未决条目的计划。
+
+### 0. 采集会话(兜底)
+
+```
+bun "<Base directory>/scripts/zentao.ts" collect
+```
+
+`sessions.json` 现由 **Stop hook**(插件根 `hooks/hooks.json`)在每轮结束后,从 transcript(`~/.claude/projects/<编码cwd>/<uuid>.jsonl`)自动挖掘真实会话写入。本步为兜底:无 hook 或首次运行时确保含当前会话、数据最新。collect **不请求禅道**,纯本地。
+
+> hook 模式(带 stdin)只挖当前 transcript 并 upsert,很快;无 stdin 时全量扫描当天所有项目。两种都幂等。
+
+### 1. 生成计划
+
+```
+bun "<Base directory>/scripts/zentao.ts" plan
+```
+
+脚本读取当天会话(`sessions.json`)、映射缓存、防重记录,拉取我的禅道任务,输出 `plan.json`。每个条目带状态:
+
+- `resolved` — 归属已定(分支名含任务号/已提交会话的增量补报),只缺 `work` 文案
+- `needs_semantic` — 待语义匹配,附 `candidates` 候选任务列表
+- `already` — 已提交且无新增(增量 < 15 分钟),不再提交
+
+### 2. AI 填空(直接编辑 plan.json)
+
+1. **语义匹配**:对每个 `needs_semantic` 条目,比较 `summary` 与 `candidates` 任务名,选最可能的任务,写入 `task`、`confidence`(0-100)、`reason`(一句话),状态改为 `resolved`。置信度 ≥85 自行确定;<85 或无合理候选时,用 AskUserQuestion 列出候选,固定附带「跳过此会话」和「AI 自动创建任务」选项:
+   - 跳过 → `status: "skipped"`,填 `skipReason`
+   - 自动创建 → 走下面的自动建任务流程,拿到新任务 ID 后填入条目(`task`/`taskName`/`project`/`projectName`),`reason` 标注「本次新建」
+2. **生成工作内容**:每个 `resolved` 条目,把 `summary` **按功能点拆成编号列表**写入 `work`,形如 `1. 功能A\n2. 功能B\n3. 功能C`(每条一个独立功能点、动宾简洁,**不要写成一段长句**);多条用换行分隔。
+
+高置信度条目不打扰用户;所有归属问题必须在这一步问完。
+
+### 3. 草稿与确认
+
+```
+bun "<Base directory>/scripts/zentao.ts" render
+```
+
+渲染工时草稿纯文本(编号自动递增;计划中还有 `needs_semantic` 或缺 `work` 的条目会直接报错——这保证了草稿永远是问完归属之后、确认提交之前的最后一步)。
+
+把 render 输出**原样**放进代码块展示给用户,随后立刻用 AskUserQuestion 请用户确认整批提交(提交 / 调整 / 取消)。**未经确认绝不 commit**。
+
+- 用户要求调整(改归属/改工时/改文案/按比例拆分/剔除)→ 改 plan.json 对应字段 → 重新 render → 再确认。拆分 = 复制条目,同 session 不同 task,工时按比例分
+- 即使没有任何可提交条目(全部 already/skipped),也照常 render 展示草稿,并说明本次无需提交
+
+### 4. 提交与汇报
+
+```
+bun "<Base directory>/scripts/zentao.ts" commit        # 支持 --dry-run 预览
+```
+
+脚本按计划逐条提交工时,并自动完成:写 `submitted.json` 防重记录、学习 仓库→项目 映射。剩余工时默认按 `原剩余 - 本次工时` 计算,条目里加 `left` 字段可覆盖。
+
+**提交冷却**:两次 commit 间隔不得低于 30 分钟,脚本自动拦截;被拦时把剩余等待分钟数告知用户。
+
+**修正最后一次提交**:仅当用户明确要求,绝不主动。走 amend skill(`/amend`)的流程,commit 被冷却拦截且用户想修正上一笔时也转入该流程。
+
+最后汇报:成功/跳过条数、每条任务的消耗与剩余工时、token 与代码量统计(参考信息,不计入工时)、新学习到的映射。
+
+#### 自动建任务流程
+
+1. `bun "<Base directory>/scripts/zentao.ts" executions` 拉取进行中的执行列表
+2. 用 AskUserQuestion 让用户选执行项目(必填,列出 执行名+ID+所属项目;能从映射缓存推断出最可能的执行时,把它放第一个并标 Recommended)
+3. 任务名由会话 summary 精简生成(一句话、动宾结构),预计工时 = 该会话工时,类型默认 devel,desc 用完整 summary;这些自动生成项在选执行的同一个 AskUserQuestion 里展示,用户可通过 Other 修改
+4. 创建并指派给自己:
+
+   ```
+   bun "<Base directory>/scripts/zentao.ts" create-task --execution <执行ID> --name "<任务名>" \
+     --estimate <工时> --desc "<会话 summary>"
+   ```
+
+## 注意
+
+- 禅道数据(项目/任务/执行)本地缓存于 `~/.zenpilot/cache.json`(全局),`plan`/`executions` 默认读缓存、不请求禅道(禅道内容一般不变)。仅当用户说任务找不到/数据过期,或语义匹配发现候选明显缺失时,执行 `bun "<Base directory>/scripts/zentao.ts" refresh` 后重跑 plan;`create-task` 新建的任务会自动进缓存
+- 用户显式要求补报/改报已提交会话时,可把该条目状态改回 `resolved` 绕过防重,但要提醒:禅道已有记录不会被覆盖,只会追加
+- `submit`/`learn` 命令仍保留,用于计划外的手工修正;正常流程一律走 plan → render → commit
+- 禅道 20.7 之前版本的旧请求体由脚本自动降级重试,无需关心

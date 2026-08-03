@@ -1,0 +1,41 @@
+---
+name: weekly
+description: 生成本自然周(周一起)的工时周报(从禅道提交记录 efforts 汇总),输出 HTML 到 reports/,含 AI 周总结。Use when 用户要求生成周报、本周工时汇总、写周报,或运行 /weekly。
+---
+
+# ZenPilot 周报
+
+生成**本自然周(周一至今天)**的工时周报,数据来自禅道的提交记录(`/tasks/{id}/estimate` 的 efforts,非本地会话)。输出为**自包含 HTML**,写入当前目录下的 `reports/周报-YYYY-MM-DD~YYYY-MM-DD.html`(本周重跑覆盖,不堆积),并在底部附 **AI 周总结**。
+
+脚本在 report skill:`<Base directory>/../report/scripts/zentao.ts`。**用绝对路径在当前项目目录下调用、不要 cd**(脚本靠 `process.cwd()` 识别“当前目录”作为 `reports/` 落点)。
+
+## 流程
+
+1. 运行:
+   ```
+   bun "<Base directory>/../report/scripts/zentao.ts" weekly
+   ```
+   stdout 是 JSON:`{ ok, file, title, empty, text }`。
+2. **生成 AI 周总结**(若 `empty: true` 跳过本步):**先分析再提炼,不要复述表格已有的工作内容**。只写两块:
+   - **本周重心**:一句话判断主线/阶段(如"工具链建设为主""某模块收尾"),可带关键占比
+   - **下周建议**:只给具体工作方向(优先做什么、需协调什么、待办收尾),不要产能/节奏类空话
+   
+   关键:每条带**判断 / 数字**,不要把表格内容换个说法重述。
+   
+   把总结写入 HTML:先 Read 该 HTML 文件,再用 Edit 将其中的 `<!--AI_SUMMARY-->` 占位替换为(区块样式已内置):
+   ```
+       <section class="ai-summary">
+         <h2>AI 周总结</h2>
+         <p>本周汇总……</p>
+         <h3>重点产出</h3><ul><li>……</li></ul>
+         <h3>下周关注 / 需协调</h3><ul><li>……</li></ul>
+       </section>
+   ```
+3. 把 `text`(精简纯文本摘要)**放进代码块**展示给用户,并告知 **HTML 文件路径**(`file`,浏览器可直接打开;Windows 可 `start <file>`),说明底部含 AI 周总结。
+4. 询问是否要调整文案/格式;若 `empty: true`(本周没有禅道提交记录),提示本周还没提交工时(先 `/shine-code-submit:report`)后重跑。
+
+## 内容
+
+周报表格列:**任务(#ID,可点击跳禅道任务页) | 日期 | 工时 | 工作内容**;同一任务跨多天用 `rowspan` 合并;表尾「本周合计」;底部「AI 周总结」区块。
+
+> 数据按「指派给我 + 未删除 + 日期 ∈ [本周一, 今天]」过滤;跨所有项目聚合。支持 `--from`/`--to` 指定历史区间(回看往周)。

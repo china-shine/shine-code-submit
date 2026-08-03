@@ -1,6 +1,6 @@
 {
   "name": "shine-code-submit",
-  "version": "1.1.13",
+  "version": "1.2.0",
   "private": false,
   "type": "module",
   "description": "Claude Code Hook -> 本地常驻 Daemon 的状态/持久化底座",
@@ -31,6 +31,7 @@
     "hooks/hooks.json",
     "bin/launcher.cjs",
     "src",
+    "skills",
     "ui",
     "package.json",
     "bun.lock",

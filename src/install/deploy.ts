@@ -72,7 +72,7 @@ function findPackageRoot(): string {
 }
 
 /** 要部署的文件/目录白名单(plugin 运行必需;不含 dist/install.cjs——install CLI 本身不进 plugin)。 */
-const WHITELIST = [".claude-plugin", "hooks", "bin", "src", "ui", "package.json", "bun.lock", "README.md"];
+const WHITELIST = [".claude-plugin", "hooks", "bin", "src", "skills", "ui", "package.json", "bun.lock", "README.md"];
 
 /**
  * 部署 plugin:清同版本目录 → 拷白名单 → bun install 装依赖 → 写版本标记。

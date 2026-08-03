@@ -3,12 +3,15 @@
 //   2. 原子落盘 spool（tmp+rename）—— 唯一必成功环节
 //   3. 热转发 POST；连接失败才走故障路径（ensureDaemon：探测→认自己人→拉起→轮询 ready）→ 重读 token → 重试
 //   全程失败静默，退出码恒为 0（绝不影响 Claude Code）。
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { ensureDirs, DATA_DIR, NOTICE_FILE } from "../shared/paths";
 import { readToken } from "../shared/pidfile";
 import { writeSpoolFile } from "../shared/spool";
 import { BASE_URL, PUBLIC_BASE_URL, HOOK_POST_TIMEOUT_MS, SERVICE_VERSION } from "../shared/config";
 import { ensureDaemon, openBrowser, spawnDaemon, stopDaemon } from "../shared/daemonctl";
+import { spawn } from "node:child_process";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { HookEvent, HookEventType } from "../shared/types";
 
 const VALID_TYPES: HookEventType[] = [
@@ -25,11 +28,12 @@ const VALID_TYPES: HookEventType[] = [
 main().catch(() => process.exit(0));
 
 async function main(): Promise<void> {
-  const event = await collect();
-  if (!event) {
+  const collected = await collect();
+  if (!collected) {
     process.stderr.write("[shine-code-submit-hook] collect failed: missing cwd/sessionId\n");
     return process.exit(0);
   }
+  const { event, stdinRaw } = collected;
 
   // 1. 落盘（必成功环节）。失败时写 stderr 告警（可被发现），仍退出码 0。
   try {
@@ -47,6 +51,17 @@ async function main(): Promise<void> {
     await forward(event);
   } catch (err) {
     process.stderr.write(`[shine-code-submit-hook] forward failed: ${safeMsg(err)}\n`);
+  }
+
+  // 2.5 Stop 事件：fork ZenPilot collect（合并进来的禅道工时填报 skill），把同一份 stdin 转发给子进程。
+  //     Claude Code 的 Stop 只把 stdin 喂给一个进程，故由本 hook 读一次后转发（不能在 hooks.json 挂两条 command）。
+  //     detached + unref，不阻塞；失败一律吞掉，绝不影响 hook 退出码。
+  if (event.type === "Stop") {
+    try {
+      forkZenCollect(event.cwd, stdinRaw);
+    } catch {
+      /* ignore */
+    }
   }
 
   // 3. SessionStart 时给用户打印 UI 入口：stdout 输出 JSON，Claude Code 解析 systemMessage
@@ -70,13 +85,14 @@ async function main(): Promise<void> {
   process.exit(0);
 }
 
-/** 采集：argv[1] 或 stdin.hook_event_name 作为 type；cwd=process.cwd()；sessionId 取 stdin.session_id。 */
-async function collect(): Promise<HookEvent | null> {
+/** 采集：argv[1] 或 stdin.hook_event_name 作为 type；cwd=process.cwd()；sessionId 取 stdin.session_id。
+ *  返回事件 + 原始 stdin 文本（后者用于 Stop 时 fork ZenPilot collect 转发）。 */
+async function collect(): Promise<{ event: HookEvent; stdinRaw: string } | null> {
   // 扫描 argv 找有效事件名：兼容「直接调 exe (argv[1])」与「bun run script.ts X (argv[2])」两种形式
   const typeArg = process.argv.slice(1).find((a) => VALID_TYPES.includes(a as HookEventType)) as
     | HookEventType
     | undefined;
-  const payload = await readStdin();
+  const { raw: stdinRaw, value: payload } = await readStdin();
   const obj = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : {};
 
   const type: HookEventType =
@@ -94,32 +110,35 @@ async function collect(): Promise<HookEvent | null> {
   if (!cwd) return null;
 
   return {
-    eventId: crypto.randomUUID(),
-    type,
-    timestamp: Date.now(),
-    cwd,
-    sessionId,
-    pid: process.pid,
-    payload: obj,
+    event: {
+      eventId: crypto.randomUUID(),
+      type,
+      timestamp: Date.now(),
+      cwd,
+      sessionId,
+      pid: process.pid,
+      payload: obj,
+    },
+    stdinRaw,
   };
 }
 
-/** 读 stdin（带超时兜底，防止无管道时阻塞）。解析失败则保留原始文本。 */
-async function readStdin(): Promise<unknown> {
-  if (process.stdin.isTTY) return null;
+/** 读 stdin（带超时兜底，防止无管道时阻塞）。返回原始文本 + 解析值；解析失败保留原始文本。 */
+async function readStdin(): Promise<{ raw: string; value: unknown }> {
+  if (process.stdin.isTTY) return { raw: "", value: null };
   try {
-    const text = await Promise.race([
+    const raw = await Promise.race([
       Bun.stdin.text(),
       new Promise<string>((r) => setTimeout(() => r(""), 800)),
     ]);
-    if (!text.trim()) return null;
+    if (!raw.trim()) return { raw: "", value: null };
     try {
-      return JSON.parse(text);
+      return { raw, value: JSON.parse(raw) };
     } catch {
-      return { _raw: text };
+      return { raw, value: { _raw: raw } };
     }
   } catch {
-    return null;
+    return { raw: "", value: null };
   }
 }
 
@@ -195,4 +214,49 @@ function upgradeNotice(): string {
   } catch {
     return "";
   }
+}
+
+// ---------- ZenPilot（合并进来的禅道工时填报 skill）Stop hook fork ----------
+
+/** 解析 skills/report/scripts/zentao.ts 绝对路径。CLAUDE_PLUGIN_ROOT 优先，回退相对 main.ts。 */
+function resolveZenCollectScript(): string | null {
+  const rel = join("skills", "report", "scripts", "zentao.ts");
+  const root = process.env.CLAUDE_PLUGIN_ROOT;
+  if (root && existsSync(join(root, rel))) return join(root, rel);
+  try {
+    const here = dirname(fileURLToPath(import.meta.url)); // .../src/hook/
+    const p = join(here, "..", "..", rel); // .../skills/report/scripts/zentao.ts
+    if (existsSync(p)) return p;
+  } catch {
+    /* ignore */
+  }
+  return null;
+}
+
+/** Stop hook：detached fork zentao.ts collect，把同一份 stdin 转发给子进程。不阻塞、不抛。 */
+function forkZenCollect(cwd: string, stdinRaw: string): void {
+  const script = resolveZenCollectScript();
+  if (!script) return; // skills 未部署（老版本/未装），静默跳过
+  const bun = process.execPath; // 源码模式下 hook 由 bun 跑，即 bun 完整路径
+  let child;
+  try {
+    child = spawn(bun, ["run", script, "collect", "--cwd", cwd], {
+      stdio: ["pipe", "ignore", "ignore"],
+      detached: true,
+      windowsHide: true,
+      cwd,
+    });
+  } catch {
+    return; // spawn 失败（bun 缺失等），忽略
+  }
+  child.on("error", () => {
+    /* ignore */
+  });
+  try {
+    if (stdinRaw) child.stdin.write(stdinRaw); // 转发同一份 stdin payload
+    child.stdin.end();
+  } catch {
+    /* ignore */
+  }
+  child.unref(); // 关键：不阻塞父进程退出
 }
