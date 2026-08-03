@@ -107,7 +107,7 @@ clone 后只有源码；首次 hook 事件时 `bin/launcher.cjs`（node）自动
 
 ### 局域网访问（其他设备看 Dashboard）
 
-daemon 默认绑 `0.0.0.0`（所有网卡），打印的 Dashboard 链接自动用**第一个真实网卡的局域网 IP**（`getPrimaryIpv4` 跳过 vEthernet/VMware/docker 等虚拟网卡）。开新会话时链接形如 `http://192.168.x.x:36666/ui?t=...`，手机/平板/局域网其他设备直接能用。仅本机回环用时设 `SHINE_CODE_SUBMIT_HOST=127.0.0.1` 再 restart daemon。
+daemon 默认绑 `0.0.0.0`（所有网卡），打印的 Dashboard 链接自动用**第一个真实网卡的局域网 IP**（`getPrimaryIpv4` 跳过 vEthernet/VMware/docker 等虚拟网卡）。开新会话时链接形如 `http://192.168.x.x:36666/ui?t=...`，手机/平板/局域网其他设备直接能用。仅本机回环用时设 `SHINE_WORKLOG_HOST=127.0.0.1` 再 restart daemon。
 
 端口对外可达性：
 
@@ -196,24 +196,31 @@ tokenserver/     报表上报接收服务（独立子项目,bun+sqlite+React,可
 
 ## 环境变量
 
+> 1.3.0 改名：`SHINE_WORKLOG_*`（旧 `SHINE_CODE_SUBMIT_*` 仍兼容一代，读取处双名 fallback）。
+
 | 变量 | 作用 | 默认 |
 | --- | --- | --- |
-| `SHINE_CODE_SUBMIT_HOST` | daemon 监听地址。默认 `0.0.0.0`（绑所有网卡，局域网可访问）；仅本机回环用时设 `127.0.0.1` | `0.0.0.0` |
-| `SHINE_CODE_SUBMIT_DAEMON_CMD` | 拉起 daemon 的完整命令（开发期覆盖）。未设时 fallback 优先级：`SHINE_CODE_SUBMIT_DAEMON` env → 同目录 daemon 二进制 → `bun run` 源码 | `bun run src/daemon/main.ts` |
-| `SHINE_CODE_SUBMIT_DAEMON` | 仅 `bun run` 入口路径（未设时同上 fallback） | `src/daemon/main.ts` |
-| `SHINE_CODE_SUBMIT_DEBUG` | 开启 daemon DEBUG 日志 | 无 |
+| `SHINE_WORKLOG_HOST` | daemon 监听地址。默认 `0.0.0.0`（绑所有网卡，局域网可访问）；仅本机回环用时设 `127.0.0.1` | `0.0.0.0` |
+| `SHINE_WORKLOG_DAEMON_CMD` | 拉起 daemon 的完整命令（开发期覆盖）。未设时 fallback 优先级：`SHINE_WORKLOG_DAEMON` env → 同目录 daemon 二进制 → `bun run` 源码 | `bun run src/daemon/main.ts` |
+| `SHINE_WORKLOG_DAEMON` | 仅 `bun run` 入口路径（未设时同上 fallback） | `src/daemon/main.ts` |
+| `SHINE_WORKLOG_DEBUG` | 开启 daemon DEBUG 日志 | 无 |
 
 ## 数据位置
 
-`%LOCALAPPDATA%/shine-worklog/`（Windows）或 `~/.local/share/shine-worklog/`（macOS/Linux）：
+`%LOCALAPPDATA%/shine-worklog/`（Windows）或 `~/.local/share/shine-worklog/`（macOS/Linux）—— **所有数据统一在一个根**（1.3.0 起改名+统一，ZenPilot 数据从 `~/.zenpilot/` 挪到此）：
 
 ```
-daemon.pid        pid/port/token/startedAt
-daemon.token      持久化 token（daemon 重启/自动升级复用同一 token，Dashboard 链接不变）
-spool/*.json      待消费事件（每事件一文件，原子写）
-log/daemon.log    日志（按大小轮转）
-db/events.sqlite  事件库（`events` 幂等去重）+ transcript 中枢（`transcript_files` 文件 dirty/offset 状态、`transcript_sessions` 消费者算好的聚合结果），按 cwd 隔离
-settings.json     上报与更新配置（reportUrl/reportIntervalMin,默认 http://47.98.221.20:36667/api/report、10 分钟;autoUpdate/autoUpdateIntervalMin,默认开/60 分钟）
+daemon.pid          pid/port/token/startedAt
+daemon.token        持久化 token（daemon 重启/自动升级复用同一 token，Dashboard 链接不变）
+spool/*.json        待消费事件（每事件一文件，原子写）
+log/daemon.log      日志（按大小轮转）
+db/events.sqlite    事件库（`events` 幂等去重）+ transcript 中枢（`transcript_files`/`transcript_sessions`），按 cwd 隔离
+settings.json       上报与更新配置（reportUrl/reportIntervalMin/autoUpdate/水位 lastReportAt）
+zenpilot/           禅道工时填报数据（原 ~/.zenpilot/，1.3.0 统一进此）
+  config.json         禅道连接（url/account/password/projectIds，明文密码 chmod 600）
+  mappings.json       仓库→项目映射（/report commit 时自动学习）
+  cache.json          禅道任务/执行缓存
+  projects/<编码cwd>/ sessions.json(collect 采集) / submitted.json(防重) / plan.json(计划)
 ```
 
 ## 报表上报
@@ -272,7 +279,7 @@ rawTotal = input + output + cacheCreation + cacheRead
 - **幂等**：`(sessionId, eventId)` 唯一约束 + `INSERT OR IGNORE`，热路径与回捞共享，允许重放。
 - **热路径优先**：直接 POST，连接失败才探测/拉起（健康路径单次往返）。
 - **认自己人**：`/api/health` 返回 `service` 字段，Hook 校验后才认端口归属。
-- **默认绑 0.0.0.0 + token**：数据接口（`/api/*` 除 `/api/health`）均鉴权，静态页（`/`、`/ui`）与健康端点开放；默认暴露给局域网（方便其他设备访问），仅本机回环用时设 `SHINE_CODE_SUBMIT_HOST=127.0.0.1`（见「局域网访问」）。
+- **默认绑 0.0.0.0 + token**：数据接口（`/api/*` 除 `/api/health`）均鉴权，静态页（`/`、`/ui`）与健康端点开放；默认暴露给局域网（方便其他设备访问），仅本机回环用时设 `SHINE_WORKLOG_HOST=127.0.0.1`（见「局域网访问」）。
 - **监听/连接地址分离**：daemon 监听用 `LISTEN_HOST`（默认 0.0.0.0，env 可配）；hook POST / cli / 探活 连接 daemon 固定走 `127.0.0.1` 回环（daemon 即使绑 0.0.0.0 也含回环），最快最稳。
 - **打印链接用真实网卡 IP**：`PUBLIC_BASE_URL` 取第一个非虚拟网卡的 IPv4（跳过 vEthernet/VMware/docker），显示与打开浏览器共用同一地址（本机、局域网通用）；无非回环网卡时才回退 `localhost`。
 - **自动更新（主动外联 npm）**：`autoUpdate` 默认开，daemon 启动时 + 每 `autoUpdateIntervalMin`（默认 60 分钟）查 `registry.npmjs.org` 最新版，有新版后台 spawn `npx shine-worklog install` 升级。介意外联可在 settings.json 设 `autoUpdate:false`，或 CLI `update` 手动触发。
