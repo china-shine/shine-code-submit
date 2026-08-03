@@ -1207,6 +1207,20 @@ function projectColor(name: string): { bar: string; bg: string; fg: string } {
   return { bar: c, bg: c + "1a", fg: c }; // 1a ≈ 10% 透明度,做柔和标签底色
 }
 
+/** 把多个 work(各自 "1. a\n2. b" 从1编号)的条目拆出,顺延重新编号成单列表(1..N 不重复)。
+ *  一天内多次提交同任务时,日报/周报聚合后避免出现多个重复的 1./2.。 */
+function renumberWorks(works: string[]): string {
+  const items: string[] = [];
+  for (const w of works) {
+    for (const line of String(w).replace(/\r/g, "").split("\n")) {
+      const t = line.trim();
+      if (!t) continue;
+      items.push(t.replace(/^\d+\.\s*/, "")); // 去原 "数字. " 前缀,统一重新编号
+    }
+  }
+  return items.map((it, i) => `${i + 1}. ${it}`).join("\n");
+}
+
 /** 把报告数据渲染成自包含 HTML(内联 CSS,无外部依赖)。 */
 function renderReportHtml(d: ReportData): string {
   const daily = d.from === d.to;
@@ -1218,7 +1232,7 @@ function renderReportHtml(d: ReportData): string {
     : `<table>\n<thead><tr><th>任务</th><th class="cell-date">日期</th><th class="hours">工时</th><th>工作内容</th></tr></thead>\n<tbody>`;
   const taskRow = (id: string, r: ReportRow, dateCell = "", bg = ""): string => {
     const info = d.infoMap.get(Number(id));
-    return `<tr${bg ? ` style="background:${bg}"` : ""}>${dateCell}<td><a class="cell-task" href="${d.zentaoUrl}/index.php?m=task&amp;f=view&amp;taskID=${id}" target="_blank" rel="noopener">${esc(info?.taskName)}</a><span class="tid">#${esc(id)}</span></td><td class="hours">${round1(r.hours)}h</td><td>${r.works.map((w) => esc(w).replace(/\r/g, "").replace(/\n/g, "<br>")).join("<br>")}</td></tr>`;
+    return `<tr${bg ? ` style="background:${bg}"` : ""}>${dateCell}<td><a class="cell-task" href="${d.zentaoUrl}/index.php?m=task&amp;f=view&amp;taskID=${id}" target="_blank" rel="noopener">${esc(info?.taskName)}</a><span class="tid">#${esc(id)}</span></td><td class="hours">${round1(r.hours)}h</td><td>${esc(renumberWorks(r.works)).replace(/\n/g, "<br>")}</td></tr>`;
   };
 
   let total = 0;
@@ -1261,7 +1275,7 @@ function renderReportHtml(d: ReportData): string {
         const taskCell = i === 0
           ? `<td${g.rows.length > 1 ? ` rowspan="${g.rows.length}"` : ""}><a class="cell-task" href="${d.zentaoUrl}/index.php?m=task&amp;f=view&amp;taskID=${g.id}" target="_blank" rel="noopener">${esc(info?.taskName)}</a><span class="tid">#${g.id}</span></td>`
           : "";
-        rows.push(`<tr>${taskCell}<td class="cell-date">${esc(row.date.slice(5))}</td><td class="hours">${round1(row.r.hours)}h</td><td>${row.r.works.map((w) => esc(w).replace(/\r/g, "").replace(/\n/g, "<br>")).join("<br>")}</td></tr>`);
+        rows.push(`<tr>${taskCell}<td class="cell-date">${esc(row.date.slice(5))}</td><td class="hours">${round1(row.r.hours)}h</td><td>${esc(renumberWorks(row.r.works)).replace(/\n/g, "<br>")}</td></tr>`);
       });
     }
     body = `${TABLE_HEAD}\n${rows.join("\n")}\n<tr class="total"><td colspan="2">本周合计</td><td class="hours">${round1(total)}h</td><td>${taskCount} 个任务</td></tr>\n</tbody>\n</table>`;
@@ -1313,7 +1327,7 @@ function renderReportText(d: ReportData): string {
   if (d.dates.length === 0) return `${d.title} · ${d.realname}\n该范围内没有禅道提交记录。`;
   const line = (id: string, r: ReportRow): string => {
     const info = d.infoMap.get(Number(id));
-    return `${info?.projectName ?? ""} / ${info?.taskName ?? ""} #${id}  ${round1(r.hours)}h  ${r.works.map((w) => w.replace(/\r/g, "")).join("; ")}`;
+    return `${info?.projectName ?? ""} / ${info?.taskName ?? ""} #${id}  ${round1(r.hours)}h  ${renumberWorks(r.works).replace(/\n/g, "; ")}`;
   };
   const lines: string[] = [`${d.title} · ${d.realname}`];
   let total = 0;

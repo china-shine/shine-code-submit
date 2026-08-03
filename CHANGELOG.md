@@ -2,6 +2,13 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.2 — 2026-08-03
+
+日报/周报工作内容编号跨多次提交顺延,不再重复。
+
+### 改动
+- **日报/周报 work 编号顺延**:同一天/周对同一任务多次提交工时时,各次 work 各自从「1.」开始编号,聚合后出现多个重复的 1./2.。新增 `renumberWorks`(skills/report/scripts/zentao.ts):把同任务多次提交的 work 条目拆出、去原编号、统一重新 1..N 顺延。日报 HTML 表格、周报 HTML 表格、纯文本摘要三处渲染统一改用此函数。
+
 ## 1.3.1 — 2026-08-03
 
 tokenserver 成员详情新增「禅道工时」表(禅道工时接入 report 上报链路)+ install 无条件清旧插件 + dashboard 链接网卡 fix。
