@@ -23,7 +23,7 @@ export const BASE_URL = `http://${HOST}:${PORT}`; // 内部访问（hook POST、
  * 取真实网卡（以太网/Wi-Fi）的 IP；都没有则退回第一个非回环 IPv4；再没有则 localhost。
  */
 function getPrimaryIpv4(): string {
-  const VIRTUAL = ["vethernet", "vmware", "virtualbox", "docker", "veth", "br-", "virbr", "vnet", "utun"];
+  const VIRTUAL = ["vethernet", "vmware", "virtualbox", "docker", "veth", "br-", "virbr", "vnet", "utun", "meta", "clash", "mihomo"]; // +代理 TUN 虚拟网卡(Clash/Mihomo TUN)
   const isVirtual = (name: string): boolean => {
     const n = name.toLowerCase();
     return VIRTUAL.some((k) => n.includes(k));
@@ -34,13 +34,13 @@ function getPrimaryIpv4(): string {
     for (const name of Object.keys(nets)) {
       if (isVirtual(name)) continue;
       for (const net of nets[name] ?? []) {
-        if (net.family === "IPv4" && !net.internal) return net.address;
+        if (net.family === "IPv4" && !net.internal && !net.address.startsWith("198.18.")) return net.address; // 跳过 198.18.0.0/15(基准测试段,Clash TUN 占用)
       }
     }
     // 第二轮：全是虚拟网卡时，退回第一个非回环 IPv4
     for (const name of Object.keys(nets)) {
       for (const net of nets[name] ?? []) {
-        if (net.family === "IPv4" && !net.internal) return net.address;
+        if (net.family === "IPv4" && !net.internal && !net.address.startsWith("198.18.")) return net.address; // 跳过 198.18.0.0/15(基准测试段,Clash TUN 占用)
       }
     }
   } catch {
