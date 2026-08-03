@@ -50,7 +50,7 @@ async function stopOldDaemon(): Promise<void> {
 }
 
 /** 删旧插件 cache + 清 3 JSON 旧 key(避免 Claude Code 同时加载新旧两插件 → hook 重复触发)。 */
-function cleanupOldPlugin(): void {
+export function cleanupOldPlugin(): void {
   const cache = join(pluginsRoot(), "cache", OLD_NAME);
   if (existsSync(cache)) {
     try {

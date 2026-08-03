@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { ensureBun } from "./bun";
 import { cacheDir, deployPlugin, pruneOldVersions } from "./deploy";
-import { migrateLayout } from "./migrate";
+import { migrateLayout, cleanupOldPlugin } from "./migrate";
 import { enablePlugin, registerMarketplace, registerPlugin, unregisterAll } from "./register";
 import { PUBLIC_BASE_URL, SERVICE_VERSION } from "../shared/config";
 import { isOursAlive, openBrowser, probeDaemon, spawnHidden, stopDaemon } from "../shared/daemonctl";
@@ -61,6 +61,7 @@ async function main(): Promise<void> {
 async function runInstall(): Promise<void> {
   info(`=== shine-worklog installer v${SERVICE_VERSION} ===`);
   await migrateLayout(); // 1.3.0 改名+统一:迁移数据布局(shine-code-submit→shine-worklog + ZenPilot→DATA_DIR/zenpilot),幂等
+  cleanupOldPlugin(); // 无条件反注册旧插件 shine-code-submit(删旧 cache + 清注册 JSON;幂等,无旧则跳过)。保证每次 install 后 /plugin 不残留旧插件,不依赖旧 DATA_DIR 是否存在
   const bunPath = await ensureBun();
   const cachePath = deployPlugin(bunPath, { force });
   registerMarketplace(cachePath);
