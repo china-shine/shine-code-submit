@@ -12,7 +12,7 @@ description: 汇总当天 Claude Code 会话统计(工时/token/代码量),智�
 ## 前置检查
 
 1. 运行 `bun "<Base directory>/scripts/zentao.ts" check`,确认配置有效并输出当前登录用户。
-   失败时引导用户先运行 `/shine-code-submit:setup` 完成禅道配置,然后停止。
+   失败时引导用户先运行 `/shine-worklog:setup` 完成禅道配置,然后停止。
 
 ## 流程
 

@@ -1,11 +1,11 @@
 """把 npm tarball 里 dist/install.cjs 的权限改成 0o755(可执行)。
 
 Windows 上 npm pack 不保留 +x 位(POSIX mode 在 Windows 是假的,fs.stat 拿不到执行位),
-导致发布出去的 install.cjs 不可执行 → Linux 上 `npx shine-code-submit install` 经
+导致发布出去的 install.cjs 不可执行 → Linux 上 `npx shine-worklog install` 经
 .bin 符号链接 + shebang 执行时报 "Permission denied"。打包后用 tarfile 直接改 tar 条目
 的 mode,再 publish 这个 tarball(`npm publish <tgz>` 不再重打包)。
 
-用法: py scripts/fix-tarball-mode.py shine-code-submit-0.2.4.tgz
+用法: py scripts/fix-tarball-mode.py shine-worklog-0.2.4.tgz
 """
 import sys
 import tarfile

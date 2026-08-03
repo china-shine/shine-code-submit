@@ -58,11 +58,11 @@ export function spawnHidden(commandLine: string, opts: { cwd?: string } = {}): v
  * detached 拉起 daemon(Windows 走 wscript VBS 隐藏控制台)。
  * 优先级：env 覆盖 > 同目录 daemon 二进制（二进制模式）> bun run src/daemon/main.ts（源码模式）。
  * 开发期可用 env 覆盖：
- *   SHINE_CODE_SUBMIT_DAEMON_CMD  完整命令（shell 执行）
- *   SHINE_CODE_SUBMIT_DAEMON      仅 bun run 入口路径
+ *   SHINE_WORKLOG_DAEMON_CMD  完整命令（shell 执行）
+ *   SHINE_WORKLOG_DAEMON      仅 bun run 入口路径
  */
 export function spawnDaemon(): void {
-  const cmd = process.env.SHINE_CODE_SUBMIT_DAEMON_CMD;
+  const cmd = process.env.SHINE_WORKLOG_DAEMON_CMD ?? process.env.SHINE_CODE_SUBMIT_DAEMON_CMD;
   const dir = dirname(process.execPath);
   const ext = process.platform === "win32" ? ".exe" : "";
   const daemonBin = join(dir, `daemon${ext}`);
@@ -70,9 +70,9 @@ export function spawnDaemon(): void {
     if (cmd) {
       // env 覆盖:完整命令(shell 执行)
       spawnHidden(cmd);
-    } else if (process.env.SHINE_CODE_SUBMIT_DAEMON) {
+    } else if (process.env.SHINE_WORKLOG_DAEMON ?? process.env.SHINE_CODE_SUBMIT_DAEMON) {
       // env:bun run <入口>
-      spawnHidden(`${quote(process.execPath)} run ${quote(process.env.SHINE_CODE_SUBMIT_DAEMON)}`);
+      spawnHidden(`${quote(process.execPath)} run ${quote(process.env.SHINE_WORKLOG_DAEMON ?? process.env.SHINE_CODE_SUBMIT_DAEMON ?? "")}`);
     } else if (existsSync(daemonBin)) {
       // 二进制模式:与当前 exe 同目录的 daemon 二进制
       spawnHidden(quote(daemonBin));
@@ -84,7 +84,7 @@ export function spawnDaemon(): void {
       spawnHidden(`${quote(process.execPath)} run ${quote(daemonSrc)}`);
     }
   } catch (err) {
-    process.stderr.write(`[shine-code-submit] spawn daemon failed: ${safeMsg(err)}\n`);
+    process.stderr.write(`[shine-worklog] spawn daemon failed: ${safeMsg(err)}\n`);
   }
 }
 

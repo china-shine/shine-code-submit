@@ -18,7 +18,10 @@ import * as path from "node:path";
 
 const COMMIT_COOLDOWN_MINUTES = 30;
 
-const ZENPILOT_HOME = path.join(homedir(), ".zenpilot");
+// 内联复刻 src/shared/paths.ts 的 DATA_DIR（zentao.ts 零 npm 依赖，不能 import；改名时此串需与 paths.ts 同步）
+const LOCAL_APP_DIR = process.env.LOCALAPPDATA ?? path.join(homedir(), ".local", "share");
+const DATA_DIR = path.join(LOCAL_APP_DIR, "shine-worklog");
+const ZENPILOT_HOME = path.join(DATA_DIR, "zenpilot"); // 统一数据目录：ZenPilot 数据进 daemon DATA_DIR/zenpilot
 const CONFIG_PATH = path.join(ZENPILOT_HOME, "config.json");
 const CACHE_PATH = path.join(ZENPILOT_HOME, "cache.json"); // 全局:禅道任务缓存
 const MAPPINGS_PATH = path.join(ZENPILOT_HOME, "mappings.json"); // 全局:仓库→项目映射
@@ -193,20 +196,18 @@ function gitBranchFallback(cwd: string | null): string | null {
   }
 }
 
-// ---------- shine-code-submit daemon 数据接入(合并后 collect 改读 daemon,不再挖 transcript) ----------
+// ---------- shine-worklog daemon 数据接入(合并后 collect 改读 daemon,不再挖 transcript) ----------
 
-/** 读 shine-code-submit daemon 的持久 token(复刻 src/shared/pidfile.ts readToken + paths.ts DATA_DIR,跨平台,零依赖)。 */
+/** 读 shine-worklog daemon 的持久 token(复刻 src/shared/pidfile.ts readToken + paths.ts DATA_DIR,跨平台,零依赖)。 */
 function readDaemonToken(): string | null {
-  const local = process.env.LOCALAPPDATA || path.join(homedir(), ".local", "share");
-  const dir = path.join(local, "shine-code-submit");
   try {
-    const pid = JSON.parse(readFileSync(path.join(dir, "daemon.pid"), "utf8"));
+    const pid = JSON.parse(readFileSync(path.join(DATA_DIR, "daemon.pid"), "utf8"));
     if (pid && typeof pid.token === "string" && pid.token) return pid.token;
   } catch {
     /* ignore */
   }
   try {
-    const t = readFileSync(path.join(dir, "daemon.token"), "utf8").trim();
+    const t = readFileSync(path.join(DATA_DIR, "daemon.token"), "utf8").trim();
     if (t.length >= 16) return t;
   } catch {
     /* ignore */
@@ -434,7 +435,7 @@ async function readStdinTimed(ms = 2000): Promise<string> {
 }
 
 async function cmdCollect(): Promise<any> {
-  // 合并后:collect 改读 shine-code-submit daemon 的 /api/sessions(不再挖 transcript)。
+  // 合并后:collect 改读 shine-worklog daemon 的 /api/sessions(不再挖 transcript)。
   // hook 模式(Stop hook 触发,stdin 携带 payload)与 full 模式(/report 兜底手动跑)统一:
   //   读 daemon token → GET /api/sessions?cwd=本项目&since=当日0点 → 映射成 ZenPilot session → 写 sessions.json。
   // daemon 不可达时:hook 静默跳过(不写、不崩、不影响 hook);full 给错误提示。
@@ -454,7 +455,7 @@ async function cmdCollect(): Promise<any> {
   const token = readDaemonToken();
   if (!token) {
     if (isHook) return { mode: "hook", skipped: "daemon token unavailable", hookSessionId };
-    return { mode: "full", error: "daemon 未运行或 token 读不到(shine-code-submit daemon 未启动)" };
+    return { mode: "full", error: "daemon 未运行或 token 读不到(shine-worklog daemon 未启动)" };
   }
 
   // 2. 查 daemon 当天本项目 sessions
@@ -999,7 +1000,7 @@ function weekStart(): string {
 
 /** 收集日期范围内出现过的任务 ID(遍历所有项目的 submitted.json) */
 function collectTaskIds(from: string, to: string): number[] {
-  const root = path.join(homedir(), ".zenpilot", "projects");
+  const root = path.join(ZENPILOT_HOME, "projects");
   const ids = new Set<number>();
   let projs: string[] = [];
   try {

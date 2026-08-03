@@ -21,7 +21,7 @@ export class Logger {
   info(m: string, e?: unknown) { this.write("INFO", m, e); }
   warn(m: string, e?: unknown) { this.write("WARN", m, e); }
   error(m: string, e?: unknown) { this.write("ERROR", m, e); }
-  debug(m: string, e?: unknown) { if (process.env.SHINE_CODE_SUBMIT_DEBUG) this.write("DEBUG", m, e); }
+  debug(m: string, e?: unknown) { if (process.env.SHINE_WORKLOG_DEBUG ?? process.env.SHINE_CODE_SUBMIT_DEBUG) this.write("DEBUG", m, e); }
 
   private maybeRotate(): void {
     try {

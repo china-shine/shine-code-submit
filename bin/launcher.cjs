@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// shine-code-submit hook 平台分发器（.cjs 强制 CommonJS，兼容所有 node，不依赖 package.json）。
+// shine-worklog hook 平台分发器（.cjs 强制 CommonJS，兼容所有 node，不依赖 package.json）。
 // Claude Code 经 hooks.json 以 `node launcher.cjs <Event>` 调用（exec form，不经 shell）。
 // 优先 spawn 同目录 bin/<plat>-<arch>/hook[.exe]（二进制模式，本机 build 产物）；
 // 不存在则 bun run src/hook/main.ts（源码模式）。源码模式需要 Bun——若没装，首次自动安装
@@ -43,7 +43,7 @@ function findBun() {
 
 /** 日志文件路径（创建目录）。安装过程逐行写这里，可 `tail -f` 看实时进度。 */
 function logFile() {
-  const dir = join(homedir(), ".local", "share", "shine-code-submit", "log");
+  const dir = join(homedir(), ".local", "share", "shine-worklog", "log");
   try { mkdirSync(dir, { recursive: true }); } catch {}
   return join(dir, "bun-install.log");
 }
@@ -128,17 +128,17 @@ function runHookMerged(bun, installNote) {
       const show = event === "SessionStart";
       if (show) {
         console.error("");
-        console.error("⏳ shine-code-submit: 未检测到 Bun 运行时，首次自动安装中（约 10-30s）");
+        console.error("⏳ shine-worklog: 未检测到 Bun 运行时，首次自动安装中（约 10-30s）");
         console.error("   实时进度可另开终端: tail -f " + logFile());
       }
       bun = await installBun(show);
       if (!bun) {
         // 失败也走 systemMessage,确保用户看到(而不是静默)
-        if (show) tellUser("❌ shine-code-submit: Bun 自动安装失败。请手动装 Bun（https://bun.sh）后重开会话；事件不丢。");
+        if (show) tellUser("❌ shine-worklog: Bun 自动安装失败。请手动装 Bun（https://bun.sh）后重开会话；事件不丢。");
         process.exit(0);
       }
       // 装好了:合并「安装完成 + Dashboard 链接」为一条 systemMessage,确保用户看到
-      if (show) { runHookMerged(bun, "✅ shine-code-submit: 已自动安装 Bun 运行时，继续启动。"); return; }
+      if (show) { runHookMerged(bun, "✅ shine-worklog: 已自动安装 Bun 运行时，继续启动。"); return; }
     }
     runInherit(bun, ["run", hookSrc, ...argv]);
   } catch {

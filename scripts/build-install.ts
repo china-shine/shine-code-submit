@@ -21,6 +21,6 @@ if (!out.success) {
 
 mkdirSync("dist", { recursive: true });
 // dist/install.cjs 是 npm bin(npx 经 node_modules/.bin/<pkg> 符号链接 + shebang 执行)。
-// 必须可执行,否则 Linux 上 npx 跑它报 "shine-code-submit: Permission denied"(tarball 保留 +x 位)。
+// 必须可执行,否则 Linux 上 npx 跑它报 "shine-worklog: Permission denied"(tarball 保留 +x 位)。
 chmodSync("dist/install.cjs", 0o755);
 console.log("✓ build install CLI -> dist/install.cjs");

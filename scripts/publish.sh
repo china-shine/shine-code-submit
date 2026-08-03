@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 发布 shine-code-submit 到 npm 官方 registry。
+# 发布 shine-worklog 到 npm 官方 registry。
 #
 # 前置(只做一次):
 #   1. npm login --registry=https://registry.npmjs.org/
@@ -32,7 +32,7 @@ if [ -n "$(git status --porcelain)" ]; then
 fi
 
 VERSION=$(node -p "require('./package.json').version")
-TGZ="shine-code-submit-$VERSION.tgz"
+TGZ="shine-worklog-$VERSION.tgz"
 
 echo ""
 echo "=== 3. build:dist(生成 dist/install.cjs + ui-assets)==="
@@ -52,7 +52,7 @@ if [ -z "$PY" ]; then echo "✗ 需要 python(tarfile stdlib)修可执行位,没
 "$PY" scripts/fix-tarball-mode.py "$TGZ"
 
 echo ""
-echo "=== 6. 发布 shine-code-submit@$VERSION(发预打包 tarball,不再 prepublishOnly)==="
+echo "=== 6. 发布 shine-worklog@$VERSION(发预打包 tarball,不再 prepublishOnly)==="
 if [ -z "$OTP_ARG" ]; then
   echo "npm 随后会提示输入 2FA 的 OTP —— 打开 authenticator app,输 6 位码。"
 fi
@@ -64,9 +64,9 @@ else
 fi
 
 echo ""
-echo "✓ shine-code-submit@$VERSION 已发布到 npm 官方"
-echo "  https://www.npmjs.com/package/shine-code-submit"
-echo "  国内 npmmirror 约 10 分钟同步,之后 npx shine-code-submit install 即可用"
+echo "✓ shine-worklog@$VERSION 已发布到 npm 官方"
+echo "  https://www.npmjs.com/package/shine-worklog"
+echo "  国内 npmmirror 约 10 分钟同步,之后 npx shine-worklog install 即可用"
 
 echo ""
 read -r -p "打 git tag v$VERSION 并推到 aliyun?(y/N) " T

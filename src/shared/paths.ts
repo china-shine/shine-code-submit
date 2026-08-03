@@ -1,4 +1,4 @@
-// 数据目录布局：%LOCALAPPDATA%/shine-code-submit/{spool,log,db} + daemon.pid
+// 数据目录布局：%LOCALAPPDATA%/shine-worklog/{spool,log,db} + daemon.pid
 import { join } from "node:path";
 import { mkdirSync } from "node:fs";
 import { homedir } from "node:os";
@@ -6,7 +6,7 @@ import { homedir } from "node:os";
 const LOCAL =
   process.env.LOCALAPPDATA ?? join(homedir(), ".local", "share");
 
-export const DATA_DIR = join(LOCAL, "shine-code-submit");
+export const DATA_DIR = join(LOCAL, "shine-worklog");
 export const SPOOL_DIR = join(DATA_DIR, "spool");
 export const LOG_DIR = join(DATA_DIR, "log");
 export const DB_DIR = join(DATA_DIR, "db");

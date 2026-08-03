@@ -2,6 +2,25 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.0 — 2026-08-03
+
+改名 shine-code-submit → **shine-worklog** + 统一数据目录 + AI 占比 bugfix。
+
+### 改动
+- **改名 shine-worklog**:原名 submit 太窄(不涵盖禅道工时填报 + 观测)。包名/插件名/DATA_DIR/CLI/env 全改;install 时自动迁移旧 `shine-code-submit` 数据(rename DATA_DIR + ZenPilot 统一进 DATA_DIR/zenpilot)+ 反注册旧插件(避免双 hook)。
+- **统一数据目录**:ZenPilot 数据从 `~/.zenpilot/` 挪到 `DATA_DIR/zenpilot/`,一个插件一个数据根。
+- **AI 占比 bugfix**:`aggregate.ts` aiAdded 误含 deletedLines 致 >100%(96/789 commit),改为只计 addedLines(全局 9.4%→8.0%)。
+- env `SHINE_CODE_SUBMIT_*` → `SHINE_WORKLOG_*`(读取处双名 fallback 兼容一代)。
+
+## 1.2.0 — 2026-08-03
+
+合并 ZenPilot(禅道工时填报)进本项目为单一插件。
+
+### 改动
+- skills(setup/report/amend/mappings/daily/weekly)+ zentao.ts 整体并入;`collect` 改读 daemon `/api/sessions`(不再挖 transcript,消除重复采集)。
+- Stop hook fork zentao.ts collect 转发 stdin(解决 Claude Code Stop 单 stdin 争抢)。
+- 工时口径用 daemon activeMs;`~/.zenpilot/` 当时保留独立(1.3.0 起统一进 DATA_DIR/zenpilot)。
+
 ## 1.1.13 — 2026-07-29
 
 AI 代码占比改行级精确（transcript ∩ git）+ 按日 sparkline + 成员列表显示客户端版本号。

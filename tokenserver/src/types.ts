@@ -1,4 +1,4 @@
-// 上报数据契约（与 shine-code-submit src/shared/types.ts 的 ReportResponse 一致）。
+// 上报数据契约（与 shine-worklog src/shared/types.ts 的 ReportResponse 一致）。
 // daemon POST /api/report 的 body 即此结构。
 
 export interface TokenUsage {

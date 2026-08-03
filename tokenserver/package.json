@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "接收 shine-code-submit 报表上报,三级展示(用户/项目/token详情)",
+  "description": "接收 shine-worklog 报表上报,三级展示(用户/项目/token详情)",
   "scripts": {
     "dev": "bun run src/main.ts",
     "start": "bun run src/main.ts",

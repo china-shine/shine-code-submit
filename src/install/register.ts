@@ -24,7 +24,7 @@ export function registerMarketplace(cachePath: string): void {
   const existing = data[MARKETPLACE_NAME];
   if (existing?.source && existing.source.source !== "directory") {
     warn(
-      `[shine-code-submit] WARNING: marketplace "${MARKETPLACE_NAME}" 已存在(source=${existing.source.source}),将覆盖为 directory 源(原文件已备份)`,
+      `[shine-worklog] WARNING: marketplace "${MARKETPLACE_NAME}" 已存在(source=${existing.source.source}),将覆盖为 directory 源(原文件已备份)`,
     );
   }
   data[MARKETPLACE_NAME] = {
@@ -34,7 +34,7 @@ export function registerMarketplace(cachePath: string): void {
     autoUpdate: false,
   };
   writeJsonAtomicWithBackup(file, data);
-  info(`[shine-code-submit] marketplace 已注册 → ${file}`);
+  info(`[shine-worklog] marketplace 已注册 → ${file}`);
 }
 
 /** 注册 plugin 到 installed_plugins.json(version 2 结构)。幂等。 */
@@ -59,7 +59,7 @@ export function registerPlugin(cachePath: string): void {
     },
   ];
   writeJsonAtomicWithBackup(file, data);
-  info(`[shine-code-submit] plugin 已注册 → ${file}`);
+  info(`[shine-worklog] plugin 已注册 → ${file}`);
 }
 
 /** 启用 plugin:写 settings.json 的 enabledPlugins + extraKnownMarketplaces（每次都把 path 更新到当前版本目录，修市场路径漂移）。解 #17832。 */
@@ -78,7 +78,7 @@ export function enablePlugin(cachePath: string): void {
     source: { source: "directory", path: cachePath },
   };
   writeJsonAtomicWithBackup(file, data);
-  info(`[shine-code-submit] 已启用(enabledPlugins)→ ${file}`);
+  info(`[shine-worklog] 已启用(enabledPlugins)→ ${file}`);
 }
 
 /** 反注册:从三处 JSON 移除条目。幂等。 */
@@ -108,5 +108,5 @@ export function unregisterAll(): void {
     changed = true;
   }
   if (changed) writeJsonAtomicWithBackup(settingsPath(), s);
-  info("[shine-code-submit] 已从三处 JSON 移除注册");
+  info("[shine-worklog] 已从三处 JSON 移除注册");
 }

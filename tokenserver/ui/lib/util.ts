@@ -1,4 +1,4 @@
-// token 格式化（与 shine-code-submit ui/lib/util.ts 同口径,原始总量 + B 级两位小数）。
+// token 格式化（与 shine-worklog ui/lib/util.ts 同口径,原始总量 + B 级两位小数）。
 import type { TokenUsage } from "../types";
 
 /** 原始 token 总量 = input + output + cacheCreation + cacheRead（= ccusage totalTokens，四字段原始全量）。 */

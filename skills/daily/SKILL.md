@@ -32,7 +32,7 @@ description: 生成今天的工时日报(从禅道提交记录 efforts 汇总),�
        </section>
    ```
 3. 把 `text`(精简纯文本摘要)**放进代码块**展示给用户,并告知 **HTML 文件路径**(`file`,浏览器可直接打开;Windows 可 `start <file>`),说明底部含 AI 日总结。
-4. 询问是否要调整文案/格式;若 `empty: true`(该范围内没有禅道提交记录),提示用户先 `/shine-code-submit:report` 提交工时后重跑(覆盖同名文件)。
+4. 询问是否要调整文案/格式;若 `empty: true`(该范围内没有禅道提交记录),提示用户先 `/shine-worklog:report` 提交工时后重跑(覆盖同名文件)。
 
 ## 内容
 

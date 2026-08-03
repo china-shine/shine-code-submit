@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // install CLI 入口:install / uninstall / status。由 node 跑(编译成 dist/install.cjs)。
-// npx shine-code-submit install → 自动装 bun + 部署 plugin + 注册 + 启 daemon + 开 dashboard。
+// npx shine-worklog install → 自动装 bun + 部署 plugin + 注册 + 启 daemon + 开 dashboard。
 //
 // --silent:自动更新后台升级用(由 daemon 的 updater.ts 传入)。静默所有进度输出,
 //   诊断/致命错误改落 LOG_DIR/install.log,绝不在用户屏幕弹控制台喷日志(见 error.png 的教训)。
@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { ensureBun } from "./bun";
 import { cacheDir, deployPlugin, pruneOldVersions } from "./deploy";
+import { migrateLayout } from "./migrate";
 import { enablePlugin, registerMarketplace, registerPlugin, unregisterAll } from "./register";
 import { PUBLIC_BASE_URL, SERVICE_VERSION } from "../shared/config";
 import { isOursAlive, openBrowser, probeDaemon, spawnHidden, stopDaemon } from "../shared/daemonctl";
@@ -32,7 +33,7 @@ setSilent(silent);
 const cmd = args.find((a) => a !== "--silent" && a !== "-s" && a !== "--force");
 
 main().catch((err) => {
-  warn(`[shine-code-submit] ${err instanceof Error ? err.message : String(err)}`);
+  warn(`[shine-worklog] ${err instanceof Error ? err.message : String(err)}`);
   process.exit(1);
 });
 
@@ -58,7 +59,8 @@ async function main(): Promise<void> {
 }
 
 async function runInstall(): Promise<void> {
-  info(`=== shine-code-submit installer v${SERVICE_VERSION} ===`);
+  info(`=== shine-worklog installer v${SERVICE_VERSION} ===`);
+  await migrateLayout(); // 1.3.0 改名+统一:迁移数据布局(shine-code-submit→shine-worklog + ZenPilot→DATA_DIR/zenpilot),幂等
   const bunPath = await ensureBun();
   const cachePath = deployPlugin(bunPath, { force });
   registerMarketplace(cachePath);
@@ -71,23 +73,23 @@ async function runInstall(): Promise<void> {
     // 保证当前版本已能跑再删旧,启动失败/超时则保留旧版可用,绝不两头空。
     pruneOldVersions();
   } else {
-    warn("[shine-code-submit] 新 daemon 未确认就绪,保留旧 version 目录不清理(下次成功启动后再清)");
+    warn("[shine-worklog] 新 daemon 未确认就绪,保留旧 version 目录不清理(下次成功启动后再清)");
   }
   openDashboard();
   info("");
   info("✓ 安装完成。");
-  info("  · 重启 Claude Code 后,/plugin 列表会显示 shine-code-submit(已启用)。");
+  info("  · 重启 Claude Code 后,/plugin 列表会显示 shine-worklog(已启用)。");
   info("  · 开新会话即触发 SessionStart hook,事件出现在 dashboard。");
 }
 
 async function runUninstall(): Promise<void> {
-  info("=== shine-code-submit uninstaller ===");
+  info("=== shine-worklog uninstaller ===");
   await stopDaemon();
   unregisterAll();
   const target = cacheDir();
   if (existsSync(target)) {
     rmSync(target, { recursive: true, force: true });
-    info(`[shine-code-submit] 已删除 ${target}`);
+    info(`[shine-worklog] 已删除 ${target}`);
   }
   info("✓ 已卸载。重启 Claude Code 后 /plugin 不再显示。");
 }
@@ -109,14 +111,14 @@ async function runStatus(): Promise<void> {
 async function startDaemonWithBun(bunPath: string, cachePath: string): Promise<boolean> {
   const probe = await probeDaemon();
   if (probe.alive && probe.version === SERVICE_VERSION) {
-    info(`[shine-code-submit] daemon 已是最新 v${SERVICE_VERSION},跳过启动`);
+    info(`[shine-worklog] daemon 已是最新 v${SERVICE_VERSION},跳过启动`);
     return true;
   }
   if (probe.alive) {
-    info(`[shine-code-submit] daemon 旧版 v${probe.version} 运行中,重启到 v${SERVICE_VERSION}...`);
+    info(`[shine-worklog] daemon 旧版 v${probe.version} 运行中,重启到 v${SERVICE_VERSION}...`);
     await stopDaemon();
   } else {
-    info("[shine-code-submit] 启动 daemon...");
+    info("[shine-worklog] 启动 daemon...");
   }
   const daemonSrc = join(cachePath, "src", "daemon", "main.ts");
   try {
@@ -124,7 +126,7 @@ async function startDaemonWithBun(bunPath: string, cachePath: string): Promise<b
     const q = (p: string): string => (/\s/.test(p) ? `"${p}"` : p);
     spawnHidden(`${q(bunPath)} run ${q(daemonSrc)}`, { cwd: cachePath });
   } catch (err) {
-    warn(`[shine-code-submit] 启动 daemon 失败:${err instanceof Error ? err.message : err}`);
+    warn(`[shine-worklog] 启动 daemon 失败:${err instanceof Error ? err.message : err}`);
     warn("  plugin 已注册,Claude Code 重启后 hook 会自动拉起 daemon");
     return false;
   }
@@ -133,12 +135,12 @@ async function startDaemonWithBun(bunPath: string, cachePath: string): Promise<b
     await sleep(200);
     const p = await probeDaemon();
     if (p.alive && p.version === SERVICE_VERSION) {
-      info("[shine-code-submit] daemon 已就绪");
+      info("[shine-worklog] daemon 已就绪");
       return true;
     }
   }
   warn(
-    "[shine-code-submit] daemon 启动超时(10s)。plugin 已注册,可稍后手动 `shine-code-submit start` 或重启 claude。",
+    "[shine-worklog] daemon 启动超时(10s)。plugin 已注册,可稍后手动 `shine-worklog start` 或重启 claude。",
   );
   return false;
 }
@@ -146,7 +148,7 @@ async function startDaemonWithBun(bunPath: string, cachePath: string): Promise<b
 function openDashboard(): void {
   const pid = readPidFile();
   const url = pid ? `${PUBLIC_BASE_URL}/ui?t=${pid.token}` : `${PUBLIC_BASE_URL}/ui`;
-  info(`[shine-code-submit] Dashboard: ${url}`);
+  info(`[shine-worklog] Dashboard: ${url}`);
   // 自动弹浏览器暂时关闭——Dashboard 链接仍打印在上一行,用户可自行点开。
   // 想恢复:把下面 try/catch 取消注释(openBrowser(url))。
   // try {
@@ -162,13 +164,13 @@ function sleep(ms: number): Promise<void> {
 
 function printHelp(): void {
   // help 走 console.log 不受 silent 影响:用户显式打错命令时应看到帮助。
-  console.log(`shine-code-submit <command>
+  console.log(`shine-worklog <command>
 
   install     安装插件(自动装 bun + 部署 + 注册 + 启 daemon + 开 dashboard)
               flags: --silent(静默,自动更新用) --force(强制重装,绕过同版本幂等)
   uninstall   卸载(停 daemon + 反注册 + 删文件)
   status      显示 daemon 状态
 
-通常通过 npx 跑:npx shine-code-submit install`);
+通常通过 npx 跑:npx shine-worklog install`);
   process.exit(cmd ? 1 : 0);
 }

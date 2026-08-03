@@ -2,13 +2,13 @@
 
 > 完整版见 [`测试报告-Token对齐ccusage.md`](./测试报告-Token对齐ccusage.md)
 
-**目标**:以 ccusage 20.0.17 为标准,验证 shine-code-submit v1.0.16 daemon 的 token 统计(`/api/report`)是否与之逐字段对齐。
+**目标**:以 ccusage 20.0.17 为标准,验证 shine-worklog v1.0.16 daemon 的 token 统计(`/api/report`)是否与之逐字段对齐。
 
 **判定:Claude Code 范围内逐字段对齐,可作为 ccusage 的等价本地实现。**
 
 ## 环境
 
-shine-code-submit v1.0.16 ｜ ccusage 20.0.17 ｜ 数据源 `~/.claude/projects/**/*.jsonl` ｜ Windows 11 ｜ 采样 2026-07-13
+shine-worklog v1.0.16 ｜ ccusage 20.0.17 ｜ 数据源 `~/.claude/projects/**/*.jsonl` ｜ Windows 11 ｜ 采样 2026-07-13
 
 ## 方法
 

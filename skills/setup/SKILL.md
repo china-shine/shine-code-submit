@@ -52,8 +52,8 @@ bun "<Base directory>/../report/scripts/zentao.ts" config --url <地址> --accou
 bun "<Base directory>/../report/scripts/zentao.ts" config --projects <逗号分隔ID>
 ```
 
-常用项目决定 `/shine-code-submit:report` 拉取候选任务的范围,选得准,归属判断越快越准。
+常用项目决定 `/shine-worklog:report` 拉取候选任务的范围,选得准,归属判断越快越准。
 
 ### 5. 汇报
 
-展示最终配置(密码脱敏),提示可以运行 `/shine-code-submit:report` 开始填报。
+展示最终配置(密码脱敏),提示可以运行 `/shine-worklog:report` 开始填报。

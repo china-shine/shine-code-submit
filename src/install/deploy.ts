@@ -6,10 +6,10 @@ import { pluginsRoot } from "./paths";
 import { SERVICE_VERSION } from "../shared/config";
 import { info, isSilent } from "./log";
 
-export const MARKETPLACE_NAME = "shine-code-submit";
-export const PLUGIN_NAME = "shine-code-submit";
+export const MARKETPLACE_NAME = "shine-worklog";
+export const PLUGIN_NAME = "shine-worklog";
 
-/** 部署目标版本目录:~/.claude/plugins/cache/shine-code-submit/shine-code-submit/<version>/ */
+/** 部署目标版本目录:~/.claude/plugins/cache/shine-worklog/shine-worklog/<version>/ */
 export function cacheDir(version: string = SERVICE_VERSION): string {
   return join(pluginsRoot(), "cache", MARKETPLACE_NAME, PLUGIN_NAME, version);
 }
@@ -35,10 +35,10 @@ export function pruneOldVersions(): void {
     try {
       if (!statSync(p).isDirectory()) continue; // 只清目录,跳过文件
       rmSync(p, { recursive: true, force: true });
-      info(`[shine-code-submit] 已清理旧版本目录: ${name}`);
+      info(`[shine-worklog] 已清理旧版本目录: ${name}`);
     } catch (e) {
       // 删不掉(Windows 文件占用/权限)不强求,留给下次 install 或 Claude Code sweep
-      info(`[shine-code-submit] 清理 ${name} 跳过: ${e instanceof Error ? e.message : e}`);
+      info(`[shine-worklog] 清理 ${name} 跳过: ${e instanceof Error ? e.message : e}`);
     }
   }
 }
@@ -84,14 +84,14 @@ const WHITELIST = [".claude-plugin", "hooks", "bin", "src", "skills", "ui", "pac
 export function deployPlugin(bunPath: string, opts: { force?: boolean } = {}): string {
   const target = cacheDir();
   if (!opts.force && sameVersionDeployed(target)) {
-    info("[shine-code-submit] 同版本已部署,跳过(用 --force 强制重装)");
+    info("[shine-worklog] 同版本已部署,跳过(用 --force 强制重装)");
     return target;
   }
   if (existsSync(target)) rmSync(target, { recursive: true, force: true });
   mkdirSync(target, { recursive: true });
 
   const srcRoot = findPackageRoot();
-  info(`[shine-code-submit] 部署源:${srcRoot}`);
+  info(`[shine-worklog] 部署源:${srcRoot}`);
   for (const item of WHITELIST) {
     const from = join(srcRoot, item);
     if (!existsSync(from)) continue; // 缺(如 bun.lock 未入库)跳过
@@ -99,7 +99,7 @@ export function deployPlugin(bunPath: string, opts: { force?: boolean } = {}): s
   }
 
   // bun install 装运行时依赖。silent(--silent) 时 stdio:ignore,不喷日志到可能的控制台。
-  info("[shine-code-submit] 安装运行时依赖(bun install)...");
+  info("[shine-worklog] 安装运行时依赖(bun install)...");
   const stdio = isSilent() ? "ignore" : "inherit";
   let status = spawnSync(bunPath, ["install", "--frozen-lockfile"], {
     cwd: target,
@@ -108,7 +108,7 @@ export function deployPlugin(bunPath: string, opts: { force?: boolean } = {}): s
     stdio,
   }).status;
   if (status !== 0) {
-    info("[shine-code-submit] --frozen-lockfile 失败,重试普通 bun install");
+    info("[shine-worklog] --frozen-lockfile 失败,重试普通 bun install");
     status = spawnSync(bunPath, ["install"], {
       cwd: target,
       shell: process.platform === "win32",
@@ -125,7 +125,7 @@ export function deployPlugin(bunPath: string, opts: { force?: boolean } = {}): s
     JSON.stringify({ version: SERVICE_VERSION, installedAt: Date.now() }),
     "utf8",
   );
-  info(`[shine-code-submit] 已部署到 ${target}`);
+  info(`[shine-worklog] 已部署到 ${target}`);
   return target;
 }
 

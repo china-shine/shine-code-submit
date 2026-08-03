@@ -7,7 +7,7 @@ export function Header() {
     <header>
       <div className="title">
         <Icon name="diamond" size={14} />
-        <span>Shine Code Submit</span>
+        <span>Shine Worklog</span>
       </div>
       <Status />
     </header>

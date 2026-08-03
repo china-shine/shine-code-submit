@@ -1,8 +1,8 @@
-# Shine Code Submit
+# Shine Worklog
 
 Claude Code Hook → 本地常驻 Daemon 的状态/持久化底座。Hook 只做「采集 + 落盘 + 转发」立即退出，重活交给后台 Daemon 异步处理，不拖慢 Claude Code。详见 [`设计文档.md`](./设计文档.md)。更新日志见 [`CHANGELOG.md`](./CHANGELOG.md)。
 
-以 **Claude Code Plugin** 形式分发——`npx shine-code-submit install` 一键安装（也支持 `/plugin marketplace add` 从 GitHub 装），跨平台（Windows/macOS/Linux × x64/arm64）。
+以 **Claude Code Plugin** 形式分发——`npx shine-worklog install` 一键安装（也支持 `/plugin marketplace add` 从 GitHub 装），跨平台（Windows/macOS/Linux × x64/arm64）。
 
 ## 架构
 
@@ -53,7 +53,7 @@ Claude Code 共 9 个 hook 事件（[官方清单](https://docs.claude.com/en/do
 ### 方式一（推荐）：npx 一键安装
 
 ```
-npx shine-code-submit install
+npx shine-worklog install
 ```
 
 > 国内 npm 若默认走镜像（npmmirror），新版同步有延迟；拉不到最新版时加 `--registry=https://registry.npmjs.org/` 指官方源。
@@ -61,24 +61,24 @@ npx shine-code-submit install
 一条命令完成：
 
 1. 自动检测并安装运行时 **Bun**（1.1+，国内镜像优先 `npm i -g bun`，否则走官方脚本）；
-2. 部署 plugin 到 `~/.claude/plugins/cache/shine-code-submit/shine-code-submit/<version>/`；
+2. 部署 plugin 到 `~/.claude/plugins/cache/shine-worklog/shine-worklog/<version>/`；
 3. `bun install` 装运行时依赖（marked / react / react-dom）；
 4. 注册 marketplace + plugin + 启用（写 `known_marketplaces.json` / `installed_plugins.json` / `settings.json` 三处 JSON）；
 5. 拉起 daemon、打印 Dashboard 链接。
 
-装完**重启 Claude Code**，`/plugin` 列表会显示 `shine-code-submit`（✔ enabled）；开新会话即触发 SessionStart hook，事件出现在 Dashboard。
+装完**重启 Claude Code**，`/plugin` 列表会显示 `shine-worklog`（✔ enabled）；开新会话即触发 SessionStart hook，事件出现在 Dashboard。
 
-卸载：`npx shine-code-submit uninstall`（⚠️ 不要 `sudo` —— sudo 没有 nvm 的 PATH，会 `npx: command not found`）。
+卸载：`npx shine-worklog uninstall`（⚠️ 不要 `sudo` —— sudo 没有 nvm 的 PATH，会 `npx: command not found`）。
 
 ### 方式二：`/plugin marketplace add`（从 GitHub）
 
-源码直跑，需要 Bun 运行时——**没装也行**：首次任意 hook 事件时 `launcher.cjs` 会自动装（`npm i -g bun`，失败回退官方脚本，约 10-30s；安装进度仅 SessionStart 回显到 stderr，且 SessionStart 已配 200s 超时兜底，进度见 `~/.local/share/shine-code-submit/log/bun-install.log`）。想首次更快可先手装 `npm install -g bun`，或官方脚本——Windows `powershell -c "irm bun.sh/install.ps1 | iex"`，macOS/Linux `curl -fsSL https://bun.sh/install | bash`。
+源码直跑，需要 Bun 运行时——**没装也行**：首次任意 hook 事件时 `launcher.cjs` 会自动装（`npm i -g bun`，失败回退官方脚本，约 10-30s；安装进度仅 SessionStart 回显到 stderr，且 SessionStart 已配 200s 超时兜底，进度见 `~/.local/share/shine-worklog/log/bun-install.log`）。想首次更快可先手装 `npm install -g bun`，或官方脚本——Windows `powershell -c "irm bun.sh/install.ps1 | iex"`，macOS/Linux `curl -fsSL https://bun.sh/install | bash`。
 
 **从 GitHub：**
 
 ```
-/plugin marketplace add  china-shine/shine-code-submit
-/plugin install shine-code-submit@shine-code-submit
+/plugin marketplace add  china-shine/shine-worklog
+/plugin install shine-worklog@shine-worklog
 ```
 
 clone 后只有源码；首次 hook 事件时 `bin/launcher.cjs`（node）自动 `bun run src/hook/main.ts`，daemon 同理 `bun run src/daemon/main.ts`。
@@ -89,7 +89,7 @@ clone 后只有源码；首次 hook 事件时 `bin/launcher.cjs`（node）自动
 
 ```
 /plugin marketplace add <本仓库本地路径>
-/plugin install shine-code-submit@shine-code-submit
+/plugin install shine-worklog@shine-worklog
 ```
 
 直接读本机源码，改完即时生效（无需 build）。
@@ -128,7 +128,7 @@ bun run build                # 编译本机平台 daemon/hook/cli 到 bin/<plat>
 bun run build:ui             # 只 bundle ui/* → src/daemon/ui-assets.ts（不 build exe，改 UI 用）
 ```
 
-- `dist/install.cjs`：`npx shine-code-submit` 的入口，发布到 npm。`scripts/build-install.ts` 把 `src/install/*` 打成单文件 cjs bundle。
+- `dist/install.cjs`：`npx shine-worklog` 的入口，发布到 npm。`scripts/build-install.ts` 把 `src/install/*` 打成单文件 cjs bundle。
 - `bin/<plat>-<arch>/`：`bun build --compile` 产出的**本机**二进制，开发自测用、**gitignored、不入库、不发布**。launcher 优先用它、没有则 `bun run src/...`，所以不 build 也能跑。
 - 发版到 npm：`bash scripts/publish.sh`（`build:dist` → `npm pack` → `fix-tarball-mode.py` 修 `+x` → `npm publish <tgz>`；`build:dist` = `build:ui` + `build:install`，故意跳过 exe——exe 不入 npm tarball）。详见 [`CHANGELOG.md`](./CHANGELOG.md)。
 
@@ -144,7 +144,7 @@ bun run build:ui             # 只 bundle ui/* → src/daemon/ui-assets.ts（不
 bun run src/daemon/main.ts
 ```
 
-Dashboard：`http://localhost:36666/ui?t=<token>`，token 在 `%LOCALAPPDATA%/shine-code-submit/daemon.pid`，或 `bun run src/cli/main.ts ui` 打印带 token 链接。已有个同源 daemon 在跑时会自检复用、不重复启动（`isOursAlive`）。
+Dashboard：`http://localhost:36666/ui?t=<token>`，token 在 `%LOCALAPPDATA%/shine-worklog/daemon.pid`，或 `bun run src/cli/main.ts ui` 打印带 token 链接。已有个同源 daemon 在跑时会自检复用、不重复启动（`isOursAlive`）。
 
 **② Claude Code 事件走源码 hook**——项目 `.claude/settings.local.json`（已 gitignore，本地专用）把各事件 command 直指源码：
 
@@ -205,7 +205,7 @@ tokenserver/     报表上报接收服务（独立子项目,bun+sqlite+React,可
 
 ## 数据位置
 
-`%LOCALAPPDATA%/shine-code-submit/`（Windows）或 `~/.local/share/shine-code-submit/`（macOS/Linux）：
+`%LOCALAPPDATA%/shine-worklog/`（Windows）或 `~/.local/share/shine-worklog/`（macOS/Linux）：
 
 ```
 daemon.pid        pid/port/token/startedAt
@@ -275,6 +275,6 @@ rawTotal = input + output + cacheCreation + cacheRead
 - **默认绑 0.0.0.0 + token**：数据接口（`/api/*` 除 `/api/health`）均鉴权，静态页（`/`、`/ui`）与健康端点开放；默认暴露给局域网（方便其他设备访问），仅本机回环用时设 `SHINE_CODE_SUBMIT_HOST=127.0.0.1`（见「局域网访问」）。
 - **监听/连接地址分离**：daemon 监听用 `LISTEN_HOST`（默认 0.0.0.0，env 可配）；hook POST / cli / 探活 连接 daemon 固定走 `127.0.0.1` 回环（daemon 即使绑 0.0.0.0 也含回环），最快最稳。
 - **打印链接用真实网卡 IP**：`PUBLIC_BASE_URL` 取第一个非虚拟网卡的 IPv4（跳过 vEthernet/VMware/docker），显示与打开浏览器共用同一地址（本机、局域网通用）；无非回环网卡时才回退 `localhost`。
-- **自动更新（主动外联 npm）**：`autoUpdate` 默认开，daemon 启动时 + 每 `autoUpdateIntervalMin`（默认 60 分钟）查 `registry.npmjs.org` 最新版，有新版后台 spawn `npx shine-code-submit install` 升级。介意外联可在 settings.json 设 `autoUpdate:false`，或 CLI `update` 手动触发。
+- **自动更新（主动外联 npm）**：`autoUpdate` 默认开，daemon 启动时 + 每 `autoUpdateIntervalMin`（默认 60 分钟）查 `registry.npmjs.org` 最新版，有新版后台 spawn `npx shine-worklog install` 升级。介意外联可在 settings.json 设 `autoUpdate:false`，或 CLI `update` 手动触发。
 - **自启动 + 自愈**：任意事件故障路径都能拉起；重复实例启动时自检退出，crash 只删属于自己的 pid。
 - **hook 永不阻断**：launcher 与 hook 退出码恒 0，Bun 缺失时自动安装或静默跳过，绝不影响 Claude Code 主进程。

@@ -1,10 +1,10 @@
 # tokenserver
 
-接收 [shine-code-submit](../) daemon 报表上报的服务，按 **用户 → 项目 → token 详情** 三级展示。
+接收 [shine-worklog](../) daemon 报表上报的服务，按 **用户 → 项目 → token 详情** 三级展示。
 
 ## 简介
 
-shine-code-submit daemon 的 `reportUrl` 指向本服务。daemon 定时（每 `reportIntervalMin` 分钟）或手动（dashboard「上报」按钮）POST `ReportResponse`（含 gitUser/projects/sessions/token）到这里，本服务存储并按三级单页面展示。
+shine-worklog daemon 的 `reportUrl` 指向本服务。daemon 定时（每 `reportIntervalMin` 分钟）或手动（dashboard「上报」按钮）POST `ReportResponse`（含 gitUser/projects/sessions/token）到这里，本服务存储并按三级单页面展示。
 
 - **后端**：bun + bun:sqlite（无外部依赖）
 - **前端**：React + TSX（组件化，bun build 打包内联）
@@ -157,7 +157,7 @@ sessions(sessionId, gitUser, cwd, lastActive,
 
 ## token 口径
 
-与 shine-code-submit 报表完全一致：
+与 shine-worklog 报表完全一致：
 
 - **真实输入** = `input + cacheCreation + cacheRead`（直接累加 Anthropic API 原始字段，不乘系数）
 - **输出** = `output`

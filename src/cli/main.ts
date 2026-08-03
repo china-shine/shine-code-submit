@@ -1,4 +1,4 @@
-// shine-code-submit CLI：status / start / stop / restart / ui。
+// shine-worklog CLI：status / start / stop / restart / ui。
 // 用户侧管理命令。token 从 pid 文件读取。
 import { BASE_URL, PUBLIC_BASE_URL } from "../shared/config";
 import { readPidFile } from "../shared/pidfile";
@@ -44,7 +44,7 @@ async function cmdStatus(): Promise<void> {
 async function cmdStart(): Promise<void> {
   // ensureDaemon 版本感知:已是最新复用,旧版在跑则停旧启新,没跑则拉起
   const ok = await ensureDaemon();
-  console.log(ok ? "daemon: running" : "daemon: start failed (check %LOCALAPPDATA%/shine-code-submit/log/daemon.log)");
+  console.log(ok ? "daemon: running" : "daemon: start failed (check %LOCALAPPDATA%/shine-worklog/log/daemon.log)");
 }
 
 async function cmdStop(): Promise<void> {
@@ -91,7 +91,7 @@ async function waitReady(): Promise<boolean> {
 }
 
 function printHelp(): void {
-  console.log(`shine-code-submit <command>
+  console.log(`shine-worklog <command>
 
   status   显示 daemon 运行状态
   start    启动 daemon（已在跑则跳过）
@@ -102,6 +102,6 @@ function printHelp(): void {
 
 发布态下 hook/cli/daemon 同目录，daemon 由同目录二进制拉起；
 开发期可用环境变量覆盖：
-  SHINE_CODE_SUBMIT_DAEMON_CMD   启动 daemon 的完整命令（如 bun run src/daemon/main.ts）
-  SHINE_CODE_SUBMIT_DAEMON       bun run 的入口（默认 src/daemon/main.ts）`);
+  SHINE_WORKLOG_DAEMON_CMD   启动 daemon 的完整命令（如 bun run src/daemon/main.ts）
+  SHINE_WORKLOG_DAEMON       bun run 的入口（默认 src/daemon/main.ts）`);
 }

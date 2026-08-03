@@ -1,4 +1,4 @@
-// 对拍脚本:shine-code-submit daemon /api/report vs ccusage session -j
+// 对拍脚本:shine-worklog daemon /api/report vs ccusage session -j
 // 以 ccusage 为标准,逐 session 逐字段(input/output/cacheCreation/cacheRead)对比。
 // 静止 session(lastActive > 10min 前)应零差异;活跃 session 允许因 transcript 在涨而出现差异。
 import { existsSync, readdirSync } from "node:fs";

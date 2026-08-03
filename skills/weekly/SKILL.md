@@ -32,7 +32,7 @@ description: 生成本自然周(周一起)的工时周报(从禅道提交记录 
        </section>
    ```
 3. 把 `text`(精简纯文本摘要)**放进代码块**展示给用户,并告知 **HTML 文件路径**(`file`,浏览器可直接打开;Windows 可 `start <file>`),说明底部含 AI 周总结。
-4. 询问是否要调整文案/格式;若 `empty: true`(本周没有禅道提交记录),提示本周还没提交工时(先 `/shine-code-submit:report`)后重跑。
+4. 询问是否要调整文案/格式;若 `empty: true`(本周没有禅道提交记录),提示本周还没提交工时(先 `/shine-worklog:report`)后重跑。
 
 ## 内容
 

@@ -1,4 +1,4 @@
-// 自动更新:查 npm registry 最新版本,有新版 spawn detached `npx shine-code-submit@latest install` 升级。
+// 自动更新:查 npm registry 最新版本,有新版 spawn detached `npx shine-worklog@latest install` 升级。
 // daemon 启动时 + 定时调 autoUpdateIfNeeded。全程静默(try/catch),绝不影响 daemon。
 //
 // 升级链路:npx 拉 latest 包 → install CLI 部署新版到 cache + 注册 → startDaemonWithBun(1.0.5)
@@ -26,7 +26,7 @@ function spawnSilentInstall(): void {
   // --silent flag(--silent 是 npx 自身 flag,跨 npm 版本对"包名后已知 flag 是否透传"行为不一)。
   const env = { ...process.env, SHINE_SILENT: "1" };
   if (process.platform === "win32") {
-    // 稳定路径,不每次新建;DATA_DIR 即 %LOCALAPPDATA%/shine-code-submit。
+    // 稳定路径,不每次新建;DATA_DIR 即 %LOCALAPPDATA%/shine-worklog。
     const vbsPath = join(DATA_DIR, "update-hidden.vbs");
     const vbs = [
       `Set s = CreateObject("Wscript.Shell")`,
@@ -91,7 +91,7 @@ export async function checkForUpdate(): Promise<UpdateCheck> {
  * 自动更新:读 settings(autoUpdate 开关),有新版 spawn detached npx install。
  * 返回 {updated, latest}。全程 try/catch 静默——绝不影响 daemon。
  * - autoUpdate===false → 跳过。
- * - 有新版 → spawn `npx --yes --registry=官方 shine-code-submit@latest install`(detached,不阻塞)。
+ * - 有新版 → spawn `npx --yes --registry=官方 shine-worklog@latest install`(detached,不阻塞)。
  * - 无论是否升级,都缓存 latestVersion 到 settings(dashboard 显示用)。
  */
 export async function autoUpdateIfNeeded(force = false): Promise<{ updated: boolean; latest?: string }> {

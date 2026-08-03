@@ -3,15 +3,15 @@
 import pkg from "../../package.json";
 import { networkInterfaces } from "node:os";
 
-export const SERVICE_NAME = "shine-code-submit";
+export const SERVICE_NAME = "shine-worklog";
 export const SERVICE_VERSION = pkg.version; // 单一来源：package.json，避免三处手动同步漏改
 
 /**
  * daemon 监听地址。默认 0.0.0.0（绑所有网卡，局域网/其他设备可直接访问）。
- * 仅本机回环用时设 SHINE_CODE_SUBMIT_HOST=127.0.0.1。
+ * 仅本机回环用时设 SHINE_WORKLOG_HOST=127.0.0.1（旧 SHINE_CODE_SUBMIT_HOST 仍兼容一代）。
  * 注意：/api/health 与 /ui 无鉴权，绑非回环后 token 是数据接口唯一防线，勿在不可信网络下暴露。
  */
-export const LISTEN_HOST = process.env.SHINE_CODE_SUBMIT_HOST ?? "0.0.0.0";
+export const LISTEN_HOST = process.env.SHINE_WORKLOG_HOST ?? process.env.SHINE_CODE_SUBMIT_HOST ?? "0.0.0.0";
 
 export const HOST = "127.0.0.1"; // hook/cli/daemonctl 连接 daemon 用，固定回环（daemon 即使绑 0.0.0.0 也含 127.0.0.1）
 export const PORT = 36666;

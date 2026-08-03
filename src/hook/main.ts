@@ -30,7 +30,7 @@ main().catch(() => process.exit(0));
 async function main(): Promise<void> {
   const collected = await collect();
   if (!collected) {
-    process.stderr.write("[shine-code-submit-hook] collect failed: missing cwd/sessionId\n");
+    process.stderr.write("[shine-worklog-hook] collect failed: missing cwd/sessionId\n");
     return process.exit(0);
   }
   const { event, stdinRaw } = collected;
@@ -41,7 +41,7 @@ async function main(): Promise<void> {
     writeSpoolFile(event);
   } catch (err) {
     process.stderr.write(
-      `[shine-code-submit-hook] spool write failed: ${safeMsg(err)}; event=${truncate(JSON.stringify(event))}\n`,
+      `[shine-worklog-hook] spool write failed: ${safeMsg(err)}; event=${truncate(JSON.stringify(event))}\n`,
     );
     return process.exit(0);
   }
@@ -50,7 +50,7 @@ async function main(): Promise<void> {
   try {
     await forward(event);
   } catch (err) {
-    process.stderr.write(`[shine-code-submit-hook] forward failed: ${safeMsg(err)}\n`);
+    process.stderr.write(`[shine-worklog-hook] forward failed: ${safeMsg(err)}\n`);
   }
 
   // 2.5 Stop 事件：fork ZenPilot collect（合并进来的禅道工时填报 skill），把同一份 stdin 转发给子进程。
@@ -188,9 +188,9 @@ function truncate(s: string): string {
 /**
  * 升级提示：对比 NOTICE_FILE 记录的上次版本与当前 SERVICE_VERSION。
  * - 同版本 → ""（不提示）。
- * - 首次（无记录/损坏）→ "✨ shine-code-submit vX\n"（也显示一次 banner 露链接），并落当前版本。
+ * - 首次（无记录/损坏）→ "✨ shine-worklog vX\n"（也显示一次 banner 露链接），并落当前版本。
  *   关键：没有这条的话，引入本功能的版本自身（如 1.1.3）无基线可比 → 永远静默，所有用户升上来都看不到提示。
- * - 版本变了（升级/降级）→ "✨ shine-code-submit 已升级到 vX（原 v旧）\n"，并更新记录（下次同版本不再提示）。
+ * - 版本变了（升级/降级）→ "✨ shine-worklog 已升级到 vX（原 v旧）\n"，并更新记录（下次同版本不再提示）。
  * 全程容错：任何读写失败均返回 ""，绝不影响 hook。
  */
 function upgradeNotice(): string {
@@ -209,8 +209,8 @@ function upgradeNotice(): string {
       /* 写失败：本次仍提示，下次启动再尝试记录 */
     }
     return last
-      ? `✨ shine-code-submit 已升级到 v${SERVICE_VERSION}（原 v${last}）\n`
-      : `✨ shine-code-submit v${SERVICE_VERSION}\n`; // 首次也显示（露链接），不再静默
+      ? `✨ shine-worklog 已升级到 v${SERVICE_VERSION}（原 v${last}）\n`
+      : `✨ shine-worklog v${SERVICE_VERSION}\n`; // 首次也显示（露链接），不再静默
   } catch {
     return "";
   }

@@ -22,7 +22,7 @@ async function main(): Promise<void> {
   // 已有自己人的 daemon 在跑 → 复用，不重复启动。
   // 防止 hook/CLI 因瞬时探活失败重复拉起时，第二个实例端口冲突 crash 并误删 pid 文件。
   if (await isOursAlive()) {
-    log.info("another shine-code-submit daemon already running; exit without starting");
+    log.info("another shine-worklog daemon already running; exit without starting");
     process.exit(0);
   }
 

@@ -176,7 +176,7 @@ export function SettingsModule() {
                 </span>
               </div>
               <div className="field-hint">
-                升级后 daemon 自动重启到新版(版本感知);plugin 需重启 Claude Code 生效。也可命令行手动 <code>shine-code-submit update</code>。
+                升级后 daemon 自动重启到新版(版本感知);plugin 需重启 Claude Code 生效。也可命令行手动 <code>shine-worklog update</code>。
               </div>
             </section>
 

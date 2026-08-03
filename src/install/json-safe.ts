@@ -19,7 +19,7 @@ export function readJsonDefault<T>(file: string, def: T): T {
     const bak = `${file}.bak-corrupt-${Date.now()}`;
     try {
       copyFileSync(file, bak);
-      warn(`[shine-code-submit] WARNING: ${file} JSON 损坏,已备份到 ${bak},用默认值继续`);
+      warn(`[shine-worklog] WARNING: ${file} JSON 损坏,已备份到 ${bak},用默认值继续`);
     } catch {
       /* 备份失败也继续 */
     }

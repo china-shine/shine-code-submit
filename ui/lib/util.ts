@@ -118,7 +118,7 @@ export function sumTokenUsage(
   return { total, count };
 }
 
-/** 路径取末段作项目名（汇总页显示用）："/a/b/shine-code-submit" → "shine-code-submit"。 */
+/** 路径取末段作项目名（汇总页显示用）："/a/b/shine-worklog" → "shine-worklog"。 */
 export function shortDir(p: string): string {
   if (!p) return "";
   const t = p.replace(/[\\/]+$/, "");

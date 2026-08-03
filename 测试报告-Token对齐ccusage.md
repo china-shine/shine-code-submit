@@ -1,6 +1,6 @@
 # Token 统计对齐 ccusage 测试报告
 
-> 以本机 Claude Code 真实 transcript 为输入,以 `ccusage` 输出为标准,验证 shine-code-submit daemon 的 token 统计是否与之逐字段对齐。
+> 以本机 Claude Code 真实 transcript 为输入,以 `ccusage` 输出为标准,验证 shine-worklog daemon 的 token 统计是否与之逐字段对齐。
 >
  采样时间:2026-07-13 ｜ 测试人:renguifeng ｜ 对拍脚本:[`scripts/parity-vs-ccusage.ts`](./scripts/parity-vs-ccusage.ts)
 
@@ -8,7 +8,7 @@
 
 ## 测试总结
 
-以本机 166 个 transcript session(Claude Code + opencode)为样本、ccusage 20.0.17 为标准,对 shine-code-submit v1.0.16 daemon 的 token 统计做全量逐字段对拍。
+以本机 166 个 transcript session(Claude Code + opencode)为样本、ccusage 20.0.17 为标准,对 shine-worklog v1.0.16 daemon 的 token 统计做全量逐字段对拍。
 
 **判定:Claude Code 范围内逐字段对齐,可作为 ccusage 的等价本地实现。**
 
@@ -33,7 +33,7 @@
 
 | 项 | 值 |
 |---|---|
-| shine-code-submit | v1.0.16(pid 25576,port 36666) |
+| shine-worklog | v1.0.16(pid 25576,port 36666) |
 | ccusage | 20.0.17 |
 | 数据源 | `~/.claude/projects/**/*.jsonl`(Claude Code transcript) |
 | 平台 | Windows 11 |
@@ -228,7 +228,7 @@ ccusage 20.x 是多 agent 工具,会扫描多种 CLI 的 session:
 npx ccusage@latest session -j > /tmp/ccusage-all.json
 
 # 2. 取 daemon token(从 pid 文件)
-TOKEN=$(jq -r .token "$LOCALAPPDATA/shine-code-submit/daemon.pid")
+TOKEN=$(jq -r .token "$LOCALAPPDATA/shine-worklog/daemon.pid")
 
 # 3. 跑对拍
 TOKEN=$TOKEN CCFILE=/tmp/ccusage-all.json bun scripts/parity-vs-ccusage.ts
