@@ -50,6 +50,26 @@ export interface ReportTotals {
   lines: LinesStat;
 }
 
+/** 禅道工时条目(与 shine-worklog src/shared/types.ts 的 WorklogEntry 一致)。 */
+export interface WorklogEntry {
+  date: string;
+  sessionId: string;
+  cwd: string;
+  repo: string | null;
+  branch: string | null;
+  start: string | null;
+  end: string | null;
+  minutes: number;
+  hours: number;
+  taskId: number | null;
+  taskName: string | null;
+  projectId: number | null;
+  projectName: string | null;
+  work: string | null;
+  status: string;
+  zentaoUrl: string | null;
+}
+
 export interface ReportResponse {
   version: string;
   generatedAt: number;
@@ -57,4 +77,5 @@ export interface ReportResponse {
   gitUser: string | null;
   projects: ReportProject[];
   totals: ReportTotals;
+  worklogs?: WorklogEntry[];
 }

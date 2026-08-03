@@ -3,17 +3,18 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { ChevronRight, MessageSquare, Clock, Coins, Code2, Folder, TrendingUp, Bot } from "lucide-react";
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from "recharts";
-import type { MemberDetail, SessionsPage, StatsPayload } from "../../types";
+import type { MemberDetail, SessionsPage, StatsPayload, WorklogPage } from "../../types";
 import { rawTotal, lineTotal, inoutTokens, fmtK, fmtFull, fmtDuration, fmtPct, C } from "../../lib/derive";
 import { fmtDate } from "../../lib/util";
-import { fetchMember, fetchSessions } from "../../lib/api";
+import { fetchMember, fetchSessions, fetchMemberWorklogs } from "../../lib/api";
 import { Avatar } from "../common/Avatar";
 import { MetricCard } from "../common/MetricCard";
 import { MiniSparkline } from "../common/MiniSparkline";
 import { RecentSessionsTable } from "../overview/RecentSessionsTable";
+import { WorklogTable } from "./WorklogTable";
 import { chartTheme } from "../overview/chartTheme";
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 10;
 
 export function MemberDetailPage({
   dark,
@@ -33,6 +34,8 @@ export function MemberDetailPage({
   const [member, setMember] = useState<MemberDetail | null>(null);
   const [sessionsPage, setSessionsPage] = useState<SessionsPage | null>(null);
   const [pageNum, setPageNum] = useState(1);
+  const [worklogPage, setWorklogPage] = useState<WorklogPage | null>(null);
+  const [worklogPageNum, setWorklogPageNum] = useState(1);
 
   // 进详情/日期范围变 → 拉单成员 + 会话首页
   useEffect(() => {
@@ -50,6 +53,15 @@ export function MemberDetailPage({
         }
       })
       .catch(() => {});
+    // 禅道工时独立拉取(单独 catch,失败不拖空 KPI/会话表)
+    fetchMemberWorklogs(gitUser, { startDate, endDate, page: 1, pageSize: PAGE_SIZE })
+      .then((wp) => {
+        if (!cancelled) {
+          setWorklogPage(wp);
+          setWorklogPageNum(1);
+        }
+      })
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
@@ -60,6 +72,16 @@ export function MemberDetailPage({
       const sp = await fetchSessions({ startDate, endDate, members: [], member: gitUser, page: n, pageSize: PAGE_SIZE });
       setSessionsPage(sp);
       setPageNum(n);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  const loadWorklogPage = async (n: number) => {
+    try {
+      const wp = await fetchMemberWorklogs(gitUser, { startDate, endDate, page: n, pageSize: PAGE_SIZE });
+      setWorklogPage(wp);
+      setWorklogPageNum(n);
     } catch {
       /* ignore */
     }
@@ -202,6 +224,14 @@ export function MemberDetailPage({
         page={pageNum}
         pageSize={PAGE_SIZE}
         onPageChange={loadPage}
+      />
+
+      <WorklogTable
+        rows={worklogPage?.rows ?? []}
+        total={worklogPage?.total ?? 0}
+        page={worklogPageNum}
+        pageSize={PAGE_SIZE}
+        onPageChange={loadWorklogPage}
       />
     </div>
   );

@@ -117,3 +117,28 @@ export interface MemberDetail {
   trend: DayBucket[];
   daily: DailyStat[]; // 固定 day(AI 占比 sparkline)
 }
+
+/** /api/member/:gitUser/worklog 的单行(已提交禅道的工时记录)。 */
+export interface WorklogRow {
+  date: string;
+  sessionId: string;
+  repo: string | null;
+  branch: string | null;
+  start: string | null;
+  end: string | null;
+  minutes: number;
+  hours: number;
+  taskId: number | null;
+  taskName: string | null;
+  projectId: number | null;
+  projectName: string | null;
+  work: string | null;
+  zentaoUrl: string | null;
+}
+export interface WorklogPage {
+  rows: WorklogRow[];
+  total: number;
+  totalHours: number; // 全量总工时(范围筛选后全部页之和,给合计行)
+  page: number;
+  pageSize: number;
+}

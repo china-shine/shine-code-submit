@@ -1,4 +1,4 @@
-import type { StatsPayload, SessionsPage, MemberDetail } from "../types";
+import type { StatsPayload, SessionsPage, MemberDetail, WorklogPage } from "../types";
 
 // 趋势图固定按日聚合（日/周/月切换已移除），URL 始终带 granularity=day。
 const GRANULARITY = "day";
@@ -42,6 +42,21 @@ export async function fetchMember(
 ): Promise<MemberDetail> {
   const p = new URLSearchParams({ start: opts.startDate, end: opts.endDate, granularity: GRANULARITY });
   const r = await fetch(`/api/member/${encodeURIComponent(gitUser)}?${p}`);
+  if (!r.ok) throw new Error(`HTTP ${r.status}`);
+  return r.json();
+}
+
+export async function fetchMemberWorklogs(
+  gitUser: string,
+  opts: { startDate: string; endDate: string; page: number; pageSize: number },
+): Promise<WorklogPage> {
+  const p = new URLSearchParams({
+    start: opts.startDate,
+    end: opts.endDate,
+    page: String(opts.page),
+    pageSize: String(opts.pageSize),
+  });
+  const r = await fetch(`/api/member/${encodeURIComponent(gitUser)}/worklog?${p}`);
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }

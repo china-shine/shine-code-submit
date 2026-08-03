@@ -168,6 +168,29 @@ export interface ReportTotals {
   lines: LinesStat;
 }
 
+/** 禅道工时条目(来自本地 zenpilot/projects/<cwd>/plan.json 的 status=resolved items;
+ *  daemon buildReport 时全量读取上报,与 token/lines 同一 ReportResponse。
+ *  plan.json 原字段 task/project 映射为 taskId/projectId;work 为提交禅道的工作内容文案;
+ *  zentaoUrl 为禅道根 url(前端拼任务超链接);status 收集时只保留 "resolved"。 */
+export interface WorklogEntry {
+  date: string; // YYYY-MM-DD(plan.json 顶层 date,本地日)
+  sessionId: string;
+  cwd: string; // decodeProjectCwd(目录名),有损;展示用 repo
+  repo: string | null;
+  branch: string | null;
+  start: string | null; // HH:MM
+  end: string | null; // HH:MM
+  minutes: number; // 该会话活跃分钟(plan.json item.minutes)
+  hours: number; // 提交工时(可为 0.5)
+  taskId: number | null; // plan.json item.task
+  taskName: string | null;
+  projectId: number | null; // plan.json item.project
+  projectName: string | null;
+  work: string | null; // 工作内容文案
+  status: string; // "resolved"(已提交禅道)
+  zentaoUrl: string | null; // 禅道根 url(zenpilot/config.json url)
+}
+
 /** GET /api/report 响应。 */
 export interface ReportResponse {
   version: string;
@@ -176,6 +199,7 @@ export interface ReportResponse {
   gitUser: string | null; // 全局代表(首个有 user.name 的项目)
   projects: ReportProject[];
   totals: ReportTotals;
+  worklogs?: WorklogEntry[]; // 禅道工时(忽略 since 全量读;旧 daemon 上报可能缺失)
 }
 
 // ---- 分级懒加载:L1 项目列表(/api/projects) / L2 项目内 sessions(/api/sessions?cwd=) ----

@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { gzipSync, gunzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
-import { saveReport, getStats, getSessions, getMember, type Granularity } from "./store";
+import { saveReport, getStats, getSessions, getMember, getMemberWorklogs, type Granularity } from "./store";
 import type { ReportResponse } from "./types";
 import { APP_JS, INDEX_HTML, STYLE_CSS } from "./ui-assets";
 
@@ -137,6 +137,20 @@ export function startServer() {
         const page = Math.max(1, parseInt(url.searchParams.get("page") ?? "1", 10) || 1);
         const pageSize = Math.max(1, parseInt(url.searchParams.get("pageSize") ?? "20", 10) || 20);
         return json(req, getSessions({ from, to, members, member }, page, pageSize));
+      }
+
+      // 成员禅道工时分页(MemberDetailPage 禅道工时表;date 字符串比较)。
+      // ⚠️ 必须在 /api/member/:gitUser(startsWith 前缀匹配)之上,否则 gitUser 会变成 "X/worklog"。
+      {
+        const m = path.match(/^\/api\/member\/([^/]+)\/worklog$/);
+        if (m && req.method === "GET") {
+          const gitUser = decodeURIComponent(m[1]);
+          const start = url.searchParams.get("start") ?? ""; // YYYY-MM-DD 或空(不限)
+          const end = url.searchParams.get("end") ?? "";
+          const page = Math.max(1, parseInt(url.searchParams.get("page") ?? "1", 10) || 1);
+          const pageSize = Math.max(1, parseInt(url.searchParams.get("pageSize") ?? "20", 10) || 20);
+          return json(req, getMemberWorklogs(gitUser, { start, end }, page, pageSize));
+        }
       }
 
       // 单成员 KPI + 趋势(MemberDetailPage;团队均值复用 /api/stats)

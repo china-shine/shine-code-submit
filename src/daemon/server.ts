@@ -23,6 +23,7 @@ import { gzipSync } from "node:zlib";
 import { parseTranscript, sumSessionUsage } from "./transcript";
 // claude-scan 现 only export claudeProjectsRoots/collectJsonl/parentSessionInfo/ScannedSession(供 watcher/consumer/aggregate);scanSessions 系列已删(P3)
 import { getCommits, getGitUser } from "./git";
+import { collectWorklogs } from "./worklog";
 import { getSessionLines, sumLines } from "./lines";
 import {
   buildHookCwdMap,
@@ -393,6 +394,7 @@ async function buildReport(store: Store, since: number): Promise<ReportResponse>
       }
     }
   }
+  const worklogs = collectWorklogs();
   return {
     version: SERVICE_VERSION,
     generatedAt: Date.now(),
@@ -405,6 +407,7 @@ async function buildReport(store: Store, since: number): Promise<ReportResponse>
       tokens: sumTokens(projects.map((p) => p.totalTokens)),
       lines: sumLines(projects.map((p) => p.totalLines)),
     },
+    worklogs,
   };
 }
 

@@ -61,6 +61,28 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_gitchanges_ts ON git_changes(ts);
   CREATE INDEX IF NOT EXISTS idx_gitchanges_user_cwd ON git_changes(gitUser, cwd, ts);
+  CREATE TABLE IF NOT EXISTS worklogs (
+    gitUser TEXT NOT NULL,
+    date TEXT NOT NULL,
+    sessionId TEXT NOT NULL,
+    taskId INTEGER,
+    repo TEXT,
+    branch TEXT,
+    cwd TEXT,
+    "start" TEXT,
+    "end" TEXT,
+    minutes INTEGER DEFAULT 0,
+    hours REAL DEFAULT 0,
+    taskName TEXT,
+    projectId INTEGER,
+    projectName TEXT,
+    work TEXT,
+    status TEXT,
+    zentaoUrl TEXT,
+    updatedAt INTEGER DEFAULT 0,
+    PRIMARY KEY (gitUser, date, sessionId, taskId)
+  );
+  CREATE INDEX IF NOT EXISTS idx_worklogs_user_date ON worklogs(gitUser, date);
 `);
 
 // 旧库迁移:git_changes 加 aiAdded 列(行级 AI 占比分子:该 commit added 行中 AI 写的行数)
@@ -138,6 +160,27 @@ const upsertGitChange = db.query(`
   VALUES (?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(hash) DO UPDATE SET aiAdded = MAX(git_changes.aiAdded, excluded.aiAdded)
 `);
+// 禅道工时 upsert:PK(gitUser,date,sessionId,taskId)幂等累积;taskId null→0 兜底(NULL 在 SQLite 唯一约束里互异会导致重复插入)。
+// start/end/work 是 SQLite 保留字,INSERT 列表与 ON CONFLICT 引用都加双引号。
+const upsertWorklog = db.query(`
+  INSERT INTO worklogs (gitUser, date, sessionId, taskId, repo, branch, cwd, "start", "end", minutes, hours, taskName, projectId, projectName, work, status, zentaoUrl, updatedAt)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ON CONFLICT(gitUser, date, sessionId, taskId) DO UPDATE SET
+    repo = excluded.repo,
+    branch = excluded.branch,
+    cwd = excluded.cwd,
+    "start" = excluded."start",
+    "end" = excluded."end",
+    minutes = excluded.minutes,
+    hours = excluded.hours,
+    taskName = excluded.taskName,
+    projectId = excluded.projectId,
+    projectName = excluded.projectName,
+    work = excluded.work,
+    status = excluded.status,
+    zentaoUrl = excluded.zentaoUrl,
+    updatedAt = excluded.updatedAt
+`);
 
 /** 存储一次上报:拆分逐条 upsert。 */
 export function saveReport(raw: ReportResponse): void {
@@ -164,6 +207,16 @@ export function saveReport(raw: ReportResponse): void {
       for (const c of p.gitCommits ?? []) {
         upsertGitChange.run(c.hash, gitUser, p.cwd, c.ts, c.added, c.deleted, c.aiAdded ?? 0);
       }
+    }
+    // 禅道工时(daemon 忽略 since 全量上报;PK 复合 upsert 累积,taskId null→0 兜底幂等)
+    for (const w of raw.worklogs ?? []) {
+      upsertWorklog.run(
+        gitUser, w.date, w.sessionId, w.taskId ?? 0,
+        w.repo ?? null, w.branch ?? null, w.cwd ?? null,
+        w.start ?? null, w.end ?? null, w.minutes ?? 0, w.hours ?? 0,
+        w.taskName ?? null, w.projectId ?? null, w.projectName ?? null,
+        w.work ?? null, w.status ?? null, w.zentaoUrl ?? null, now,
+      );
     }
   });
   tx();
@@ -678,4 +731,47 @@ export function getMember(gitUser: string, opts: { from: number; to: number; gra
     trend: [...trendMap.values()].sort((a, b) => a.ts - b.ts),
     daily: [...dailyMap.values()].sort((a, b) => a.ts - b.ts),
   };
+}
+
+export interface WorklogRowOut {
+  date: string;
+  sessionId: string;
+  repo: string | null;
+  branch: string | null;
+  start: string | null;
+  end: string | null;
+  minutes: number;
+  hours: number;
+  taskId: number | null;
+  taskName: string | null;
+  projectId: number | null;
+  projectName: string | null;
+  work: string | null;
+  zentaoUrl: string | null;
+}
+
+/** 成员禅道工时分页(已提交 resolved;date YYYY-MM-DD 字符串比较过滤,词法序正确)。
+ *  按 date DESC, sessionId 排序;taskId=0(无任务兜底)前端按空显示。 */
+export function getMemberWorklogs(
+  gitUser: string,
+  opts: { start: string; end: string },
+  page: number,
+  pageSize: number,
+): { rows: WorklogRowOut[]; total: number; page: number; pageSize: number } {
+  let sql = `SELECT date, sessionId, repo, branch, "start", "end", minutes, hours, taskId, taskName, projectId, projectName, work, zentaoUrl FROM worklogs WHERE gitUser = ?`;
+  const params: (string | number)[] = [gitUser];
+  if (opts.start) {
+    sql += ` AND date >= ?`;
+    params.push(opts.start);
+  }
+  if (opts.end) {
+    sql += ` AND date <= ?`;
+    params.push(opts.end);
+  }
+  sql += ` ORDER BY date DESC, sessionId`;
+  const all = db.prepare(sql).all(...params) as WorklogRowOut[];
+  const total = all.length;
+  const totalHours = all.reduce((s, r) => s + (r.hours || 0), 0); // 全量总工时(给前端合计行,非当前页)
+  const startIdx = (page - 1) * pageSize;
+  return { rows: all.slice(startIdx, startIdx + pageSize), total, totalHours, page, pageSize };
 }
