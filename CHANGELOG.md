@@ -2,6 +2,16 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.1 — 2026-08-03
+
+tokenserver 成员详情新增「禅道工时」表(禅道工时接入 report 上报链路)+ install 无条件清旧插件 + dashboard 链接网卡 fix。
+
+### 改动
+- **tokenserver 成员详情新增「禅道工时」表**:禅道工时原与 token 上报物理隔离(只躺本地 `plan.json`、只存当天),本次新建上报链路让其进 tokenserver 数据库长期台账。daemon 新增 `worklog.ts`(`collectWorklogs` 读 `zenpilot/projects/*/plan.json` 的 `status=resolved` 条目,带 zentaoUrl)填入 `ReportResponse.worklogs`(忽略 since 增量水位,每次全量读);tokenserver 新增 `worklogs` 表(PK `gitUser,date,sessionId,taskId` 复合 upsert 累积)+ `GET /api/member/:gitUser/worklog`(日期字符串比较分页,注册在 `/api/member/:gitUser` 前缀路由之上);前端 `MemberDetailPage` 新增 `WorklogTable`(4 列对齐周报:日期 / 任务#ID / 工时 / 工作内容,任务名可点跳禅道,服务端分页 10/页)。
+- **install 无条件反注册旧插件**:`cleanupOldPlugin`(删旧 `shine-code-submit` cache + 清三个注册 JSON 旧 key)原只在 `migrateLayout` 条件触发(需有旧 DATA_DIR),"只装过插件没跑过 daemon"的用户旧插件会残留。改为 `runInstall` 无条件调用(幂等,无旧则跳过),保证每次 install 后 `/plugin` 不残留旧插件。配合 `shine-code-submit` npm 全版本 deprecate 改名提示,存量用户一条 `npx shine-worklog install` 即可平滑切换。
+- **dashboard 链接网卡 fix**:`getPrimaryIpv4` 误取 Clash TUN 网卡(198.18.0.1)致打印的 dashboard 链接局域网不可达,跳过该网段。
+- 文档:README 展开 `zenpilot/` 目录说明(plan/sessions/submitted 写入模式 + 增长评估)、新增「三个目录:工作目录 / plugin cache / DATA_DIR」章节。
+
 ## 1.3.0 — 2026-08-03
 
 改名 shine-code-submit → **shine-worklog** + 统一数据目录 + AI 占比 bugfix。
