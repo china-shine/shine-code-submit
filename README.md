@@ -194,6 +194,24 @@ scripts/         build.ts、build-ui.ts、build-install.ts、publish.sh、fix-ta
 tokenserver/     报表上报接收服务（独立子项目,bun+sqlite+React,可打包 Linux 二进制;见 tokenserver/README.md）
 ```
 
+## 三个目录:工作目录 / plugin cache / DATA_DIR
+
+开发与运行时涉及三个目录,性质不同,别混淆:
+
+| 目录 | 路径 | 性质 | 内容 |
+| --- | --- | --- | --- |
+| 工作目录 | git 仓库(如 `Desktop/workspace/livesetting`) | 开发源码 | 你改的源码,git 跟踪 |
+| plugin cache | `~/.claude/plugins/cache/shine-worklog/shine-worklog/<version>/` | 安装的代码副本 | Claude Code 实际加载运行的代码(install 时从 npm/本地复制,版本化目录) |
+| DATA_DIR | `%LOCALAPPDATA%/shine-worklog/`(见下「数据位置」) | 运行时数据 | daemon 产生的状态/数据库/日志/禅道数据 |
+
+```
+工作目录 ──install / --force──▶ plugin cache(Claude Code 实际跑这个)──运行──▶ DATA_DIR(数据写这)
+```
+
+> ⚠️ **改源码不生效的常见原因**:Claude Code 加载插件、hook 执行、daemon 运行、skill 调用跑的都是 **plugin cache 里的代码,不是你的工作目录**。改工作目录源码后,需 `npx shine-worklog install --force` 重装(同步到 cache);或开发期用「源码调试」模式绕开插件,直接 `bun run` 工作目录源码。
+>
+> 注:plugin cache 和 DATA_DIR 下都有 `bin/`,内容不同——cache 的 `bin/` 是 `launcher.cjs`(hook 分发器),DATA_DIR 的 `bin/` 是 `spawn-daemon-hidden.vbs`(开机/会话自启脚本)。
+
 ## 环境变量
 
 > 1.3.0 改名：`SHINE_WORKLOG_*`（旧 `SHINE_CODE_SUBMIT_*` 仍兼容一代，读取处双名 fallback）。
