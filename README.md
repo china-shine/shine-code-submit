@@ -216,11 +216,14 @@ spool/*.json        待消费事件（每事件一文件，原子写）
 log/daemon.log      日志（按大小轮转）
 db/events.sqlite    事件库（`events` 幂等去重）+ transcript 中枢（`transcript_files`/`transcript_sessions`），按 cwd 隔离
 settings.json       上报与更新配置（reportUrl/reportIntervalMin/autoUpdate/水位 lastReportAt）
-zenpilot/           禅道工时填报数据（原 ~/.zenpilot/，1.3.0 统一进此）
+zenpilot/           禅道工时填报数据（原 ~/.zenpilot/，1.3.0 统一进此；skill 短期工作区，长期台账在 tokenserver worklogs 表）
   config.json         禅道连接（url/account/password/projectIds，明文密码 chmod 600）
-  mappings.json       仓库→项目映射（/report commit 时自动学习）
-  cache.json          禅道任务/执行缓存
-  projects/<编码cwd>/ sessions.json(collect 采集) / submitted.json(防重) / plan.json(计划)
+  mappings.json       仓库→项目映射（repoToProject 仓库名→禅道项目ID / branchToTask / projectNames；/report commit 时自动学习）
+  cache.json          禅道任务/执行缓存（减少重复 API 调用）
+  projects/<编码cwd>/ 按项目隔离（编码 = cwd 非字母数字→"-"，对齐 ~/.claude/projects/ 编码）
+    plan.json           当天提交计划（每次 plan 覆盖，只存当天；items 含 status/work/taskName/hours）
+    sessions.json       当天从 daemon 采集的会话（每次 collect 覆盖，只存当天；算工时用）
+    submitted.json      防重 + amend 索引（按日期 key 累积，~400B/天线性增长；只增不删，几年才 MB 级，读写无压力）
 ```
 
 ## 报表上报
