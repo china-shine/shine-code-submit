@@ -713,10 +713,11 @@ function readZentaoCacheTtlMin(): number | null {
 }
 
 async function getCache(client: Client, cfg: Record<string, any>, refresh = false): Promise<any> {
+  // 有本地缓存就直接复用(不管是否过期)——/report/daily/weekly 读本地秒回,绝不拉禅道;
+  // 禅道更新由 dashboard「更新禅道」按钮(POST /api/zentao-cache/refresh)或显式 refresh 触发。
+  // 仅首次(无缓存)或 refresh=true 才拉禅道。
   const existing = loadJSON<any>(CACHE_PATH, null);
-  const ttl = readZentaoCacheTtlMin();
-  const expired = ttl !== null && existing !== null && (!existing.fetchedAt || minutesSinceISO(existing.fetchedAt) > ttl);
-  if (existing !== null && !refresh && !expired) return existing;
+  if (existing !== null && !refresh) return existing;
   // 1000 上限避开禅道默认 100 截断;filterActive=true 只留「我参与 + 还有剩余工时(left>0)」的项目,
   // 剔除任务全完成/关闭的历史项目,减少噪音(语义对齐 projects 命令默认过滤)。
   const projects = await client.myProjects(1000, true);
