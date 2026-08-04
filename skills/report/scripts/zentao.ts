@@ -697,9 +697,26 @@ function cmdConfig(a: Args): any {
   };
 }
 
+/** 读禅道缓存 TTL(分钟):从 daemon DATA_DIR/settings.json 取 zentaoCacheTtlMin。
+ *  >0 启用过期自动重拉;0/null=禁用(显式,永远复用缓存除非手动 refresh);读不到(文件缺失/损坏)→ 默认 60(对齐 daemon DEFAULTS)。
+ *  zentao.ts 是零依赖独立脚本,不 import daemon 代码,这里直接 readFileSync settings.json。 */
+function readZentaoCacheTtlMin(): number | null {
+  try {
+    const s = JSON.parse(readFileSync(path.join(DATA_DIR, "settings.json"), "utf8"));
+    const v = (s as any)?.zentaoCacheTtlMin;
+    if (typeof v === "number" && v > 0) return Math.floor(v);
+    if (v === 0 || v === null) return null; // 显式禁用
+  } catch {
+    /* 文件不存在/损坏 → 走默认 */
+  }
+  return 60;
+}
+
 async function getCache(client: Client, cfg: Record<string, any>, refresh = false): Promise<any> {
   const existing = loadJSON<any>(CACHE_PATH, null);
-  if (existing !== null && !refresh) return existing;
+  const ttl = readZentaoCacheTtlMin();
+  const expired = ttl !== null && existing !== null && (!existing.fetchedAt || minutesSinceISO(existing.fetchedAt) > ttl);
+  if (existing !== null && !refresh && !expired) return existing;
   const projects = await client.myProjects();
   const pids = cfg.projectIds && cfg.projectIds.length
     ? cfg.projectIds

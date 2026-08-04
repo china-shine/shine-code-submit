@@ -10,6 +10,7 @@ interface Settings {
   reportIntervalMin?: number | null;
   autoUpdate?: boolean | null;
   autoUpdateIntervalMin?: number | null;
+  zentaoCacheTtlMin?: number | null;
   latestVersion?: string | null;
 }
 
@@ -32,6 +33,7 @@ export function SettingsModule() {
   const [intervalStr, setIntervalStr] = useState("");
   const [autoUpdate, setAutoUpdate] = useState(true);
   const [updateIntervalStr, setUpdateIntervalStr] = useState("");
+  const [cacheTtlStr, setCacheTtlStr] = useState("");
   const [currentVersion, setCurrentVersion] = useState("");
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -48,6 +50,7 @@ export function SettingsModule() {
         setIntervalStr(s.reportIntervalMin != null ? String(s.reportIntervalMin) : "");
         setAutoUpdate(s.autoUpdate !== false);
         setUpdateIntervalStr(s.autoUpdateIntervalMin != null ? String(s.autoUpdateIntervalMin) : "");
+        setCacheTtlStr(s.zentaoCacheTtlMin != null ? String(s.zentaoCacheTtlMin) : "");
         setLatestVersion(s.latestVersion ?? null);
         setCurrentVersion(h.version ?? "");
         setLoading(false);
@@ -63,11 +66,13 @@ export function SettingsModule() {
     setMsg(null);
     const iv = parseInt(intervalStr, 10);
     const uiv = parseInt(updateIntervalStr, 10);
+    const ctv = parseInt(cacheTtlStr, 10);
     const body = {
       reportUrl: url.trim() || null,
       reportIntervalMin: Number.isFinite(iv) && iv > 0 ? iv : null,
       autoUpdate,
       autoUpdateIntervalMin: Number.isFinite(uiv) && uiv > 0 ? uiv : null,
+      zentaoCacheTtlMin: Number.isFinite(ctv) && ctv > 0 ? ctv : null,
     };
     try {
       const res = await fetch(base + "/api/settings", {
@@ -81,6 +86,7 @@ export function SettingsModule() {
       setIntervalStr(s.reportIntervalMin != null ? String(s.reportIntervalMin) : "");
       setAutoUpdate(s.autoUpdate !== false);
       setUpdateIntervalStr(s.autoUpdateIntervalMin != null ? String(s.autoUpdateIntervalMin) : "");
+      setCacheTtlStr(s.zentaoCacheTtlMin != null ? String(s.zentaoCacheTtlMin) : "");
       setMsg({ kind: "ok", text: "已保存" });
       setTimeout(() => setMsg(null), 2000);
     } catch {
@@ -177,6 +183,30 @@ export function SettingsModule() {
               </div>
               <div className="field-hint">
                 升级后 daemon 自动重启到新版(版本感知);plugin 需重启 Claude Code 生效。也可命令行手动 <code>shine-worklog update</code>。
+              </div>
+            </section>
+
+            <section className="sum-section">
+              <div className="sum-head">
+                <h3>禅道缓存</h3>
+              </div>
+              <div className="field-row">
+                <label>刷新间隔</label>
+                <input
+                  className="field-input"
+                  type="number"
+                  min={0}
+                  placeholder="60"
+                  value={cacheTtlStr}
+                  onChange={(e) => setCacheTtlStr(e.target.value)}
+                  style={{ flex: "0 0 120px" }}
+                />
+                <span className="field-hint" style={{ padding: 0 }}>
+                  分钟(超过此间隔,下次用 /report、/daily、/weekly 时自动重拉禅道任务与项目;0 = 仅手动刷新)
+                </span>
+              </div>
+              <div className="field-hint">
+                禅道任务/项目缓存(cache.json)默认命中即复用。设了 TTL 后,过期会在下次填报/生成报表时自动重拉,无需手动 refresh。改完无需重启。
               </div>
             </section>
 

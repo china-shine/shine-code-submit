@@ -314,6 +314,11 @@ export function startServer(deps: ServerDeps) {
             ? Math.floor(b.autoUpdateIntervalMin)
             : null;
         }
+        if (typeof b.zentaoCacheTtlMin === "number") {
+          cur.zentaoCacheTtlMin = Number.isFinite(b.zentaoCacheTtlMin) && b.zentaoCacheTtlMin > 0
+            ? Math.floor(b.zentaoCacheTtlMin)
+            : null;
+        }
         writeSettings(cur);
         return json(cur);
       }
