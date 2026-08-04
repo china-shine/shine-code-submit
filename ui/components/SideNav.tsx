@@ -11,6 +11,7 @@ const ITEMS: Array<{ id: ModuleId; label: string; icon: IconName }> = [
   // { id: "stats", label: "统计", icon: "chart" },   // 暂时屏蔽,恢复取消注释即可
   { id: "report", label: "报表", icon: "log" },
   { id: "settings", label: "设置", icon: "sliders" },
+  { id: "zentao", label: "禅道", icon: "inbox" },
   { id: "system", label: "系统", icon: "server" },
 ];
 

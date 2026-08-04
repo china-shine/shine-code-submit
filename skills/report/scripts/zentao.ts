@@ -717,15 +717,22 @@ async function getCache(client: Client, cfg: Record<string, any>, refresh = fals
   const ttl = readZentaoCacheTtlMin();
   const expired = ttl !== null && existing !== null && (!existing.fetchedAt || minutesSinceISO(existing.fetchedAt) > ttl);
   if (existing !== null && !refresh && !expired) return existing;
-  const projects = await client.myProjects();
+  // 1000 上限避开禅道默认 100 截断;filterActive=true 只留「我参与 + 还有剩余工时(left>0)」的项目,
+  // 剔除任务全完成/关闭的历史项目,减少噪音(语义对齐 projects 命令默认过滤)。
+  const projects = await client.myProjects(1000, true);
+  // 遍历每个项目(配了 projectIds 用配置,否则全部 involved)查「我的未关闭任务」(doing/wait),
+  // 再只留「我的任务有未关闭」的项目——剔除「我的任务全关、只剩别人在做」的项目。
   const pids = cfg.projectIds && cfg.projectIds.length
     ? cfg.projectIds
-    : projects.slice(0, 10).map((p: any) => p.id);
+    : projects.map((p: any) => p.id);
+  const tasks = await client.myTasks(pids, new Set(["doing", "wait"]));
+  const taskProjIds = new Set(tasks.map((t: any) => t.project));
+  const activeProjects = projects.filter((p: any) => taskProjIds.has(p.id));
   const cache = {
     fetchedAt: nowISOSeconds(),
-    projects,
-    tasks: await client.myTasks(pids, new Set(["doing", "wait"])),
-    executions: await client.executions(pids),
+    projects: activeProjects,
+    tasks,
+    executions: await client.executions(activeProjects.map((p: any) => p.id)),
     taskDetails: existing?.taskDetails ?? {},
   };
   writeJSON(CACHE_PATH, cache);

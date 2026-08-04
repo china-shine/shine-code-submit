@@ -188,7 +188,7 @@ export function SettingsModule() {
 
             <section className="sum-section">
               <div className="sum-head">
-                <h3>禅道缓存</h3>
+                <h3>禅道</h3>
               </div>
               <div className="field-row">
                 <label>刷新间隔</label>

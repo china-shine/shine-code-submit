@@ -36,6 +36,9 @@ import {
   sumTokens,
 } from "./aggregate";
 import { readSettings, writeSettings } from "./settings";
+import { DATA_DIR } from "../shared/paths";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
 import { autoUpdateIfNeeded } from "../shared/updater";
 import type { Store } from "./store";
 import type { EventBus } from "./bus";
@@ -53,6 +56,41 @@ export interface ServerDeps {
   onWsOpen?: (ws: ServerWebSocket<unknown>) => void;
   onWsClose?: (ws: ServerWebSocket<unknown>) => void;
   shutdown: () => void;
+}
+
+/** 读禅道缓存展示数据:cache.json 内容 + TTL 过期判断 + 禅道地址。仅读本地 JSON,不调禅道。
+ *  供 dashboard「禅道」模块只读展示;expired 与 zentao.ts getCache 的过期口径一致(缺 fetchedAt 亦视为过期)。 */
+function readZentaoCachePayload(): {
+  cache: Record<string, unknown> | null;
+  ttl: number | null;
+  expired: boolean;
+  zentaoUrl: string | null;
+} {
+  const ZENPILOT = join(DATA_DIR, "zenpilot");
+  let cache: Record<string, unknown> | null = null;
+  try {
+    const p = join(ZENPILOT, "cache.json");
+    if (existsSync(p)) cache = JSON.parse(readFileSync(p, "utf8")) as Record<string, unknown>;
+  } catch {
+    /* 损坏 → 视为无缓存 */
+  }
+  const ttl = readSettings().zentaoCacheTtlMin ?? null;
+  let expired = false;
+  if (cache && ttl && ttl > 0) {
+    const fa = cache.fetchedAt;
+    expired = typeof fa !== "string" || (Date.now() - new Date(fa).getTime()) / 60000 > ttl;
+  }
+  let zentaoUrl: string | null = null;
+  try {
+    const cp = join(ZENPILOT, "config.json");
+    if (existsSync(cp)) {
+      const cfg = JSON.parse(readFileSync(cp, "utf8")) as Record<string, unknown>;
+      if (typeof cfg.url === "string") zentaoUrl = cfg.url.replace(/\/+$/, "");
+    }
+  } catch {
+    /* ignore */
+  }
+  return { cache, ttl, expired, zentaoUrl };
 }
 
 export function startServer(deps: ServerDeps) {
@@ -292,6 +330,10 @@ export function startServer(deps: ServerDeps) {
       // 用户设置:GET 读、PUT 写(字段级合并)。目前只有 reportUrl(上报地址)。
       if (path === "/api/settings" && req.method === "GET") {
         return json(readSettings());
+      }
+      // 禅道缓存只读展示:cache.json + TTL 过期判断 + 禅道地址(daemon 不调禅道,仅读本地 JSON)。
+      if (path === "/api/zentao-cache" && req.method === "GET") {
+        return json(readZentaoCachePayload());
       }
       if (path === "/api/settings" && req.method === "PUT") {
         let body: unknown;
