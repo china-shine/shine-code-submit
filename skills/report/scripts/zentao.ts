@@ -709,7 +709,7 @@ function readZentaoCacheTtlMin(): number | null {
   } catch {
     /* 文件不存在/损坏 → 走默认 */
   }
-  return 60;
+  return 300;
 }
 
 async function getCache(client: Client, cfg: Record<string, any>, refresh = false): Promise<any> {

@@ -49,6 +49,8 @@ export function ZentaoCacheModule() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [tab, setTab] = useState<"tasks" | "projects">("tasks");
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -65,6 +67,30 @@ export function ZentaoCacheModule() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  // 手动触发禅道拉取:POST /api/zentao-cache/refresh(daemon spawn zentao.ts refresh,慢 30~60s)。
+  const updateFromZentao = async () => {
+    setRefreshing(true);
+    setRefreshMsg(null);
+    try {
+      const r = await fetch(`${location.origin}/api/zentao-cache/refresh`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const j = (await r.json().catch(() => ({}))) as { ok?: boolean; error?: string; projects?: number; tasks?: number };
+      if (r.ok && j.ok) {
+        setRefreshMsg({ ok: true, text: `已更新:${j.projects ?? 0} 项目 · ${j.tasks ?? 0} 任务` });
+        await load();
+      } else {
+        setRefreshMsg({ ok: false, text: j.error || `HTTP ${r.status}` });
+      }
+    } catch (e) {
+      setRefreshMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setRefreshing(false);
+      setTimeout(() => setRefreshMsg(null), 4000);
+    }
+  };
 
   if (loading && !data) {
     return (
@@ -102,6 +128,16 @@ export function ZentaoCacheModule() {
         <button type="button" className="tab tab-upload" onClick={() => void load()} title="重新读取本地缓存">
           ↻ 刷新
         </button>
+        <button
+          type="button"
+          className="tab tab-upload"
+          disabled={refreshing}
+          onClick={() => void updateFromZentao()}
+          title="登录禅道重新拉取任务/项目(慢,约30~60秒)"
+        >
+          {refreshing ? "更新中…" : "↻ 更新禅道"}
+        </button>
+        {refreshMsg && <span className={refreshMsg.ok ? "field-ok" : "field-err"}>{refreshMsg.text}</span>}
       </div>
 
       {!cache ? (

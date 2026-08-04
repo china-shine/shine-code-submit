@@ -38,7 +38,8 @@ import {
 import { readSettings, writeSettings } from "./settings";
 import { DATA_DIR } from "../shared/paths";
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { autoUpdateIfNeeded } from "../shared/updater";
 import type { Store } from "./store";
 import type { EventBus } from "./bus";
@@ -91,6 +92,69 @@ function readZentaoCachePayload(): {
     /* ignore */
   }
   return { cache, ttl, expired, zentaoUrl };
+}
+
+/** 触发禅道缓存刷新:spawn `bun zentao.ts refresh`(禅道登录/拉取逻辑全在 skill 层 zentao.ts,daemon 只触发)。
+ *  超时 120s;返回刷新结果或错误(如 config.json 未配禅道账号)。 */
+async function refreshZentaoCache(): Promise<
+  | { ok: true; projects: number; tasks: number; executions: number; fetchedAt: string }
+  | { ok: false; error: string }
+> {
+  const zentaoTs = join(
+    dirname(fileURLToPath(new URL(import.meta.url))),
+    "..",
+    "..",
+    "skills",
+    "report",
+    "scripts",
+    "zentao.ts",
+  );
+  if (!existsSync(zentaoTs)) return { ok: false, error: `zentao.ts 未找到: ${zentaoTs}` };
+  let proc: ReturnType<typeof Bun.spawn>;
+  try {
+    proc = Bun.spawn({
+      cmd: [process.execPath, "run", zentaoTs, "refresh"],
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+  } catch (e) {
+    return { ok: false, error: `启动失败: ${e instanceof Error ? e.message : String(e)}` };
+  }
+  const timer = setTimeout(() => {
+    try {
+      proc.kill();
+    } catch {
+      /* ignore */
+    }
+  }, 120_000);
+  let exitCode: number | null;
+  try {
+    exitCode = await proc.exited;
+  } finally {
+    clearTimeout(timer);
+  }
+  const stdout = await new Response(proc.stdout as ReadableStream<Uint8Array>).text();
+  if (exitCode !== 0) {
+    const stderr = await new Response(proc.stderr as ReadableStream<Uint8Array>).text();
+    return { ok: false, error: (stderr || stdout).slice(0, 300) || `exit ${exitCode}` };
+  }
+  try {
+    const parsed = JSON.parse(stdout) as {
+      projects?: number;
+      tasks?: number;
+      executions?: number;
+      fetchedAt?: string;
+    };
+    return {
+      ok: true,
+      projects: parsed.projects ?? 0,
+      tasks: parsed.tasks ?? 0,
+      executions: parsed.executions ?? 0,
+      fetchedAt: parsed.fetchedAt ?? "",
+    };
+  } catch {
+    return { ok: false, error: `输出解析失败: ${stdout.slice(0, 200)}` };
+  }
 }
 
 export function startServer(deps: ServerDeps) {
@@ -334,6 +398,10 @@ export function startServer(deps: ServerDeps) {
       // 禅道缓存只读展示:cache.json + TTL 过期判断 + 禅道地址(daemon 不调禅道,仅读本地 JSON)。
       if (path === "/api/zentao-cache" && req.method === "GET") {
         return json(readZentaoCachePayload());
+      }
+      // 手动触发禅道刷新:spawn zentao.ts refresh(登录禅道重拉,慢;禅道逻辑在 skill 层)。
+      if (path === "/api/zentao-cache/refresh" && req.method === "POST") {
+        return json(await refreshZentaoCache());
       }
       if (path === "/api/settings" && req.method === "PUT") {
         let body: unknown;

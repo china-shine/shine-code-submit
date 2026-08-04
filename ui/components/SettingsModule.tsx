@@ -196,7 +196,7 @@ export function SettingsModule() {
                   className="field-input"
                   type="number"
                   min={0}
-                  placeholder="60"
+                  placeholder="300"
                   value={cacheTtlStr}
                   onChange={(e) => setCacheTtlStr(e.target.value)}
                   style={{ flex: "0 0 120px" }}
