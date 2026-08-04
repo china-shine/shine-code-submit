@@ -18,6 +18,21 @@ description: 汇总当天 Claude Code 会话统计(工时/token/代码量),智�
 
 确定性逻辑(会话采集、防重过滤、分支任务号归属、工时换算、草稿渲染、批量提交)全部在脚本里,AI 只做三件事:语义匹配、生成文案、与用户交互。流程顺序被 collect → plan → render → commit 锁死,render/commit 会拒绝含未决条目的计划。
 
+### 开发时记 summary(省 AI 填空,强烈建议)
+
+**完成一个功能模块后,立即**记一条 summary(不等 /report):
+
+```
+bun "<Base directory>/scripts/zentao.ts" note --work "1. 功能A\n2. 功能B" --task <任务ID>
+```
+
+- `--work`:功能点编号文案(动宾、每条一个功能点,同 commit 的 work 规范)
+- `--task`:关联的禅道任务 ID(开发时已知,如本会话做的归 #77563 就传 77563)
+- `--session`:可选,未传自动取当天最新活跃会话
+- 写入 `~/.zenpilot/projects/<编码项目>/summary-YYYY-MM-DD.json`,taskName/project 从 cache.json 自动补
+
+`plan` 会优先读 summary:**有 summary 的会话直接 `resolved`(置信度 100,跳过 AI 语义匹配 + 文案生成)**,工时仍取 daemon 的 session 活跃时长。开发时都记了,/report 的「AI 填空」步骤基本为空,省掉最耗时的推理。
+
 ### 0. 采集会话(兜底)
 
 ```
@@ -36,7 +51,7 @@ bun "<Base directory>/scripts/zentao.ts" plan
 
 脚本读取当天会话(`sessions.json`)、映射缓存、防重记录,拉取我的禅道任务,输出 `plan.json`。每个条目带状态:
 
-- `resolved` — 归属已定(分支名含任务号/已提交会话的增量补报),只缺 `work` 文案
+- `resolved` — 归属已定:分支名含任务号 / 已提交会话的增量补报 / **开发时 summary 记录**(后者 work+task 已就绪,无需 AI 填)
 - `needs_semantic` — 待语义匹配,附 `candidates` 候选任务列表
 - `already` — 已提交且无新增(增量 < 15 分钟),不再提交
 

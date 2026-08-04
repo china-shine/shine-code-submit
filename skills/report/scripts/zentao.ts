@@ -40,6 +40,7 @@ const PROJECT_DIR = path.join(ZENPILOT_HOME, "projects", encodeProject(PROJECT_C
 const SESSIONS_PATH = path.join(PROJECT_DIR, "sessions.json"); // 按项目
 const SUBMITTED_PATH = path.join(PROJECT_DIR, "submitted.json"); // 按项目
 const PLAN_PATH = path.join(PROJECT_DIR, "plan.json"); // 按项目
+const SUMMARY_PATH = path.join(PROJECT_DIR, `summary-${todayISO()}.json`); // 按项目+日期:开发时 note 写入,plan 直读省 AI 填空
 
 type Args = { cmd: string } & Record<string, string | boolean | undefined>;
 
@@ -761,6 +762,14 @@ async function cmdPlan(client: Client, cfg: Record<string, any>): Promise<any> {
   };
 
   const items: any[] = [];
+  // 开发时 note 写的 summary:有 summary 的 session 直接 resolved(跳过 AI 语义匹配/文案),省 /report 推理
+  const summaryNotes = loadJSON<any[]>(SUMMARY_PATH, []);
+  const notesBySession = new Map<string, any[]>();
+  for (const sn of summaryNotes) {
+    const arr = notesBySession.get(sn.session) ?? [];
+    arr.push(sn);
+    notesBySession.set(sn.session, arr);
+  }
   for (const s of data.sessions) {
     const item: any = {
       session: s.id,
@@ -794,6 +803,28 @@ async function cmdPlan(client: Client, cfg: Record<string, any>): Promise<any> {
           await taskInfo(taskId),
         );
       }
+      items.push(item);
+      continue;
+    }
+    // summary 覆盖:开发时已记 work + task,直接 resolved(工时仍取 session activeMs)
+    const notes = notesBySession.get(s.id) || [];
+    if (notes.length) {
+      const n0 = notes[0];
+      const info = n0.taskName
+        ? { taskName: n0.taskName, project: n0.project, projectName: n0.projectName }
+        : await taskInfo(n0.task);
+      Object.assign(
+        item,
+        {
+          status: "resolved",
+          task: n0.task,
+          work: notes.map((n: any) => n.work).join("\n"),
+          hours: hoursFromMinutes(s.activeMinutes),
+          confidence: 100,
+          reason: "开发时 summary 记录",
+        },
+        info,
+      );
       items.push(item);
       continue;
     }
@@ -966,6 +997,38 @@ async function cmdCommit(client: Client, opts: { dryRun?: boolean; amend?: boole
     results,
     mappings,
   };
+}
+
+/** 开发时记一条功能总结到 summary-YYYY-MM-DD.json(按项目+日期)。
+ *  work=功能点编号文案, task=禅道任务ID, session 未传则取当天最新活跃会话。
+ *  自动从 cache.json 补 taskName/project/projectName。/report plan 直读省 AI 填空。 */
+function cmdNote(a: Args): any {
+  const work = requireStr(a, "work");
+  const task = requireInt(a, "task");
+  let session = a.session !== undefined ? String(a.session) : undefined;
+  if (!session) {
+    const data = loadJSON<{ sessions: any[] }>(SESSIONS_PATH, { sessions: [] });
+    const sessions = Array.isArray(data.sessions) ? data.sessions : [];
+    if (sessions.length === 0) die(`未指定 --session 且无当天会话数据(先 collect): ${SESSIONS_PATH}`);
+    // 取 end 最晚的(最新活跃);end 是 "HH:MM" 字符串,字符串排序即时间序
+    const latest = [...sessions].sort((x, y) => String(y.end ?? "").localeCompare(String(x.end ?? "")))[0];
+    session = latest?.id;
+    if (!session) die("无法从当天会话推断 session,请显式传 --session");
+  }
+  let taskName: string | null = null;
+  let project: number | null = null;
+  let projectName: string | null = null;
+  const cache = loadJSON<any>(CACHE_PATH, null);
+  const t = cache?.tasks?.find((x: any) => x.id === task);
+  if (t) {
+    taskName = t.name ?? null;
+    project = t.project ?? null;
+    projectName = cache?.projects?.find((p: any) => p.id === project)?.name ?? null;
+  }
+  const list = loadJSON<any[]>(SUMMARY_PATH, []);
+  list.push({ session, ts: nowISOSeconds(), work, task, taskName, project, projectName });
+  writeJSON(SUMMARY_PATH, list);
+  return { ok: true, file: SUMMARY_PATH, session, entries: list.length };
 }
 
 function cmdMappings(a: Args): any {
@@ -1415,6 +1478,10 @@ async function main(): Promise<void> {
   }
   if (cmd === "config") {
     console.log(JSON.stringify(cmdConfig(a), null, 2));
+    return;
+  }
+  if (cmd === "note") {
+    console.log(JSON.stringify(cmdNote(a), null, 2));
     return;
   }
   if (cmd === "learn") {
