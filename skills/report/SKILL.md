@@ -74,9 +74,11 @@ bun "<Base directory>/scripts/zentao.ts" plan
 
 ### 2. AI 填空(直接编辑 plan.json)
 
-1. **语义匹配**:对每个 `needs_semantic` 条目,比较 `summary` 与 `candidates` 任务名,选最可能的任务,写入 `task`、`confidence`(0-100)、`reason`(一句话),状态改为 `resolved`。置信度 ≥85 自行确定;<85 或无合理候选时,用 AskUserQuestion 列出候选,固定附带「跳过此会话」和「AI 自动创建任务」选项:
-   - 跳过 → `status: "skipped"`,填 `skipReason`
-   - 自动创建 → 走下面的自动建任务流程,拿到新任务 ID 后填入条目(`task`/`taskName`/`project`/`projectName`),`reason` 标注「本次新建」
+1. **语义匹配**:对每个 `needs_semantic` 条目,比较 `summary` 与 `candidates` 任务名,选最可能的任务,写入 `task`、`confidence`(0-100)、`reason`(一句话),状态改为 `resolved`。置信度 ≥85 自行确定;<85 或无合理候选(匹配失败)时,用 AskUserQuestion 给出以下选项让用户选(按候选情况取舍,AskUserQuestion ≤4 个选项):
+   - **更新禅道缓存后重新匹配** — 候选明显不全/陈旧(仓库映射到的项目候选为空、或禅道新加了任务还没进缓存)时首选:执行 `refresh` 重拉任务/项目 → 重跑 `plan` 重新匹配(新任务会进缓存)
+   - **根据总结创建新任务** — 候选都不对、这是个新方向时:走下面的自动建任务流程(任务名/desc 由会话 summary 生成),拿到新任务 ID 填入条目(`task`/`taskName`/`project`/`projectName`),`reason` 标注「本次新建」
+   - **选某个候选** — 有合理候选(只是置信度低)时:逐个列出 candidates,top1 标 Recommended
+   - **跳过此会话** → `status: "skipped"`,填 `skipReason`
 2. **合并简化 work(激进归纳)**:每个 `resolved` 条目,把 `item.work`(plan 读出的 note 结论拼接)**激进合并简化**写入 `work`:
    - 相似/相关功能**合并成一句话**(如"/report 提速 + 自动记 + dashboard"合一句"实现工时自动填报闭环")
    - 目标条目数:日报 **≤3 条**、周报 **≤5 条**;每条**就一句话核心成果(动宾),不加括号补充技术细节**
@@ -126,7 +128,7 @@ bun "<Base directory>/scripts/zentao.ts" commit        # 支持 --dry-run 预览
 
 ## 注意
 
-- 禅道数据(项目/任务/执行)本地缓存于 `~/.zenpilot/cache.json`(全局),`plan`/`executions` 默认读缓存、不请求禅道(禅道内容一般不变)。仅当用户说任务找不到/数据过期,或语义匹配发现候选明显缺失时,执行 `bun "<Base directory>/scripts/zentao.ts" refresh` 后重跑 plan;`create-task` 新建的任务会自动进缓存
+- 禅道数据(项目/任务/执行)本地缓存于 `cache.json`(`DATA_DIR/zenpilot/`,全局),`plan`/`executions` 默认读缓存、不请求禅道(禅道内容一般不变)。匹配失败(候选不全/陈旧)时,第 2 步 AskUserQuestion 已把「更新缓存后重新匹配」作为显式选项——选它即执行 `bun "<Base directory>/scripts/zentao.ts" refresh` 重拉任务/项目、重跑 plan;用户主动说任务找不到/数据过期时同样跑 refresh;`create-task` 新建的任务会自动进缓存
 - 用户显式要求补报/改报已提交会话时,可把该条目状态改回 `resolved` 绕过防重,但要提醒:禅道已有记录不会被覆盖,只会追加
 - `submit`/`learn` 命令仍保留,用于计划外的手工修正;正常流程一律走 plan → render → commit
 - 禅道 20.7 之前版本的旧请求体由脚本自动降级重试,无需关心

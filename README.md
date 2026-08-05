@@ -51,10 +51,41 @@ Claude Code 共 9 个 hook 事件（[官方清单](https://docs.claude.com/en/do
 工时从"开发中自动攒"到"`/report` 秒级提交"的闭环：
 - **SessionStart** 注入 CLAUDE.md「工时顺手记」规则 → AI 知道每完成功能模块要 note
 - **UserPromptSubmit** 每轮提示"本轮若有代码改动,响应结束前 note"（feedback，无 block/error）；≥30min 未记兜底
-- **note**（`skills/report/scripts/zentao.ts note --work "一句话结论" --task <ID>`）：AI 顺手记一句话精炼结论到 `summary-YYYY-MM-DD.json`，带工时水位（`notedActiveMinutes`，多 note 按时间段拆到各 task）
 - **`/prepare`**：手动批量读 transcript 生成 work+task（补漏）
-- **`/report`**：读 summary 缓存 → AI 综合成 3-5 总结 → 提交禅道（读缓存→总结→提交，跳过最耗时的 AI 填空）；plan 含 cooldown 预判 + increment `>=` 防 work=null
+- **`/report`**：读 summary 缓存 → AI 综合成 ≤3 总结 → 提交禅道（读缓存→总结→提交，跳过最耗时的 AI 填空）
 - **`/daily` `/weekly` `/amend`**：日报 / 周报 / 修正最后一次提交
+
+#### 工时来源与记录缓存（summary）
+
+- **时长** = daemon 记的 session `activeMinutes`（gap-aware 估算实际编码活跃时长，**不是 AI 估**），换算成小时
+- **文案 work + 归属 task** = 开发时 `note` 记到 `summary-YYYY-MM-DD.json` 的一句话结论（按项目 + 日期；**文件名日期取 `sessions.json.date`**，跨午夜报当天会话不错位）；未记的会话才走 AI 语义匹配
+- **note 工时水位**：每条 note 拍快照当时 session 的 `activeMinutes`（`notedActiveMinutes`）。同一会话多条 note 时，按水位**切时间段拆工时到各 task**（段长 = 当前水位 − 上一水位），实现「一个会话干多个任务、工时按段分」
+
+#### 提交逻辑（`plan` → `render` → `commit`）
+
+plan 按 session 产出 item，commit **按 item 粒度**逐条提交——每个 `resolved` item = 一次独立 `POST /tasks/{taskId}/estimate`（`{date, work, consumed=hours, left=剩余-hours}`，禅道 20.7 前自动降级旧请求体）：
+
+| item 状态 | 含义 | 提交时 |
+|---|---|---|
+| `resolved` | 有 note / 分支名含任务号 / 增量补报 | ✅ 逐条 POST |
+| `needs_semantic` | 无归属，待 AI 匹配 | ❌ 拒（归属没定全） |
+| `already` | 已提交且增量 <15min | ⏭ 跳过 |
+| `skipped` | 主动跳过 | ⏭ 跳过 |
+
+**多任务分开提交**（不只按会话）：
+- 多会话各属不同 task → 各一次 POST
+- **单会话多 note、不同 task** → 按水位切成多段，每段一个 item → 多次 POST 到多个 task，工时按时段分配
+- 同一会话多 note 同一 task → 同样按 note 切段，多次 POST 到同一任务（`consumed` 累加、`left` 递减，总工时正确）
+- 已提交会话的**增量补报**不拆：取最后那个 task，水位之后的 note work join 成一条，单次 POST（只交 `activeMinutes − 上次水位` 那段）
+
+**三道闸 + 防重**：
+- commit 前置检查：有 `needs_semantic` / 有 `resolved` 缺 work / 距上次 commit <30min（冷却）→ 拒；per-item `try/catch`，单条失败不挡其他
+- **防重 `submitted.json`**：按 `日期 → 会话 → {tasks, hours, minutes}` 记，`minutes` = 提交时该会话 `activeMinutes`（**水位**）；再报同会话只算水位之后的增量，不重复算已交时段
+- 成功后自动学习 `repo → 禅道项目` 映射（`mappings.json`），下次同仓库自动归属
+
+#### 禅道数据缓存（`cache.json`）
+
+禅道项目/任务/执行本地缓存于 `zenpilot/cache.json`（全局），`plan` 默认读缓存不联网。设了 `zentaoCacheTtlMin`（设置页「禅道 → 刷新间隔」）后**过期自动重拉**——下次 `/report`/`/daily`/`/weekly` 时若缓存超过 TTL 自动联网刷新，无需手动 refresh。
 
 详见各 skill 的 `SKILL.md`。
 
@@ -252,8 +283,9 @@ zenpilot/           禅道工时填报数据（原 ~/.zenpilot/，1.3.0 统一�
   cache.json          禅道任务/执行缓存（减少重复 API 调用）
   projects/<编码cwd>/ 按项目隔离（编码 = cwd 非字母数字→"-"，对齐 ~/.claude/projects/ 编码）
     plan.json           当天提交计划（每次 plan 覆盖，只存当天；items 含 status/work/taskName/hours）
-    sessions.json       当天从 daemon 采集的会话（每次 collect 覆盖，只存当天；算工时用）
-    submitted.json      防重 + amend 索引（按日期 key 累积，~400B/天线性增长；只增不删，几年才 MB 级，读写无压力）
+    sessions.json       当天从 daemon 采集的会话（每次 collect 覆盖，只存当天；算工时用；其 date 字段定 summary 文件名）
+    summary-YYYY-MM-DD.json  开发时 note 积累的 work+task 结论（按日期，文件名日期取 sessions.json.date 防跨午夜错位；每条带 notedActiveMinutes 水位，多 note 按水位拆工时到各 task）
+    submitted.json      防重 + amend 索引（按 日期→会话→{tasks,hours,minutes 水位} 累积；minutes 是提交时 activeMinutes 水位，再报同会话只补增量）
 ```
 
 ## 报表上报

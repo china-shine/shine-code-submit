@@ -996,9 +996,14 @@ async function cmdPlan(client?: Client, cfg?: Record<string, any>): Promise<any>
     }
     item.hours = hoursFromMinutes(s.activeMinutes);
     const m = /task-(\d+)/.exec(s.branch || "");
+    // 手动分支→任务映射(/mappings --branch --task 设,键 `${repo}:${branch}`):分支名无 task 号时
+    // 用它直接归属,免落到 needs_semantic。优先级:summary note > 分支 task 号 > branchToTask > 语义匹配
+    const btid = mappings.branchToTask ? mappings.branchToTask[`${s.repo}:${s.branch}`] : undefined;
     if (m) {
       const tid = parseInt(m[1], 10);
       Object.assign(item, { status: "resolved", task: tid, confidence: 95, reason: "分支名含任务号" }, await taskInfo(tid));
+    } else if (btid) {
+      Object.assign(item, { status: "resolved", task: btid, confidence: 95, reason: "branchToTask 手动映射" }, await taskInfo(btid));
     } else {
       const pid = mappings.repoToProject ? mappings.repoToProject[s.repo] : undefined;
       const cands = tasks.filter((t: any) => pid == null || t.project === pid);
