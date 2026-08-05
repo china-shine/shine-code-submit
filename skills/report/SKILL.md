@@ -11,12 +11,11 @@ description: 汇总当天 Claude Code 会话统计(工时/token/代码量),智�
 
 ## 前置检查
 
-1. 运行 `bun "<Base directory>/scripts/zentao.ts" check`,确认配置有效并输出当前登录用户。
-   失败时引导用户先运行 `/shine-worklog:setup` 完成禅道配置,然后停止。
+配置一般在 setup 时已就绪,直接跑 plan。若 plan 报配置/登录错,再 `bun "<Base directory>/scripts/zentao.ts" check` 排查(或 `/shine-worklog:setup`)。
 
 ## 流程
 
-确定性逻辑(会话采集、防重过滤、分支任务号归属、工时换算、草稿渲染、批量提交)全部在脚本里,AI 只做三件事:**把积累的 note 结论归纳成总结性 work**、语义匹配(无 note 时归属)、与用户交互。流程顺序 collect → plan → **AI 综合 work** → render → commit,render/commit 会拒绝含未决条目的计划。
+**读缓存 → 总结 → 提交**:plan 一步读 summary(积累的 note 结论)+ 算增量工时 + 防重 + cooldown 预判;AI 把 note 结论归纳成 3-5 总结性 work;render 确认后 commit。流程顺序 **plan → AI 总结 work → render → 确认 → commit**。`plan.cooldown` 非空时告知用户等待(不 commit);全 already 时无需提交。
 
 ### 准备阶段(建议先跑 /prepare,让本流程秒级)
 
@@ -59,27 +58,19 @@ bun "<Base directory>/scripts/zentao.ts" note --work "一句话:这段工作的�
 
 `plan` 会优先读 summary:**有 summary 的会话直接 `resolved`(置信度 100,跳过 AI 语义匹配 + 文案生成)**,工时仍取 daemon 的 session 活跃时长。开发时都记了,/report 的「AI 填空」步骤基本为空,省掉最耗时的推理。
 
-### 0. 采集会话(兜底)
-
-```
-bun "<Base directory>/scripts/zentao.ts" collect
-```
-
-`sessions.json` 现由 **Stop hook**(插件根 `hooks/hooks.json`)在每轮结束后,从 transcript(`~/.claude/projects/<编码cwd>/<uuid>.jsonl`)自动挖掘真实会话写入。本步为兜底:无 hook 或首次运行时确保含当前会话、数据最新。collect **不请求禅道**,纯本地。
-
-> hook 模式(带 stdin)只挖当前 transcript 并 upsert,很快;无 stdin 时全量扫描当天所有项目。两种都幂等。
-
-### 1. 生成计划
+### 1. plan(读缓存:summary + 工时 + 防重 + cooldown 预判)
 
 ```
 bun "<Base directory>/scripts/zentao.ts" plan
 ```
 
-脚本读取当天会话(`sessions.json`)、映射缓存、防重记录,拉取我的禅道任务,输出 `plan.json`。每个条目带状态:
+一步读 `sessions.json`(Stop hook 每轮自动从 transcript 挖掘写入,**不需主动 collect**)+ summary + submitted,输出 `plan.json` + 返回 `cooldown`。按返回分三个分支:
 
-- `resolved` — 归属已定:分支名含任务号 / 已提交会话的增量补报 / **开发时 summary 记录**(后者 work+task 已就绪,无需 AI 填)
-- `needs_semantic` — 待语义匹配,附 `candidates` 候选任务列表
-- `already` — 已提交且无新增(增量 < 15 分钟),不再提交
+- **`cooldown` 非空**(距上次提交<30min):告知用户"距上次提交需等 `waitMinutes` 分钟",**停止,不 render/commit**。
+- **全 `already`**(已提交且增量<15min):无需提交,render 空草稿说明本次无需。
+- **有 `resolved`**:进第 2 步(AI 总结 work)。`resolved` = 分支名含任务号 / 已提交增量补报 / summary 记录(work+task 已就绪);`needs_semantic`(无 summary,附 candidates)罕见,走下面的语义匹配。
+
+> 防 `work=null`:已提交会话的增量补报,work 取"提交水位之后记的新 note";若为 null 说明这段没记 note(或水位时序),AI 据 note/上下文补一句总结写 plan.json。
 
 ### 2. AI 填空(直接编辑 plan.json)
 

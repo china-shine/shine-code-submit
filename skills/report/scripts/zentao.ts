@@ -909,7 +909,7 @@ async function cmdPlan(client?: Client, cfg?: Record<string, any>): Promise<any>
         // 增量 work 只用"上次提交水位之后"记的新 note(notedActiveMinutes > rec.minutes);
         // 无新 note → null(让 auto/render 的缺 work 检查拦下 AI 填),不退化用已提交的旧 note(避免陈旧文案)
         const submittedMin = rec.minutes ?? 0;
-        const newIncNotes = waterNotes(incNotes).filter((n: any) => (Number(n.notedActiveMinutes) || 0) > submittedMin);
+        const newIncNotes = waterNotes(incNotes).filter((n: any) => (Number(n.notedActiveMinutes) || 0) >= submittedMin);
         Object.assign(
           item,
           {
@@ -1011,7 +1011,16 @@ async function cmdPlan(client?: Client, cfg?: Record<string, any>): Promise<any>
 
   const plan = { date, draftSeq: 0, items };
   writeJSON(PLAN_PATH, plan);
-  return plan;
+  // cooldown 预判:返回给调用方(SKILL 据此决定是否 render/commit,避免 commit 失败再查)
+  const cdMeta = (submittedAll[date] || {})._meta || {};
+  let cooldown: { waitMinutes: number; lastCommitAt: string } | null = null;
+  if (cdMeta.lastCommitAt) {
+    const elapsed = minutesSinceISO(cdMeta.lastCommitAt);
+    if (elapsed < COMMIT_COOLDOWN_MINUTES) {
+      cooldown = { waitMinutes: Math.trunc(COMMIT_COOLDOWN_MINUTES - elapsed) + 1, lastCommitAt: cdMeta.lastCommitAt };
+    }
+  }
+  return { ...plan, cooldown };
 }
 
 function cmdRender(): string {

@@ -58,6 +58,18 @@ async function main(): Promise<void> {
   //     Claude Code 的 Stop 只把 stdin 喂给一个进程，故由本 hook 读一次后转发（不能在 hooks.json 挂两条 command）。
   //     detached + unref，不阻塞；失败一律吞掉，绝不影响 hook 退出码。
   if (event.type === "Stop") {
+    // 对话结束自动汇总判断:block 让 AI 判断本轮与项目相关性+完成度,相关且完成模块则 note;
+    // stop_hook_active(上次 block 过)→ 不 block(防循环,真停)。forkZenCollect 仍跑(detached)。
+    const stopHookActive = !!((event.payload as Record<string, unknown> | null)?.stop_hook_active);
+    if (!stopHookActive) {
+      process.stdout.write(
+        JSON.stringify({
+          decision: "block",
+          reason:
+            '[shine-worklog] 本轮对话结束。判断:①是否与当前项目相关 ②相关则本轮是否完成了一个值得记的功能模块(有明确成果,非调试/试错/未完成)。两者满足→用 note 记一句话结论(bun skills/report/scripts/zentao.ts note --work "一句话:本轮核心成果" --task <禅道任务ID>);否则(不相关/调试/未完成)跳过不记。记完或跳过后结束,不要重复记、不要记空内容。',
+        }),
+      );
+    }
     try {
       forkZenCollect(event.cwd, stdinRaw);
     } catch {
