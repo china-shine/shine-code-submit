@@ -14,6 +14,13 @@ interface Settings {
   latestVersion?: string | null;
 }
 
+interface ZentaoConfig {
+  url?: string;
+  account?: string;
+  hasPassword?: boolean;
+  projectIds?: string[];
+}
+
 const SAVE_BTN: React.CSSProperties = {
   background: "#4f8cff",
   color: "#fff",
@@ -34,6 +41,10 @@ export function SettingsModule() {
   const [autoUpdate, setAutoUpdate] = useState(true);
   const [updateIntervalStr, setUpdateIntervalStr] = useState("");
   const [cacheTtlStr, setCacheTtlStr] = useState("");
+  const [zentaoUrl, setZentaoUrl] = useState("");
+  const [zentaoAccount, setZentaoAccount] = useState("");
+  const [zentaoPassword, setZentaoPassword] = useState("");
+  const [hasZentaoPassword, setHasZentaoPassword] = useState(false);
   const [currentVersion, setCurrentVersion] = useState("");
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -44,8 +55,10 @@ export function SettingsModule() {
     Promise.all([
       api<Settings>("/api/settings"),
       fetch(base + "/api/health").then((r) => r.json() as Promise<{ version?: string }>),
+      // 禅道配置单独 catch:旧 daemon 无此路由(404)时给空默认,不拖垮整个设置页
+      api<ZentaoConfig>("/api/zentao-config").catch(() => ({}) as ZentaoConfig),
     ])
-      .then(([s, h]) => {
+      .then(([s, h, z]) => {
         setUrl(s.reportUrl ?? "");
         setIntervalStr(s.reportIntervalMin != null ? String(s.reportIntervalMin) : "");
         setAutoUpdate(s.autoUpdate !== false);
@@ -53,6 +66,10 @@ export function SettingsModule() {
         setCacheTtlStr(s.zentaoCacheTtlMin != null ? String(s.zentaoCacheTtlMin) : "");
         setLatestVersion(s.latestVersion ?? null);
         setCurrentVersion(h.version ?? "");
+        setZentaoUrl(z.url ?? "");
+        setZentaoAccount(z.account ?? "");
+        setHasZentaoPassword(!!z.hasPassword);
+        setZentaoPassword("");
         setLoading(false);
       })
       .catch(() => {
@@ -87,7 +104,32 @@ export function SettingsModule() {
       setAutoUpdate(s.autoUpdate !== false);
       setUpdateIntervalStr(s.autoUpdateIntervalMin != null ? String(s.autoUpdateIntervalMin) : "");
       setCacheTtlStr(s.zentaoCacheTtlMin != null ? String(s.zentaoCacheTtlMin) : "");
-      setMsg({ kind: "ok", text: "已保存" });
+
+      // 禅道账号配置(与 settings 同处保存):url/account 恒写,password 非空才更新(留空=不改)
+      // 单独 catch:settings 已存,此步失败(旧 daemon 无路由)只提示、不判整次保存失败
+      let zentaoSaved = true;
+      try {
+        const zbody: Record<string, string> = { url: zentaoUrl.trim(), account: zentaoAccount.trim() };
+        if (zentaoPassword) zbody.password = zentaoPassword;
+        const zres = await fetch(base + "/api/zentao-config", {
+          method: "PUT",
+          headers: { Authorization: "Bearer " + token, "content-type": "application/json" },
+          body: JSON.stringify(zbody),
+        });
+        if (!zres.ok) throw new Error(String(zres.status));
+        const z = (await zres.json()) as ZentaoConfig;
+        setZentaoUrl(z.url ?? "");
+        setZentaoAccount(z.account ?? "");
+        setHasZentaoPassword(!!z.hasPassword);
+        setZentaoPassword("");
+      } catch {
+        zentaoSaved = false;
+      }
+
+      setMsg({
+        kind: zentaoSaved ? "ok" : "err",
+        text: zentaoSaved ? "已保存" : "设置已保存,禅道配置未保存(升级 daemon 后可用)",
+      });
       setTimeout(() => setMsg(null), 2000);
     } catch {
       setMsg({ kind: "err", text: "保存失败,请重试" });
@@ -189,6 +231,47 @@ export function SettingsModule() {
             <section className="sum-section">
               <div className="sum-head">
                 <h3>禅道</h3>
+              </div>
+              <div className="field-row">
+                <label>禅道地址</label>
+                <input
+                  className="field-input"
+                  type="url"
+                  placeholder="https://easy.shine.com.cn"
+                  value={zentaoUrl}
+                  onChange={(e) => setZentaoUrl(e.target.value)}
+                  spellCheck={false}
+                />
+              </div>
+              <div className="field-row">
+                <label>账号</label>
+                <input
+                  className="field-input"
+                  type="text"
+                  placeholder="禅道登录账号"
+                  value={zentaoAccount}
+                  onChange={(e) => setZentaoAccount(e.target.value)}
+                  spellCheck={false}
+                  autoComplete="off"
+                />
+              </div>
+              <div className="field-row">
+                <label>密码</label>
+                <input
+                  className="field-input"
+                  type="password"
+                  placeholder={hasZentaoPassword ? "已配置(留空不修改)" : "禅道登录密码"}
+                  value={zentaoPassword}
+                  onChange={(e) => setZentaoPassword(e.target.value)}
+                  spellCheck={false}
+                  autoComplete="new-password"
+                />
+                <span className="field-hint" style={{ padding: 0 }}>
+                  {hasZentaoPassword ? "已设置密码,改密码才填,留空保持不变" : "首次填写"}
+                </span>
+              </div>
+              <div className="field-hint">
+                与 setup 写入同一位置(DATA_DIR/zenpilot/config.json),配置后 /report、/daily、/weekly 据此连禅道。已配置的字段会显示出来,密码仅显示「已配置」。
               </div>
               <div className="field-row">
                 <label>刷新间隔</label>

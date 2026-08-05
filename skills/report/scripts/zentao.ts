@@ -40,7 +40,11 @@ const PROJECT_DIR = path.join(ZENPILOT_HOME, "projects", encodeProject(PROJECT_C
 const SESSIONS_PATH = path.join(PROJECT_DIR, "sessions.json"); // 按项目
 const SUBMITTED_PATH = path.join(PROJECT_DIR, "submitted.json"); // 按项目
 const PLAN_PATH = path.join(PROJECT_DIR, "plan.json"); // 按项目
-const SUMMARY_PATH = path.join(PROJECT_DIR, `summary-${todayISO()}.json`); // 按项目+日期:开发时 note 写入,plan 直读省 AI 填空
+// summary 文件按「会话日期」(sessions.json.date)命名,而非今天——防跨午夜报当天会话时
+// note 写到昨天、plan 读今天(空)导致 work=null 的错位。note/plan 都用 summaryPathFor(<会话日期>)。
+function summaryPathFor(date: string): string {
+  return path.join(PROJECT_DIR, `summary-${date}.json`);
+}
 
 type Args = { cmd: string } & Record<string, string | boolean | undefined>;
 
@@ -802,7 +806,14 @@ async function getCache(client: Client, cfg: Record<string, any>, refresh = fals
   // 禅道更新由 dashboard「更新禅道」按钮(POST /api/zentao-cache/refresh)或显式 refresh 触发。
   // 仅首次(无缓存)或 refresh=true 才拉禅道。
   const existing = getCacheLocal();
-  if (existing !== null && !refresh) return existing;
+  if (existing !== null && !refresh) {
+    // TTL 过期自动刷新:过期则继续联网拉(自动刷新),未过期秒回
+    const ttl = Number(loadJSON<any>(path.join(DATA_DIR, "settings.json"), {}).zentaoCacheTtlMin) || 0;
+    const fa = (existing as any).fetchedAt;
+    const expired = ttl > 0 && (typeof fa !== "string" || (Date.now() - new Date(fa).getTime()) / 60000 > ttl);
+    if (!expired) return existing;
+    // TTL 过期:继续往下联网拉(自动刷新)
+  }
   // 1000 上限避开禅道默认 100 截断;filterActive=true 只留「我参与 + 还有剩余工时(left>0)」的项目,
   // 剔除任务全完成/关闭的历史项目,减少噪音(语义对齐 projects 命令默认过滤)。
   const projects = await client.myProjects(1000, true);
@@ -876,7 +887,8 @@ async function cmdPlan(client?: Client, cfg?: Record<string, any>): Promise<any>
 
   const items: any[] = [];
   // 开发时 note 写的 summary:有 summary 的 session 直接 resolved(跳过 AI 语义匹配/文案),省 /report 推理
-  const summaryNotes = loadJSON<any[]>(SUMMARY_PATH, []);
+  // 按会话日期(sessions.json.date)读 summary,防跨午夜报当天会话时读到今天空文件
+  const summaryNotes = loadJSON<any[]>(summaryPathFor(date), []);
   const notesBySession = new Map<string, any[]>();
   for (const sn of summaryNotes) {
     const arr = notesBySession.get(sn.session) ?? [];
@@ -1230,20 +1242,22 @@ function cmdNote(a: Args): any {
   // 多 note 水位:拍快照当前 session 的 activeMinutes,供 cmdPlan 按时间段拆工时到各 task。
   // 老 note 无此字段 → cmdPlan 端判否退化单 item。sessions.json 由 Stop hook 每轮刷新,此处读上一轮值够用。
   let notedActiveMinutes: number | null = null;
+  let summaryDate = todayISO();
   try {
     const sd = loadJSON<{ sessions: any[]; date?: string }>(SESSIONS_PATH, { sessions: [] });
-    // 只在当天 sessions 上拍水位;跨午夜 sessions.json 还是昨天的 → 拍错水位,退化 null
-    if (sd.date === todayISO()) {
-      const found = (Array.isArray(sd.sessions) ? sd.sessions : []).find((x: any) => x.id === session);
-      if (found && typeof found.activeMinutes === "number") notedActiveMinutes = found.activeMinutes;
-    }
+    // summary 按 sessions.json.date 命名:跨午夜报当天会话时 date 是当天,sessions.json 仍持有该会话,
+    // note 落到当天的 summary(与 plan 读取同路径)。不强制 sd.date===今天,否则跨午夜拍不到水位退化 null。
+    if (typeof sd.date === "string") summaryDate = sd.date;
+    const found = (Array.isArray(sd.sessions) ? sd.sessions : []).find((x: any) => x.id === session);
+    if (found && typeof found.activeMinutes === "number") notedActiveMinutes = found.activeMinutes;
   } catch {
     /* null:cmdPlan 退化老行为 */
   }
-  const list = loadJSON<any[]>(SUMMARY_PATH, []);
+  const smp = summaryPathFor(summaryDate);
+  const list = loadJSON<any[]>(smp, []);
   list.push({ session, ts: nowISOSeconds(), work, task, taskName, project, projectName, notedActiveMinutes });
-  writeJSON(SUMMARY_PATH, list);
-  return { ok: true, file: SUMMARY_PATH, session, entries: list.length };
+  writeJSON(smp, list);
+  return { ok: true, file: smp, session, entries: list.length };
 }
 
 /** 提前准备:collect→plan(本地)→挑 pending→附 transcript 信号。把 /report 最慢的 AI 填空前置到这里。

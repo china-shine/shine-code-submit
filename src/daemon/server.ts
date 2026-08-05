@@ -37,7 +37,7 @@ import {
 } from "./aggregate";
 import { readSettings, writeSettings } from "./settings";
 import { DATA_DIR } from "../shared/paths";
-import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { autoUpdateIfNeeded } from "../shared/updater";
@@ -402,6 +402,28 @@ export function startServer(deps: ServerDeps) {
       if (path === "/api/report" && req.method === "GET") {
         const since = num(url.searchParams.get("since")) ?? 0;
         return json(await buildReport(store, since));
+      }
+
+      // 禅道配置(读/写 DATA_DIR/zenpilot/config.json,与 setup 同位置)
+      if (path === "/api/zentao-config" && req.method === "GET") {
+        const cp = join(DATA_DIR, "zenpilot", "config.json");
+        try {
+          const cfg = JSON.parse(readFileSync(cp, "utf8"));
+          return json({ url: cfg.url ?? "", account: cfg.account ?? "", hasPassword: !!cfg.password, projectIds: cfg.projectIds ?? [] });
+        } catch {
+          return json({ url: "", account: "", hasPassword: false, projectIds: [] });
+        }
+      }
+      if (path === "/api/zentao-config" && req.method === "PUT") {
+        const cp = join(DATA_DIR, "zenpilot", "config.json");
+        const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
+        const cur = existsSync(cp) ? (JSON.parse(readFileSync(cp, "utf8")) as Record<string, unknown>) : {};
+        if (typeof body.url === "string") cur.url = body.url.replace(/\/+$/, "");
+        if (typeof body.account === "string") cur.account = body.account;
+        if (typeof body.password === "string" && body.password) cur.password = body.password; // 非空才更新(留空=不改)
+        mkdirSync(dirname(cp), { recursive: true });
+        writeFileSync(cp, JSON.stringify(cur, null, 2) + "\n", "utf8");
+        return json({ ok: true, url: cur.url, account: cur.account, hasPassword: !!cur.password });
       }
 
       // 手动上报:构建报表并 POST 到 settings.reportUrl(与定时器同一逻辑)。
