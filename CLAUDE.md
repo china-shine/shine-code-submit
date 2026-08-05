@@ -28,13 +28,13 @@ bun skills/report/scripts/zentao.ts note --work "一句话:这段工作的核心
 - 不确定 → **跳过本次 note**，不要瞎猜；下个模块再说，或问用户"今天在做哪些禅道任务"。
 - 不知道任何 task ID → 先 `/shine-worklog:prepare` 看候选任务列表。
 
-### 对话结束自动记(Stop hook)
+### 每轮自觉记(UserPromptSubmit 提示)
 
-每轮对话结束(Stop)hook 会 block 让你判断本轮:
-- **相关 + 完成有成果的功能模块** → note 记一句话结论(`--work "一句话:本轮核心成果" --task <ID>`)
-- **不相关(闲聊/别的项目)/调试试错/未完成** → 跳过不记
+每轮你发消息时 hook 会提示"本轮若有代码改动,响应结束前 note"。你在**响应里**自觉判断:
+- **相关 + 完成有成果的功能模块** → 响应结束前 note 记一句话结论(`--work "一句话:本轮核心成果" --task <ID>`)
+- **不相关(闲聊/别的项目)/调试试错/未完成/纯问答** → 跳过不记
 
-记完或跳过后结束(第二次 Stop 真停,不循环,不重复记)。工时在每轮对话结束自动攒好,`/report` 直接综合提交——你不用手动 note 或 /prepare。
+在响应里顺手记(不等对话结束),`/report` 直接综合提交——你不用手动 note 或 /prepare。
 
 ### 收到 `[shine-worklog]` 提醒怎么办
 UserPromptSubmit hook 检测到 ≥30 分钟未记工时时会注入 system reminder：

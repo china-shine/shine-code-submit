@@ -57,19 +57,9 @@ async function main(): Promise<void> {
   // 2.5 Stop 事件：fork ZenPilot collect（合并进来的禅道工时填报 skill），把同一份 stdin 转发给子进程。
   //     Claude Code 的 Stop 只把 stdin 喂给一个进程，故由本 hook 读一次后转发（不能在 hooks.json 挂两条 command）。
   //     detached + unref，不阻塞；失败一律吞掉，绝不影响 hook 退出码。
-  if (event.type === "Stop") {
-    // 对话结束自动汇总判断:block 让 AI 判断本轮与项目相关性+完成度,相关且完成模块则 note;
-    // stop_hook_active(上次 block 过)→ 不 block(防循环,真停)。forkZenCollect 仍跑(detached)。
-    const stopHookActive = !!((event.payload as Record<string, unknown> | null)?.stop_hook_active);
-    if (!stopHookActive) {
-      process.stdout.write(
-        JSON.stringify({
-          decision: "block",
-          reason:
-            '[shine-worklog] 本轮对话结束。判断:①是否与当前项目相关 ②相关则本轮是否完成了一个值得记的功能模块(有明确成果,非调试/试错/未完成)。两者满足→用 note 记一句话结论(bun skills/report/scripts/zentao.ts note --work "一句话:本轮核心成果" --task <禅道任务ID>);否则(不相关/调试/未完成)跳过不记。记完或跳过后结束,不要重复记、不要记空内容。',
-        }),
-      );
-    }
+  // Stop | SubagentStop:不 block(避免 Claude Code "blocking error" 显示);仅 forkZenCollect 采集 session。
+  // "对话结束记"改由 UserPromptSubmit(detectAndRemind)每轮提示,让 AI 在响应里自觉记,无需 block 强制。
+  if (event.type === "Stop" || event.type === "SubagentStop") {
     try {
       forkZenCollect(event.cwd, stdinRaw);
     } catch {
@@ -300,6 +290,9 @@ function forkZenCollect(cwd: string, stdinRaw: string): void {
 function detectAndRemind(event: HookEvent): void {
   const cwd = event.cwd;
   if (!cwd) return;
+  // base:每轮提示"本轮若有代码改动,响应结束前 note"(替代 Stop block,无 error 显示;AI 在响应里自觉记)
+  let msg =
+    "[shine-worklog] 本轮若有代码改动,响应结束前用 note 记一句话结论(--work \"一句话:本轮核心成果\" --task <禅道任务ID>);不确定 task/纯调试/纯问答跳过,不记空内容。";
   const projectDir = join(DATA_DIR, "zenpilot", "projects", encodeProject(cwd));
   const today = todayISO();
   const sessionsPath = join(projectDir, "sessions.json");
@@ -366,20 +359,62 @@ function detectAndRemind(event: HookEvent): void {
     }
   }
 
-  if (totalUnnoted < THRESHOLD || offenders.length === 0) return; // 静默 exit 0
-
-  // msg 是 CLAUDE.md「工时顺手记」规则的兜底简版(SessionStart 受 bug #16538 影响不生效时,靠此自包含提醒);
-  // note 命令格式/口径变更需与 CLAUDE.md 两处同步
-  const lines = offenders.slice(0, 3).map((o) => `· 会话 ${o.id}（branch ${o.branch ?? "?"}）：约 ${o.minutes} 分钟`);
-  const msg =
-    `[shine-worklog] 检测到今日有约 ${totalUnnoted} 分钟工作未记入 summary：\n${lines.join("\n")}\n` +
-    `若刚完成一个功能模块，记一条：\n` +
-    `  bun skills/report/scripts/zentao.ts note --work "1. 动宾功能点A\\n2. 功能点B" --task <禅道任务ID>\n` +
-    `（--session 不传自动取最新会话；脚本按水位拆工时，多次 note 不重复算；一个 task 一条 note）\n` +
-    `task：上下文明确就用对应任务 ID；不确定就跳过（别瞎猜）。还在调试/试错或不确定 task 时忽略本提醒，不要为消提醒记空内容。`;
+  // 每轮都输出 base(开头已设);≥30min 未记则追加未记信息(detectAndRemind 原兜底)
+  if (totalUnnoted >= THRESHOLD && offenders.length > 0) {
+    const lines = offenders.slice(0, 3).map((o) => `· 会话 ${o.id}（branch ${o.branch ?? "?"}）：约 ${o.minutes} 分钟`);
+    msg += `\n另:检测到今日有约 ${totalUnnoted} 分钟工作未记入 summary：\n${lines.join("\n")}\n若刚完成一个功能模块,补记一条。`;
+  }
   process.stdout.write(
     JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: msg } }),
   );
+}
+
+/** 本轮(Stop 前)是否有代码改动:本轮 = 最近一次"用户真实输入"(role:user 且非 tool_result)之后到末尾。
+ *  在本轮里找 tool_use Edit/Write/MultiEdit。无代码改动(纯问答/讨论/审查)→ false(不 block 打扰);有→ true。 */
+function lastTurnHasCodeChange(transcriptPath: string): boolean {
+  try {
+    const raw = readFileSync(transcriptPath, "utf8");
+    const lines = raw.split("\n").filter((l) => l.trim());
+    // 从后往前找最近"用户真实输入"(排除 tool_result,它也是 role:user 但是工具结果)
+    let userIdx = 0;
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i];
+      if (!line) continue;
+      try {
+        const ev = JSON.parse(line);
+        if (ev.message?.role !== "user") continue;
+        const c = ev.message.content;
+        const isToolResult = Array.isArray(c) && c.some((b: any) => b?.type === "tool_result");
+        if (!isToolResult) {
+          userIdx = i;
+          break;
+        }
+      } catch {
+        /* skip */
+      }
+    }
+    // 本轮(userIdx 之后)找代码改动 tool_use
+    for (let i = userIdx; i < lines.length; i++) {
+      const line = lines[i];
+      if (!line) continue;
+      let ev: any;
+      try {
+        ev = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      const content = ev.message?.content;
+      if (!Array.isArray(content)) continue;
+      for (const b of content) {
+        if (b?.type === "tool_use" && (b.name === "Edit" || b.name === "Write" || b.name === "MultiEdit")) {
+          return true;
+        }
+      }
+    }
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 /** 读插件根 CLAUDE.md（规则源），SessionStart 注入 additionalContext 教 AI 顺手 note（插件级：所有装插件项目生效）。

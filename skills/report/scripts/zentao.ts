@@ -906,7 +906,7 @@ async function cmdPlan(client?: Client, cfg?: Record<string, any>): Promise<any>
         // 增量补报:task 沿用原提交;work 优先取该会话的 summary-note(若有),免去 AI 填空,
         // 让 auto 一键能跑通;无 summary-note 则留 null,由 auto/render 的缺 work 检查拦下
         const incNotes = notesBySession.get(s.id) || [];
-        // 增量 work 只用"上次提交水位之后"记的新 note(notedActiveMinutes > rec.minutes);
+        // 增量 work 只用"上次提交水位(含)之后"记的新 note(notedActiveMinutes >= rec.minutes,含==防 sessions 滞后导致 work=null);
         // 无新 note → null(让 auto/render 的缺 work 检查拦下 AI 填),不退化用已提交的旧 note(避免陈旧文案)
         const submittedMin = rec.minutes ?? 0;
         const newIncNotes = waterNotes(incNotes).filter((n: any) => (Number(n.notedActiveMinutes) || 0) >= submittedMin);
