@@ -37,7 +37,7 @@ import {
 } from "./aggregate";
 import { readSettings, writeSettings } from "./settings";
 import { DATA_DIR } from "../shared/paths";
-import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync, unlinkSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { autoUpdateIfNeeded } from "../shared/updater";
@@ -482,6 +482,15 @@ export function startServer(deps: ServerDeps) {
         const html = readReportHtml(`周报-${wm[1]}.html`);
         if (!html) return json({ error: "not found" }, 404);
         return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
+      }
+      // DELETE 日报/周报(删 DATA_DIR/reports/ 文件)
+      const dmDel = path.match(/^\/api\/reports\/daily\/(\d{4}-\d{2}-\d{2})$/);
+      if (dmDel && req.method === "DELETE") {
+        try { unlinkSync(join(DATA_DIR, "reports", `日报-${dmDel[1]}.html`)); return json({ ok: true }); } catch { return json({ error: "not found" }, 404); }
+      }
+      const wmDel = path.match(/^\/api\/reports\/weekly\/(\d{4}-\d{2}-\d{2}~\d{4}-\d{2}-\d{2})$/);
+      if (wmDel && req.method === "DELETE") {
+        try { unlinkSync(join(DATA_DIR, "reports", `周报-${wmDel[1]}.html`)); return json({ ok: true }); } catch { return json({ error: "not found" }, 404); }
       }
 
       return json({ error: "not found" }, 404);
