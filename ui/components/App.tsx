@@ -9,6 +9,8 @@ import { StatsModule } from "./StatsModule";
 import { ReportModule } from "./ReportModule";
 import { SettingsModule } from "./SettingsModule";
 import { ZentaoCacheModule } from "./ZentaoCacheModule";
+import { DailyReportModule } from "./DailyReportModule";
+import { WeeklyReportModule } from "./WeeklyReportModule";
 import { SystemModule } from "./SystemModule";
 
 /** 模块路由：按 activeModule 渲染对应模块。 */
@@ -31,6 +33,10 @@ function ModuleRouter() {
       return <SettingsModule />;
     case "zentao":
       return <ZentaoCacheModule />;
+    case "daily":
+      return <DailyReportModule />;
+    case "weekly":
+      return <WeeklyReportModule />;
     case "system":
       return <SystemModule />;
     default:

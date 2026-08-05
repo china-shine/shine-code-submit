@@ -5,9 +5,9 @@ description: 生成今天的工时日报(从禅道提交记录 efforts 汇总),�
 
 # ZenPilot 日报
 
-生成**今天**的工时日报,数据来自禅道的提交记录(`/tasks/{id}/estimate` 的 efforts,非本地会话),与禅道页面一致。输出为**自包含 HTML**,写入当前目录下的 `reports/日报-YYYY-MM-DD.html`(同日重跑覆盖,不堆积),并在底部附 **AI 日总结**。
+生成**今天**的工时日报,数据来自禅道的提交记录(`/tasks/{id}/estimate` 的 efforts,非本地会话),与禅道页面一致。输出为**自包含 HTML**,写入 `DATA_DIR/reports/日报-YYYY-MM-DD.html`(同日重跑覆盖,不堆积;**dashboard 日报模块可查看**),并在底部附 **AI 日总结**。
 
-脚本在 report skill:`<Base directory>/../report/scripts/zentao.ts`。**用绝对路径在当前项目目录下调用、不要 cd**(脚本靠 `process.cwd()` 识别“当前目录”作为 `reports/` 落点)。
+脚本在 report skill:`<Base directory>/../report/scripts/zentao.ts`。仍用绝对路径调用、不要 cd;脚本写入 `DATA_DIR/reports/`(不依赖 cwd)。
 
 ## 流程
 
@@ -31,7 +31,7 @@ description: 生成今天的工时日报(从禅道提交记录 efforts 汇总),�
          <h3>明日关注</h3><ul><li>……</li></ul>
        </section>
    ```
-3. 把 `text`(精简纯文本摘要)**放进代码块**展示给用户,并告知 **HTML 文件路径**(`file`,浏览器可直接打开;Windows 可 `start <file>`),说明底部含 AI 日总结。
+3. 把 `text`(精简纯文本摘要)**放进代码块**展示给用户,并告知 **HTML 文件路径** + **dashboard 链接**(跑 `bun "<Base directory>/../report/scripts/zentao.ts" ui` 取带 token 链接,打开后点左侧「日报」模块查看;Windows 也可 `start <file>` 直接打开 HTML),说明底部含 AI 日总结。
 4. 询问是否要调整文案/格式;若 `empty: true`(该范围内没有禅道提交记录),提示用户先 `/shine-worklog:report` 提交工时后重跑(覆盖同名文件)。
 
 ## 内容

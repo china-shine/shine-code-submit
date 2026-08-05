@@ -5,9 +5,9 @@ description: 生成本自然周(周一起)的工时周报(从禅道提交记录 
 
 # ZenPilot 周报
 
-生成**本自然周(周一至今天)**的工时周报,数据来自禅道的提交记录(`/tasks/{id}/estimate` 的 efforts,非本地会话)。输出为**自包含 HTML**,写入当前目录下的 `reports/周报-YYYY-MM-DD~YYYY-MM-DD.html`(本周重跑覆盖,不堆积),并在底部附 **AI 周总结**。
+生成**本自然周(周一至今天)**的工时周报,数据来自禅道的提交记录(`/tasks/{id}/estimate` 的 efforts,非本地会话)。输出为**自包含 HTML**,写入 `DATA_DIR/reports/周报-YYYY-MM-DD~YYYY-MM-DD.html`(本周重跑覆盖,不堆积;**dashboard 周报模块可查看**),并在底部附 **AI 周总结**。
 
-脚本在 report skill:`<Base directory>/../report/scripts/zentao.ts`。**用绝对路径在当前项目目录下调用、不要 cd**(脚本靠 `process.cwd()` 识别“当前目录”作为 `reports/` 落点)。
+脚本在 report skill:`<Base directory>/../report/scripts/zentao.ts`。仍用绝对路径调用、不要 cd;脚本写入 `DATA_DIR/reports/`(不依赖 cwd)。
 
 ## 流程
 
@@ -31,7 +31,7 @@ description: 生成本自然周(周一起)的工时周报(从禅道提交记录 
          <h3>下周关注 / 需协调</h3><ul><li>……</li></ul>
        </section>
    ```
-3. 把 `text`(精简纯文本摘要)**放进代码块**展示给用户,并告知 **HTML 文件路径**(`file`,浏览器可直接打开;Windows 可 `start <file>`),说明底部含 AI 周总结。
+3. 把 `text`(精简纯文本摘要)**放进代码块**展示给用户,并告知 **HTML 文件路径** + **dashboard 链接**(跑 `bun "<Base directory>/../report/scripts/zentao.ts" ui` 取带 token 链接,打开后点左侧「周报」模块查看;Windows 也可 `start <file>` 直接打开 HTML),说明底部含 AI 周总结。
 4. 询问是否要调整文案/格式;若 `empty: true`(本周没有禅道提交记录),提示本周还没提交工时(先 `/shine-worklog:report`)后重跑。
 
 ## 内容

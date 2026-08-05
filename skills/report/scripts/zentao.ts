@@ -1696,11 +1696,11 @@ function renderReportText(d: ReportData): string {
   return lines.join("\n");
 }
 
-/** 生成日报/周报 HTML 并落盘到当前目录 reports/,返回文件路径与文本摘要。 */
+/** 生成日报/周报 HTML 并落盘到 DATA_DIR/reports/(daemon 可稳定访问,dashboard 日报/周报模块查看),返回文件路径与文本摘要。 */
 async function writeReport(client: Client, cfg: Record<string, any>, from: string, to: string) {
   const data = await gatherReport(client, cfg, from, to);
   const html = renderReportHtml(data);
-  const dir = path.join(PROJECT_CWD, "reports");
+  const dir = path.join(DATA_DIR, "reports");
   const name = from === to ? `日报-${from}.html` : `周报-${from}~${to}.html`;
   const file = path.join(dir, name);
   writeText(file, html);

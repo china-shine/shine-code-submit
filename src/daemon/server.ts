@@ -37,7 +37,7 @@ import {
 } from "./aggregate";
 import { readSettings, writeSettings } from "./settings";
 import { DATA_DIR } from "../shared/paths";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { autoUpdateIfNeeded } from "../shared/updater";
@@ -92,6 +92,31 @@ function readZentaoCachePayload(): {
     /* ignore */
   }
   return { cache, ttl, expired, zentaoUrl };
+}
+
+/** 列 DATA_DIR/reports/ 下的日报/周报 HTML(由 /daily /weekly skill 生成)。kind=daily→日报-*.html, weekly→周报-*.html。按日期倒序。 */
+function listReports(kind: "daily" | "weekly"): { date: string; filename: string }[] {
+  const dir = join(DATA_DIR, "reports");
+  let files: string[] = [];
+  try {
+    files = readdirSync(dir);
+  } catch {
+    return [];
+  }
+  const prefix = kind === "daily" ? "日报-" : "周报-";
+  return files
+    .filter((f) => f.startsWith(prefix) && f.endsWith(".html"))
+    .map((f) => ({ date: f.slice(prefix.length, -5), filename: f }))
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
+
+/** 读单个报表 HTML(按文件名),不存在返回 null。 */
+function readReportHtml(filename: string): string | null {
+  try {
+    return readFileSync(join(DATA_DIR, "reports", filename), "utf8");
+  } catch {
+    return null;
+  }
 }
 
 /** 触发禅道缓存刷新:spawn `bun zentao.ts refresh`(禅道登录/拉取逻辑全在 skill 层 zentao.ts,daemon 只触发)。
@@ -437,6 +462,26 @@ export function startServer(deps: ServerDeps) {
         log.info("shutdown requested via api");
         setTimeout(() => deps.shutdown(), 50); // 先响应再退
         return json({ status: "shutting down" });
+      }
+
+      // 日报/周报 HTML 报表(由 /daily /weekly skill 生成到 DATA_DIR/reports/,dashboard 日报/周报模块消费)
+      if (path === "/api/reports/daily" && req.method === "GET") {
+        return json(listReports("daily"));
+      }
+      if (path === "/api/reports/weekly" && req.method === "GET") {
+        return json(listReports("weekly"));
+      }
+      const dm = path.match(/^\/api\/reports\/daily\/(\d{4}-\d{2}-\d{2})$/);
+      if (dm && req.method === "GET") {
+        const html = readReportHtml(`日报-${dm[1]}.html`);
+        if (!html) return json({ error: "not found" }, 404);
+        return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
+      }
+      const wm = path.match(/^\/api\/reports\/weekly\/(\d{4}-\d{2}-\d{2}~\d{4}-\d{2}-\d{2})$/);
+      if (wm && req.method === "GET") {
+        const html = readReportHtml(`周报-${wm[1]}.html`);
+        if (!html) return json({ error: "not found" }, 404);
+        return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
       }
 
       return json({ error: "not found" }, 404);
