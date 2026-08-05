@@ -30,21 +30,33 @@ Claude Code ──事件──▶ node launcher.cjs ──spawn──▶ hook(�
 
 ## Hook 事件覆盖
 
-Claude Code 共 9 个 hook 事件（[官方清单](https://docs.claude.com/en/docs/claude-code/hooks)）。本插件注册其中 7 个**只读观测**事件；所有 hook 退出码恒 0，绝不阻断或改写 Claude Code 主进程。
+Claude Code 共 9 个 hook 事件（[官方清单](https://docs.claude.com/en/docs/claude-code/hooks)）。本插件注册其中 7 个事件（**以只读观测为主**；SessionStart/UserPromptSubmit 额外注入 additionalContext 辅助禅道工时闭环）；所有 hook 退出码恒 0，绝不阻断或改写 Claude Code 主进程。
 
-| 事件 | 注册 | 触发时机 |
+| 事件 | 注册 | 触发时机 + 额外职责 |
 | --- | :---: | --- |
-| `SessionStart` | ✅ | 会话开始 / resume / clear / compact（兼做 daemon 首次拉起） |
-| `UserPromptSubmit` | ✅ | 用户提交提示词前 |
-| `PostToolUse` | ✅ | 工具调用完成后 |
-| `Stop` | ✅ | 主 agent 结束响应 |
-| `SubagentStop` | ✅ | 子 agent（Task 工具）结束响应 |
-| `PreCompact` | ✅ | 上下文压缩前（手动 `/compact` 或自动） |
-| `SessionEnd` | ✅ | 会话结束（clear / logout / exit） |
-| `PreToolUse` | ❌ | 工具调用前——**故意不启用**：其 exit2/JSON 会阻断或改写工具调用，与「Hook 不影响主进程」冲突；需拦截时再单独设计同步返回逻辑 |
+| `SessionStart` | ✅ | 会话开始/resume/clear/compact；兼做 daemon 首次拉起 + **注入 CLAUDE.md 工时规则**（additionalContext，教 AI 顺手记） |
+| `UserPromptSubmit` | ✅ | 用户提交提示词前；**detectAndRemind**：每轮注入"本轮若有代码改动,响应结束前 note"提示（feedback，无 block）+ ≥30min 未记兜底 |
+| `PostToolUse` | ✅ | 工具调用完成后（观测） |
+| `Stop` | ✅ | 主 agent 结束响应；**forkZenCollect**：detached 采集 session 到 sessions.json |
+| `SubagentStop` | ✅ | 子 agent（Task 工具）结束响应；同 Stop（forkZenCollect 采集） |
+| `PreCompact` | ✅ | 上下文压缩前（手动 `/compact` 或自动，观测） |
+| `SessionEnd` | ✅ | 会话结束（clear / logout / exit，观测） |
+| `PreToolUse` | ❌ | 工具调用前——**故意不启用**：其 exit2/JSON 会阻断或改写工具调用，与「Hook 不影响主进程」冲突 |
 | `Notification` | ❌ | 权限请求 / 闲置通知——噪音大、观测价值低，默认不收 |
 
 > `SessionResume` 在部分资料里被列为独立事件；官方文档里 resume 是 `SessionStart` 的一个 `source` matcher，非独立事件。
+
+### 禅道工时闭环（skills：自动攒 + 秒级提交）
+
+工时从"开发中自动攒"到"`/report` 秒级提交"的闭环：
+- **SessionStart** 注入 CLAUDE.md「工时顺手记」规则 → AI 知道每完成功能模块要 note
+- **UserPromptSubmit** 每轮提示"本轮若有代码改动,响应结束前 note"（feedback，无 block/error）；≥30min 未记兜底
+- **note**（`skills/report/scripts/zentao.ts note --work "一句话结论" --task <ID>`）：AI 顺手记一句话精炼结论到 `summary-YYYY-MM-DD.json`，带工时水位（`notedActiveMinutes`，多 note 按时间段拆到各 task）
+- **`/prepare`**：手动批量读 transcript 生成 work+task（补漏）
+- **`/report`**：读 summary 缓存 → AI 综合成 3-5 总结 → 提交禅道（读缓存→总结→提交，跳过最耗时的 AI 填空）；plan 含 cooldown 预判 + increment `>=` 防 work=null
+- **`/daily` `/weekly` `/amend`**：日报 / 周报 / 修正最后一次提交
+
+详见各 skill 的 `SKILL.md`。
 
 ## 安装（用户）
 
