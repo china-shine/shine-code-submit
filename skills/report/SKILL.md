@@ -77,7 +77,11 @@ bun "<Base directory>/scripts/zentao.ts" plan
 1. **语义匹配**:对每个 `needs_semantic` 条目,比较 `summary` 与 `candidates` 任务名,选最可能的任务,写入 `task`、`confidence`(0-100)、`reason`(一句话),状态改为 `resolved`。置信度 ≥85 自行确定;<85 或无合理候选时,用 AskUserQuestion 列出候选,固定附带「跳过此会话」和「AI 自动创建任务」选项:
    - 跳过 → `status: "skipped"`,填 `skipReason`
    - 自动创建 → 走下面的自动建任务流程,拿到新任务 ID 后填入条目(`task`/`taskName`/`project`/`projectName`),`reason` 标注「本次新建」
-2. **综合 work 成总结**:每个 `resolved` 条目,把 `item.work`(plan 读出的 note 结论拼接)归纳成 **3-5 个总结性条目**写入 `work`——每条一句话(动宾、核心成果)、去重合并相关项、**不要流水账罗列细节**。细节已在 note 结论里,提交禅道的是归纳后的总结(几个结论,不是十几条功能点)。
+2. **合并简化 work(激进归纳)**:每个 `resolved` 条目,把 `item.work`(plan 读出的 note 结论拼接)**激进合并简化**写入 `work`:
+   - 相似/相关功能**合并成一句话**(如"/report 提速 + 自动记 + dashboard"合一句"实现工时自动填报闭环")
+   - 目标条目数:日报 **≤3 条**、周报 **≤5 条**;每条**就一句话核心成果(动宾),不加括号补充技术细节**
+   - **严禁小括号列技术细节**(如 ✗ `(DATA_DIR+API+UI+样式+批量+预览)`,✓ 直接写"新增 dashboard 日报/周报模块")
+   - **严禁逐条罗列 note 内容**(流水账);归纳成几个大主题,细节留 transcript
 
 高置信度条目不打扰用户;所有归属问题必须在这一步问完。
 
