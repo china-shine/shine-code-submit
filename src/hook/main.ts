@@ -5,6 +5,7 @@
 //   全程失败静默，退出码恒为 0（绝不影响 Claude Code）。
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { ensureDirs, DATA_DIR, NOTICE_FILE } from "../shared/paths";
+import { encodeProject, todayISO } from "../shared/datetime";
 import { readToken } from "../shared/pidfile";
 import { writeSpoolFile } from "../shared/spool";
 import { BASE_URL, PUBLIC_BASE_URL, HOOK_POST_TIMEOUT_MS, SERVICE_VERSION } from "../shared/config";
@@ -64,6 +65,16 @@ async function main(): Promise<void> {
     }
   }
 
+  // 2.6 UserPromptSubmit：检测今日未记工时累积，≥阈值则 stdout 注入 additionalContext 提醒 AI 补 note。
+  //     纯本地读 3 个 JSON（<10ms），不联网不 spawn；hook 注入不保证 AI 执行（靠 CLAUDE.md 规则兜底）。
+  if (event.type === "UserPromptSubmit") {
+    try {
+      detectAndRemind(event);
+    } catch {
+      /* ignore */
+    }
+  }
+
   // 3. SessionStart 时给用户打印 UI 入口：stdout 输出 JSON，Claude Code 解析 systemMessage
   //    字段直接显示给用户（裸 stdout 只注入 assistant 当 context，用户不可见）。
   //    · 每次「打开/回到」Claude（source=startup 或 resume）都打链接——任何方式进入都能看到入口。
@@ -71,16 +82,22 @@ async function main(): Promise<void> {
   //    · 升级/首次时链接前带「✨ 已升级 vX / ✨ vX」（upgradeNotice，凭 NOTICE_FILE 版本差异，同版本不带）。
   //    · 读不到 token（daemon 未就绪）则静默跳过。
   if (event.type === "SessionStart") {
+    const out: Record<string, unknown> = {};
+    // 规则注入(给 Claude):所有 SessionStart source 都注入插件根 CLAUDE.md,教 AI 顺手 note(clear/compact 后重载)。
+    // 注:plugin SessionStart 的 additionalContext 可能受官方 bug #16538 影响(未确认修复);不生效时由 detectAndRemind 自包含提醒兜底。
+    const rule = readRule();
+    if (rule) out.hookSpecificOutput = { hookEventName: "SessionStart", additionalContext: rule };
+    // Dashboard 链接(给用户):仅 startup/resume(避免 clear/compact 刷屏)
     const source = (event.payload as Record<string, unknown> | null | undefined)?.source;
     if (source === "startup" || source === "resume") {
       const token = readToken();
       if (token) {
         const note = upgradeNotice(); // 升级/首次→"✨ …\n"；同版本→""；顺带落 NOTICE_FILE
         const url = `${PUBLIC_BASE_URL}/ui?t=${token}`; // 网卡 IP：显示与打开浏览器用同一地址，局域网通用
-        process.stdout.write(JSON.stringify({ systemMessage: `${note}Shine Dashboard: ${url}` }));
-        // openBrowser(url); // 自动弹浏览器暂时关闭——链接仍作 systemMessage 打印,用户可点开
+        out.systemMessage = `${note}Shine Dashboard: ${url}`;
       }
     }
+    if (Object.keys(out).length) process.stdout.write(JSON.stringify(out));
   }
   process.exit(0);
 }
@@ -259,4 +276,119 @@ function forkZenCollect(cwd: string, stdinRaw: string): void {
     /* ignore */
   }
   child.unref(); // 关键：不阻塞父进程退出
+}
+
+// ---------- ZenPilot 未记工时检测（UserPromptSubmit 提醒 AI 顺手 note）----------
+
+// encodeProject/todayISO 见 src/shared/datetime.ts(此处 import);pad2 是 todayISO 内部依赖,不直接用
+
+/** UserPromptSubmit：读本地 sessions/summary/submitted 算"未记 activeMinutes"，
+ *  ≥30 分钟则 stdout 输出 additionalContext（JSON），Claude Code 注入为 system reminder 提醒 AI 补 note。
+ *  AI note 后（新式带水位）uncovered→0，下轮不再提醒（水位推进自然止）。失败静默，绝不影响 hook。 */
+function detectAndRemind(event: HookEvent): void {
+  const cwd = event.cwd;
+  if (!cwd) return;
+  const projectDir = join(DATA_DIR, "zenpilot", "projects", encodeProject(cwd));
+  const today = todayISO();
+  const sessionsPath = join(projectDir, "sessions.json");
+  const summaryPath = join(projectDir, `summary-${today}.json`);
+  const submittedPath = join(projectDir, "submitted.json");
+  if (!existsSync(sessionsPath)) return; // 还没采集过
+
+  let sd: any;
+  try {
+    sd = JSON.parse(readFileSync(sessionsPath, "utf8"));
+  } catch {
+    return;
+  }
+  if (!sd || sd.date !== today || !Array.isArray(sd.sessions)) return;
+  // 粗筛:无任何 session 活跃达阈值(30=THRESHOLD)就不可能产生 offender,跳过 summary/submitted 读取(省 UserPromptSubmit 热路径 IO)
+  if (!sd.sessions.some((s: any) => (Number(s.activeMinutes) || 0) >= 30)) return;
+
+  let notes: any[] = [];
+  try {
+    notes = JSON.parse(readFileSync(summaryPath, "utf8")) || [];
+  } catch {
+    /* [] */
+  }
+  const notesBySession = new Map<string, any[]>();
+  for (const n of notes) {
+    if (!n || typeof n.session !== "string") continue;
+    const arr = notesBySession.get(n.session) ?? [];
+    arr.push(n);
+    notesBySession.set(n.session, arr);
+  }
+
+  let submittedAll: any = {};
+  try {
+    submittedAll = JSON.parse(readFileSync(submittedPath, "utf8")) || {};
+  } catch {
+    /* {} */
+  }
+  const submitted = submittedAll[today] || {};
+
+  const THRESHOLD = 30; // 单 session 未记累计≥30 分钟才提醒(= CLAUDE.md「≥30 分钟」,改阈值两处同步)
+  const offenders: Array<{ id: string; minutes: number; branch: string | null }> = [];
+  let totalUnnoted = 0;
+  for (const s of sd.sessions) {
+    if (!s || typeof s.id !== "string") continue;
+    const sNotes = notesBySession.get(s.id) || [];
+    const sActive = Number(s.activeMinutes) || 0;
+    const subMin = Number(submitted[s.id]?.minutes) || 0;
+    // 新式 note（有 notedActiveMinutes）取最大水位；仅有老 note→视为全覆盖；无 note→0
+    // 同 zentao.ts waterNotes 的有水位过滤(main.ts 零依赖隔离内联,水位策略调整两处同步)
+    const newNotes = sNotes.filter((n: any) => typeof n.notedActiveMinutes === "number");
+    let noteWatermark: number;
+    if (newNotes.length > 0) {
+      noteWatermark = Math.max(...newNotes.map((n: any) => Number(n.notedActiveMinutes) || 0));
+    } else if (sNotes.length > 0) {
+      noteWatermark = sActive; // 仅有老 note → 视为全覆盖，不打扰
+    } else {
+      noteWatermark = 0;
+    }
+    const covered = Math.max(subMin, noteWatermark);
+    const uncovered = sActive - covered;
+    if (uncovered >= THRESHOLD) {
+      totalUnnoted += uncovered;
+      offenders.push({ id: s.id, minutes: uncovered, branch: s.branch ?? null });
+    }
+  }
+
+  if (totalUnnoted < THRESHOLD || offenders.length === 0) return; // 静默 exit 0
+
+  // msg 是 CLAUDE.md「工时顺手记」规则的兜底简版(SessionStart 受 bug #16538 影响不生效时,靠此自包含提醒);
+  // note 命令格式/口径变更需与 CLAUDE.md 两处同步
+  const lines = offenders.slice(0, 3).map((o) => `· 会话 ${o.id}（branch ${o.branch ?? "?"}）：约 ${o.minutes} 分钟`);
+  const msg =
+    `[shine-worklog] 检测到今日有约 ${totalUnnoted} 分钟工作未记入 summary：\n${lines.join("\n")}\n` +
+    `若刚完成一个功能模块，记一条：\n` +
+    `  bun skills/report/scripts/zentao.ts note --work "1. 动宾功能点A\\n2. 功能点B" --task <禅道任务ID>\n` +
+    `（--session 不传自动取最新会话；脚本按水位拆工时，多次 note 不重复算；一个 task 一条 note）\n` +
+    `task：上下文明确就用对应任务 ID；不确定就跳过（别瞎猜）。还在调试/试错或不确定 task 时忽略本提醒，不要为消提醒记空内容。`;
+  process.stdout.write(
+    JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: msg } }),
+  );
+}
+
+/** 读插件根 CLAUDE.md（规则源），SessionStart 注入 additionalContext 教 AI 顺手 note（插件级：所有装插件项目生效）。
+ *  注:plugin SessionStart additionalContext 可能受官方 bug #16538 影响(未确认修复);不生效时由 detectAndRemind 自包含提醒兜底。
+ *  CLAUDE_PLUGIN_ROOT 优先,回退相对 main.ts（src/hook → 插件根）。 */
+function readRule(): string | null {
+  const rel = "CLAUDE.md";
+  const root = process.env.CLAUDE_PLUGIN_ROOT;
+  const candidates: string[] = [];
+  if (root) candidates.push(join(root, rel));
+  try {
+    candidates.push(join(dirname(fileURLToPath(import.meta.url)), "..", "..", rel));
+  } catch {
+    /* ignore */
+  }
+  for (const p of candidates) {
+    try {
+      if (existsSync(p)) return readFileSync(p, "utf8").trim();
+    } catch {
+      /* ignore */
+    }
+  }
+  return null;
 }

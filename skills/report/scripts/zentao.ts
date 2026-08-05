@@ -28,7 +28,7 @@ const MAPPINGS_PATH = path.join(ZENPILOT_HOME, "mappings.json"); // 全局:仓�
 
 // 按项目隔离,镜像 Claude Code 的 ~/.claude/projects/<编码路径>/
 function encodeProject(cwd: string): string {
-  return cwd.replace(/[^a-zA-Z0-9]/g, "-"); // 非字母数字→-,对齐 Claude Code(空格/标点/中文均→-)
+  return cwd.replace(/[^a-zA-Z0-9]/g, "-"); // 非字母数字→-,对齐 Claude Code(空格/标点/中文均→-);零依赖不能 import,与 src/shared/datetime.ts 同款(改动两边同步)
 }
 const PROJECT_CWD: string = (() => {
   // 用 --cwd 而非 --project,避免和 learn 的 --project<禅道项目ID> 撞名
@@ -359,6 +359,100 @@ function mineSession(transcriptPath: string): any | null {
     linesRemoved: removed,
     summary: summary || "(无文本提示)",
     date: localDateISO(stamps[0]),
+  };
+}
+
+/** 解析 Claude transcript jsonl 成结构化信号(逐行 parse:user prompts + assistant texts + tool_use 的 files/行数/计数)。
+ *  extractTranscriptSignals(prepare 热路径)用;mineSession(deprecated 兜底,还要 stamps/tokens)暂保留自己的循环。
+ *  未来 transcript 格式变更,改此处(+ mineSession 待清理时迁来)。返回 null=空/non-Claude 文件。 */
+function parseTranscriptEvents(raw: string): {
+  prompts: string[];
+  assistantTexts: string[];
+  toolUseCounts: Record<string, number>;
+  files: string[];
+  added: number;
+  removed: number;
+} | null {
+  const prompts: string[] = [];
+  const assistantTexts: string[] = [];
+  const toolUseCounts: Record<string, number> = {};
+  const files = new Set<string>();
+  let added = 0;
+  let removed = 0;
+  for (const line of raw.split("\n")) {
+    if (!line.trim()) continue;
+    let ev: any;
+    try {
+      ev = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const role = ev.message?.role;
+    if (role === "user") {
+      const text = extractText(ev.message?.content).trim();
+      if (text && !text.startsWith("<") && text.length > 1 && text.length <= 300) prompts.push(text);
+    } else if (role === "assistant") {
+      const content = ev.message?.content;
+      if (!Array.isArray(content)) continue;
+      for (const b of content) {
+        if (!b) continue;
+        if (b.type === "text" && typeof b.text === "string" && b.text.trim()) {
+          assistantTexts.push(b.text);
+        } else if (b.type === "tool_use") {
+          const name = b.name ?? "unknown";
+          toolUseCounts[name] = (toolUseCounts[name] ?? 0) + 1;
+          const input = b.input || {};
+          if (typeof input.file_path === "string") files.add(input.file_path);
+          if (b.name === "Edit") {
+            added += countLines(input.new_string);
+            removed += countLines(input.old_string);
+          } else if (b.name === "Write") {
+            added += countLines(input.content);
+          } else if (b.name === "MultiEdit" && Array.isArray(input.edits)) {
+            for (const e of input.edits) {
+              added += countLines(e.new_string);
+              removed += countLines(e.old_string);
+            }
+          }
+        }
+      }
+    }
+  }
+  if (prompts.length === 0 && assistantTexts.length === 0 && Object.keys(toolUseCounts).length === 0) return null;
+  return { prompts, assistantTexts, toolUseCounts, files: [...files], added, removed };
+}
+
+/** 为 prepare 提取生成 work 所需的精选 transcript 信号(不重算工时/token,那些 daemon 已给)。
+ *  定位 ~/.claude/projects/<encodeProject(cwd)>/<sessionId>.jsonl,提取:
+ *  前5条 prompts + 最近6条 assistant 文本(各≤500字) + toolUseCounts + 去重 filesChanged(前20) + 行数。
+ *  文件不存在/空内容返回 null,调用方退化用 daemonSummary+candidates。解析走 parseTranscriptEvents。 */
+function extractTranscriptSignals(sessionId: string, cwd: string): any | null {
+  const filePath = path.join(homedir(), ".claude", "projects", encodeProject(cwd), sessionId + ".jsonl");
+  let raw: string;
+  try {
+    raw = readFileSync(filePath, "utf8");
+  } catch {
+    return null;
+  }
+  const parsed = parseTranscriptEvents(raw);
+  if (!parsed) return null;
+  const recentAssistantTexts = parsed.assistantTexts
+    .slice(-6)
+    .map((t: string) => (t.length > 500 ? t.slice(0, 500) : t)); // 最近的工作汇报:生成 work 的关键素材
+  const filesChanged = parsed.files
+    .map((f) => {
+      const rel = path.relative(cwd, f); // 尽量转相对 cwd,便于阅读
+      return rel && !rel.startsWith("..") ? rel : f;
+    })
+    .slice(0, 20);
+  return {
+    path: filePath,
+    prompts: parsed.prompts.slice(0, 5),
+    recentAssistantTexts,
+    toolUseCounts: parsed.toolUseCounts,
+    filesChanged,
+    linesAdded: parsed.added,
+    linesRemoved: parsed.removed,
   };
 }
 
@@ -698,11 +792,16 @@ function cmdConfig(a: Args): any {
   };
 }
 
+/** 纯读本地禅道缓存,不传 client/不联网。prepare 用它保证「绝不联网」契约;返回 null 表示尚未缓存。 */
+function getCacheLocal(): any | null {
+  return loadJSON<any>(CACHE_PATH, null);
+}
+
 async function getCache(client: Client, cfg: Record<string, any>, refresh = false): Promise<any> {
   // 有本地缓存就直接复用(不管是否过期)——/report/daily/weekly 读本地秒回,绝不拉禅道;
   // 禅道更新由 dashboard「更新禅道」按钮(POST /api/zentao-cache/refresh)或显式 refresh 触发。
   // 仅首次(无缓存)或 refresh=true 才拉禅道。
-  const existing = loadJSON<any>(CACHE_PATH, null);
+  const existing = getCacheLocal();
   if (existing !== null && !refresh) return existing;
   // 1000 上限避开禅道默认 100 截断;filterActive=true 只留「我参与 + 还有剩余工时(left>0)」的项目,
   // 剔除任务全完成/关闭的历史项目,减少噪音(语义对齐 projects 命令默认过滤)。
@@ -726,14 +825,27 @@ async function getCache(client: Client, cfg: Record<string, any>, refresh = fals
   return cache;
 }
 
-async function cmdPlan(client: Client, cfg: Record<string, any>): Promise<any> {
+/** 有 notedActiveMinutes 水位的新式 note,按水位升序。
+ *  cmdPlan summary 拆段 + increment 过滤共用(同文件真共享,消除水位 filter 散落)。
+ *  detectAndRemind 在 main.ts 因零依赖隔离,内联同款 filter + 注释关联此处。 */
+function waterNotes(notes: any[]): any[] {
+  return notes
+    .filter((n: any) => n && typeof n.notedActiveMinutes === "number")
+    .sort((a: any, b: any) => (Number(a.notedActiveMinutes) || 0) - (Number(b.notedActiveMinutes) || 0));
+}
+
+async function cmdPlan(client?: Client, cfg?: Record<string, any>): Promise<any> {
   const data = loadJSON<any>(SESSIONS_PATH, null);
   if (data === null) die(`会话数据不存在: ${SESSIONS_PATH}`);
   const date = data.date;
   const mappings = loadJSON<any>(MAPPINGS_PATH, { repoToProject: {}, branchToTask: {} });
   const submittedAll = loadJSON<any>(SUBMITTED_PATH, {});
   const submitted = submittedAll[date] || {};
-  const cache = await getCache(client, cfg);
+  // client 缺省(prepare 路径)走纯本地缓存不联网;调用方(cmdPrepare)须预检 cache 存在
+  const cache = client ? await getCache(client, cfg!) : getCacheLocal();
+  if (!cache || !Array.isArray(cache.projects) || !Array.isArray(cache.tasks)) {
+    die(`禅道任务缓存缺失或不完整: ${CACHE_PATH},请先运行 refresh 命令拉取`);
+  }
   const projectNames: Record<number, string> = {};
   for (const p of cache.projects) projectNames[p.id] = p.name;
   const tasks = cache.tasks;
@@ -741,8 +853,9 @@ async function cmdPlan(client: Client, cfg: Record<string, any>): Promise<any> {
   for (const t of tasks) taskById[t.id] = t;
 
   const taskInfo = async (taskId: number | null): Promise<any> => {
-    let t = (taskId != null ? taskById[taskId] : undefined) || cache.taskDetails[String(taskId)];
+    let t = (taskId != null ? taskById[taskId] : undefined) || (cache.taskDetails || {})[String(taskId)];
     if (!t) {
+      if (!client) return {}; // prepare 路径:cache 缺该任务时不联网,退化空(由 candidates 兜底)
       try {
         const raw = await client.get(`/tasks/${taskId}`);
         const ex = raw.execution;
@@ -790,6 +903,13 @@ async function cmdPlan(client: Client, cfg: Record<string, any>): Promise<any> {
       if (delta < 15) {
         Object.assign(item, { status: "already", task: taskId, submittedHours: rec.hours ?? null }, await taskInfo(taskId));
       } else {
+        // 增量补报:task 沿用原提交;work 优先取该会话的 summary-note(若有),免去 AI 填空,
+        // 让 auto 一键能跑通;无 summary-note 则留 null,由 auto/render 的缺 work 检查拦下
+        const incNotes = notesBySession.get(s.id) || [];
+        // 增量 work 只用"上次提交水位之后"记的新 note(notedActiveMinutes > rec.minutes);
+        // 无新 note → null(让 auto/render 的缺 work 检查拦下 AI 填),不退化用已提交的旧 note(避免陈旧文案)
+        const submittedMin = rec.minutes ?? 0;
+        const newIncNotes = waterNotes(incNotes).filter((n: any) => (Number(n.notedActiveMinutes) || 0) > submittedMin);
         Object.assign(
           item,
           {
@@ -799,6 +919,7 @@ async function cmdPlan(client: Client, cfg: Record<string, any>): Promise<any> {
             hours: hoursFromMinutes(delta),
             confidence: 95,
             reason: "已提交会话的增量补报,沿用原任务",
+            work: newIncNotes.length ? newIncNotes.map((n: any) => n.work).join("\n") : null,
           },
           await taskInfo(taskId),
         );
@@ -806,9 +927,42 @@ async function cmdPlan(client: Client, cfg: Record<string, any>): Promise<any> {
       items.push(item);
       continue;
     }
-    // summary 覆盖:开发时已记 work + task,直接 resolved(工时仍取 session activeMs)
+    // summary 覆盖:开发时已记 work + task。多 note(均有 notedActiveMinutes 水位)按时间段
+    // 拆工时到各 task;任一 note 缺水位(老数据)→ 退化单 item(兼容历史行为)。
     const notes = notesBySession.get(s.id) || [];
     if (notes.length) {
+      const wn = waterNotes(notes); // 有水位的新式 note,升序
+      if (wn.length === notes.length) { // allHaveWater:所有 note 都有水位
+        const total = Math.max(0, s.activeMinutes);
+        if (total < 1) continue; // 0 工时会话不拆(避免 hoursFromMinutes(0)=0.5 凭空造条目)
+        let prev = 0; // baseline:summary 分支无 prior submit
+        for (let i = 0; i < wn.length; i++) {
+          const n = wn[i];
+          if (!n) continue;
+          const w = Math.max(0, Math.min(total, Number(n.notedActiveMinutes) || 0)); // clamp 到 [0,total]
+          const isLast = i === wn.length - 1;
+          const segEnd = isLast ? total : w; // 末条尾部归该 task(延续到现在)
+          const segment = Math.max(0, segEnd - prev);
+          prev = w; // 推进水位(即便本段=0 被跳过,下一条仍以 w 为起点)
+          if (segment < 1) continue; // 跳过 0 段(同分钟多 note)
+          const info = n.taskName
+            ? { taskName: n.taskName, project: n.project, projectName: n.projectName }
+            : await taskInfo(n.task);
+          items.push({
+            ...item,
+            status: "resolved",
+            task: n.task,
+            work: n.work, // 单条 note 自己的 work(不 join)
+            hours: hoursFromMinutes(segment),
+            minutes: segEnd, // 该段末水位:recordSubmission 据此写防重水位(部分提交失败时不掩盖后续 task 工时)
+            confidence: 100,
+            reason: "开发时 summary 记录(多 note 按水位拆分)",
+            ...info,
+          });
+        }
+        continue;
+      }
+      // 退化:有 note 但缺水位(老数据) → 单 item(join 所有 work、n0.task、整 session hours)
       const n0 = notes[0];
       const info = n0.taskName
         ? { taskName: n0.taskName, project: n0.project, projectName: n0.projectName }
@@ -924,6 +1078,15 @@ function recordSubmission(date: string, session: string, taskId: number, hours: 
   return rec;
 }
 
+/** 提交冷却检查:距上次 commit < COMMIT_COOLDOWN_MINUTES 返回 {waitMinutes, lastCommitAt, elapsed},否则 null。cmdCommit(die)+cmdAuto(return)共用,消除冷却逻辑复制。 */
+function checkCooldown(date: string): { waitMinutes: number; lastCommitAt: string; elapsed: number } | null {
+  const meta = (loadJSON<any>(SUBMITTED_PATH, {})[date] || {})._meta || {};
+  if (!meta.lastCommitAt) return null;
+  const elapsed = minutesSinceISO(meta.lastCommitAt);
+  if (elapsed >= COMMIT_COOLDOWN_MINUTES) return null;
+  return { waitMinutes: Math.trunc(COMMIT_COOLDOWN_MINUTES - elapsed) + 1, lastCommitAt: meta.lastCommitAt, elapsed };
+}
+
 async function cmdCommit(client: Client, opts: { dryRun?: boolean; amend?: boolean }): Promise<any> {
   const dryRun = !!opts.dryRun;
   const amend = !!opts.amend;
@@ -946,19 +1109,24 @@ async function cmdCommit(client: Client, opts: { dryRun?: boolean; amend?: boole
         lastCommitSessions: [...allowed].sort(),
       });
     }
-  } else if (toSubmit.length && !dryRun && meta.lastCommitAt) {
-    const elapsed = minutesSinceISO(meta.lastCommitAt);
-    if (elapsed < COMMIT_COOLDOWN_MINUTES) {
+  } else if (toSubmit.length && !dryRun) {
+    const cd = checkCooldown(plan.date);
+    if (cd) {
       die(
-        `距上次提交仅 ${Math.trunc(elapsed)} 分钟,两次提交间隔须≥${COMMIT_COOLDOWN_MINUTES}分钟。用户明确要求修正最后一次提交时,用 amend 命令(禅道只能追加更正记录)`,
-        { lastCommitAt: meta.lastCommitAt, waitMinutes: Math.trunc(COMMIT_COOLDOWN_MINUTES - elapsed) + 1 },
+        `距上次提交仅 ${Math.trunc(cd.elapsed)} 分钟,两次提交间隔须≥${COMMIT_COOLDOWN_MINUTES}分钟。用户明确要求修正最后一次提交时,用 amend 命令(禅道只能追加更正记录)`,
+        { lastCommitAt: cd.lastCommitAt, waitMinutes: cd.waitMinutes },
       );
     }
   }
   const mappings = loadJSON<any>(MAPPINGS_PATH, { repoToProject: {}, branchToTask: {} });
   const results: any[] = [];
   for (const i of toSubmit) {
-    const out = await client.submitEffort(i.task, plan.date, i.hours, i.work, i.left ?? null, dryRun);
+    let out: any;
+    try {
+      out = await client.submitEffort(i.task, plan.date, i.hours, i.work, i.left ?? null, dryRun);
+    } catch (e) {
+      out = { submitted: false, error: e instanceof Error ? e.message : String(e) }; // 单条失败不崩,继续其他条目
+    }
     if (out.submitted) {
       recordSubmission(plan.date, i.session, i.task, i.hours, i.minutes);
       if (i.project) {
@@ -999,6 +1167,31 @@ async function cmdCommit(client: Client, opts: { dryRun?: boolean; amend?: boole
   };
 }
 
+/** 一键填报:collect → plan → (全 resolved 时)直接 commit。默认自动提交不确认;
+ *  有 needs_semantic / resolved 缺 work / 提交冷却 时停下,返回相应 action 让调用方(AI)处理。
+ *  die()=process.exit,故 cmdCommit 的前置检查(pending/noWork/cooldown)在此自做、return 而非 die。 */
+async function cmdAuto(client: Client, cfg: Record<string, any>, a: Args): Promise<any> {
+  const dryRun = !!a["dry-run"];
+  const collected = await cmdCollect();
+  if (collected.error) return { action: "abort", step: "collect", error: collected.error };
+  const plan = await cmdPlan(client, cfg);
+  const items = plan.items;
+  const pending = items.filter((i: any) => i.status === "needs_semantic").map((i: any) => i.session);
+  if (pending.length) return { action: "needs_review", reason: "有 needs_semantic 需 AI 填空", pending, plan };
+  const toSubmit = items.filter((i: any) => i.status === "resolved");
+  const noWork = toSubmit.filter((i: any) => !i.work).map((i: any) => i.session);
+  if (noWork.length) return { action: "needs_review", reason: "有 resolved 缺 work", noWork, plan };
+  // 提交冷却:复制 cmdCommit 的检查,return 而非 die
+  if (toSubmit.length && !dryRun) {
+    const cd = checkCooldown(plan.date);
+    if (cd) return { action: "cooldown", lastCommitAt: cd.lastCommitAt, waitMinutes: cd.waitMinutes };
+  }
+  const draft = cmdRender();
+  if (toSubmit.length === 0) return { action: "nothing", draft, plan };
+  const result = await cmdCommit(client, { dryRun });
+  return { action: "committed", draft, result };
+}
+
 /** 开发时记一条功能总结到 summary-YYYY-MM-DD.json(按项目+日期)。
  *  work=功能点编号文案, task=禅道任务ID, session 未传则取当天最新活跃会话。
  *  自动从 cache.json 补 taskName/project/projectName。/report plan 直读省 AI 填空。 */
@@ -1025,10 +1218,79 @@ function cmdNote(a: Args): any {
     project = t.project ?? null;
     projectName = cache?.projects?.find((p: any) => p.id === project)?.name ?? null;
   }
+  // 多 note 水位:拍快照当前 session 的 activeMinutes,供 cmdPlan 按时间段拆工时到各 task。
+  // 老 note 无此字段 → cmdPlan 端判否退化单 item。sessions.json 由 Stop hook 每轮刷新,此处读上一轮值够用。
+  let notedActiveMinutes: number | null = null;
+  try {
+    const sd = loadJSON<{ sessions: any[]; date?: string }>(SESSIONS_PATH, { sessions: [] });
+    // 只在当天 sessions 上拍水位;跨午夜 sessions.json 还是昨天的 → 拍错水位,退化 null
+    if (sd.date === todayISO()) {
+      const found = (Array.isArray(sd.sessions) ? sd.sessions : []).find((x: any) => x.id === session);
+      if (found && typeof found.activeMinutes === "number") notedActiveMinutes = found.activeMinutes;
+    }
+  } catch {
+    /* null:cmdPlan 退化老行为 */
+  }
   const list = loadJSON<any[]>(SUMMARY_PATH, []);
-  list.push({ session, ts: nowISOSeconds(), work, task, taskName, project, projectName });
+  list.push({ session, ts: nowISOSeconds(), work, task, taskName, project, projectName, notedActiveMinutes });
   writeJSON(SUMMARY_PATH, list);
   return { ok: true, file: SUMMARY_PATH, session, entries: list.length };
+}
+
+/** 提前准备:collect→plan(本地)→挑 pending→附 transcript 信号。把 /report 最慢的 AI 填空前置到这里。
+ *  全程不登录禅道、不调 client、不读写 submitted.json、不碰 cooldown——只读 + 给 AI 输出原料。
+ *  AI 据此生成 work+选 task 调 note 写 summary;/report auto 即可全 resolved 秒级 commit。
+ *  uncertain(多任务判不准)的留 /report 用 AskUserQuestion 问,复用这里留的 candidates。 */
+async function cmdPrepare(): Promise<any> {
+  const collected = await cmdCollect();
+  if (collected.error) return { action: "abort", step: "collect", error: collected.error };
+
+  const cache = getCacheLocal();
+  if (cache === null) {
+    return { action: "needs_cache", hint: "禅道任务缓存为空,先运行 refresh 命令(或 /shine-worklog:report 内部 refresh)拉取我的任务" };
+  }
+
+  const plan = await cmdPlan(undefined, undefined); // 走纯本地缓存,不联网
+  const items: any[] = plan.items || [];
+  const ready: any[] = [];
+  const pending: any[] = [];
+  for (const i of items) {
+    if (i.status === "already") continue; // 已提交且无新增,本次不提交,无需准备
+    if (i.status === "resolved" && i.work) {
+      ready.push({ session: i.session, reason: i.reason ?? null, task: i.task ?? null, taskName: i.taskName ?? null, hours: i.hours ?? null, increment: !!i.increment });
+      continue;
+    }
+    // pending: needs_semantic 或 resolved 缺 work(如增量补报无 summary-note)
+    const submittedState = i.increment ? "increment" : "unsubmitted";
+    pending.push({
+      session: i.session,
+      repo: i.repo,
+      branch: i.branch,
+      start: i.start,
+      end: i.end,
+      minutes: i.minutes,
+      hours: i.hours,
+      daemonSummary: i.summary ?? "",
+      status: i.status, // needs_semantic | resolved
+      submittedState,
+      reason: i.reason ?? null,
+      task: i.task ?? null, // increment 时沿用原提交任务
+      taskName: i.taskName ?? null,
+      candidates: i.candidates ?? [],
+      transcript: extractTranscriptSignals(String(i.session), PROJECT_CWD),
+    });
+  }
+
+  return {
+    action: pending.length ? "prepare_needed" : "ready",
+    date: plan.date,
+    project: { repo: items[0]?.repo ?? path.basename(PROJECT_CWD), cwd: PROJECT_CWD },
+    summary: { totalSessions: items.length, ready: ready.length, pending: pending.length },
+    ready,
+    pending,
+    instructions:
+      "对每个 pending:1) 据 transcript.recentAssistantTexts+prompts+filesChanged 生成 work(编号动宾,每条一个功能点);2) 选 task——submittedState=increment 时沿用现有 task;needs_semantic 时从 candidates 选(置信度≥85 直定,<85 仍填 topCandidates 留 /report 确认);3) 调 note --session <id> --work <生成的work> --task <id> 写 summary。uncertain 可跳过。全 ready 后 /report 秒级提交。",
+  };
 }
 
 function cmdMappings(a: Args): any {
@@ -1484,6 +1746,10 @@ async function main(): Promise<void> {
     console.log(JSON.stringify(cmdNote(a), null, 2));
     return;
   }
+  if (cmd === "prepare") {
+    console.log(JSON.stringify(await cmdPrepare(), null, 2));
+    return;
+  }
   if (cmd === "learn") {
     console.log(JSON.stringify(cmdLearn(a), null, 2));
     return;
@@ -1548,6 +1814,8 @@ async function main(): Promise<void> {
     };
   } else if (cmd === "commit") {
     out = await cmdCommit(client, { dryRun: !!a["dry-run"] });
+  } else if (cmd === "auto") {
+    out = await cmdAuto(client, cfg, a);
   } else if (cmd === "amend") {
     out = await cmdCommit(client, { dryRun: !!a["dry-run"], amend: true });
   } else if (cmd === "efforts") {

@@ -18,7 +18,31 @@ description: 汇总当天 Claude Code 会话统计(工时/token/代码量),智�
 
 确定性逻辑(会话采集、防重过滤、分支任务号归属、工时换算、草稿渲染、批量提交)全部在脚本里,AI 只做三件事:语义匹配、生成文案、与用户交互。流程顺序被 collect → plan → render → commit 锁死,render/commit 会拒绝含未决条目的计划。
 
+### 准备阶段(建议先跑 /prepare,让本流程秒级)
+
+`/shine-worklog:prepare` 提前把当天会话的 work+task 算好写入 summary(本 skill 的 plan 直读为 resolved)。**先跑 prepare,下面的 auto 就能跳过最耗时的 AI 填空、全 resolved 秒级提交**。开工/工作中/收工前任意时机跑一次即可;uncertain(多任务判不准)的会留到 /report 用 AskUserQuestion 问。
+
+### 快速路径:auto 一键(优先用)
+
+summary 记全时,/report 可一步跑完,不用分步:
+
+```
+bun "<Base directory>/scripts/zentao.ts" auto        # 默认直接提交;加 --dry-run 只预览不提交
+```
+
+auto 内部 collect → plan →(全 resolved)→ commit 一次跑完,**默认自动提交、不再逐条确认**(summary 自记归属可信,错可 amend)。按返回的 `action` 分支处理:
+
+- `committed` — 已提交:用 `result`(成功/跳过条数、每条任务) + `draft`(草稿文本)直接汇报,本次只 1 次工具调用。
+- `needs_review` — 有 `pending`(needs_semantic)或 `noWork`(resolved 缺 work):只对这些条目走下面的「AI 填空」,改 plan.json 后跑 `commit`(其余条目已就绪,无需重跑 auto)。**下次可先跑 `/shine-worklog:prepare` 把 AI 填空前置,本动作即变秒级**。
+- `cooldown` — 距上次提交 < 30 分钟:告知用户需等待 `waitMinutes` 分钟。
+- `nothing` — 全 already/skipped,无可提交:说明本次无需提交。
+- `abort` — collect 失败(通常 daemon 未启动):提示用户启 daemon 或走分步 collect 排查。
+
+> auto 只在「全 resolved」时自动提交;只要有一条 needs_semantic 或缺 work,就停在 `needs_review` 让 AI 处理——不会盲目提交归属未定的工时。
+
 ### 开发时记 summary(省 AI 填空,强烈建议)
+
+> 更省事:直接跑 `/shine-worklog:prepare`,AI 一次性读 transcript 批量生成当天所有会话的 work+task 写 summary,无需手动一条条记。下面的手动 `note` 适合「边做边记」或补 prepare 漏掉的单条。
 
 **完成一个功能模块后,立即**记一条 summary(不等 /report):
 
