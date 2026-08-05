@@ -16,13 +16,15 @@ description: 汇总当天 Claude Code 会话统计(工时/token/代码量),智�
 
 ## 流程
 
-确定性逻辑(会话采集、防重过滤、分支任务号归属、工时换算、草稿渲染、批量提交)全部在脚本里,AI 只做三件事:语义匹配、生成文案、与用户交互。流程顺序被 collect → plan → render → commit 锁死,render/commit 会拒绝含未决条目的计划。
+确定性逻辑(会话采集、防重过滤、分支任务号归属、工时换算、草稿渲染、批量提交)全部在脚本里,AI 只做三件事:**把积累的 note 结论归纳成总结性 work**、语义匹配(无 note 时归属)、与用户交互。流程顺序 collect → plan → **AI 综合 work** → render → commit,render/commit 会拒绝含未决条目的计划。
 
 ### 准备阶段(建议先跑 /prepare,让本流程秒级)
 
 `/shine-worklog:prepare` 提前把当天会话的 work+task 算好写入 summary(本 skill 的 plan 直读为 resolved)。**先跑 prepare,下面的 auto 就能跳过最耗时的 AI 填空、全 resolved 秒级提交**。开工/工作中/收工前任意时机跑一次即可;uncertain(多任务判不准)的会留到 /report 用 AskUserQuestion 问。
 
-### 快速路径:auto 一键(优先用)
+### auto 一键(追求速度、work 不归纳)
+
+> auto 直接 commit 用 join 的 note 原文(work 是结论拼接、不归纳)。**要总结性 work 走下面的分步(collect → plan → AI 综合 → render → commit)**;只在不在意 work 文案、追求秒级时用 auto。
 
 summary 记全时,/report 可一步跑完,不用分步:
 
@@ -47,10 +49,10 @@ auto 内部 collect → plan →(全 resolved)→ commit 一次跑完,**默认�
 **完成一个功能模块后,立即**记一条 summary(不等 /report):
 
 ```
-bun "<Base directory>/scripts/zentao.ts" note --work "1. 功能A\n2. 功能B" --task <任务ID>
+bun "<Base directory>/scripts/zentao.ts" note --work "一句话:这段工作的核心成果" --task <任务ID>
 ```
 
-- `--work`:功能点编号文案(动宾、每条一个功能点,同 commit 的 work 规范)
+- `--work`:**一句话精炼结论**(这段的核心成果),不罗列功能点——/report 时 AI 会把多条结论归纳成 3-5 个总结提交,细节留 transcript(✗ `1.功能A\n2.功能B` 流水账;✓ `实现X功能,达成Y效果`)
 - `--task`:关联的禅道任务 ID(开发时已知,如本会话做的归 #77563 就传 77563)
 - `--session`:可选,未传自动取当天最新活跃会话
 - 写入 `~/.zenpilot/projects/<编码项目>/summary-YYYY-MM-DD.json`,taskName/project 从 cache.json 自动补
@@ -84,7 +86,7 @@ bun "<Base directory>/scripts/zentao.ts" plan
 1. **语义匹配**:对每个 `needs_semantic` 条目,比较 `summary` 与 `candidates` 任务名,选最可能的任务,写入 `task`、`confidence`(0-100)、`reason`(一句话),状态改为 `resolved`。置信度 ≥85 自行确定;<85 或无合理候选时,用 AskUserQuestion 列出候选,固定附带「跳过此会话」和「AI 自动创建任务」选项:
    - 跳过 → `status: "skipped"`,填 `skipReason`
    - 自动创建 → 走下面的自动建任务流程,拿到新任务 ID 后填入条目(`task`/`taskName`/`project`/`projectName`),`reason` 标注「本次新建」
-2. **生成工作内容**:每个 `resolved` 条目,把 `summary` **按功能点拆成编号列表**写入 `work`,形如 `1. 功能A\n2. 功能B\n3. 功能C`(每条一个独立功能点、动宾简洁,**不要写成一段长句**);多条用换行分隔。
+2. **综合 work 成总结**:每个 `resolved` 条目,把 `item.work`(plan 读出的 note 结论拼接)归纳成 **3-5 个总结性条目**写入 `work`——每条一句话(动宾、核心成果)、去重合并相关项、**不要流水账罗列细节**。细节已在 note 结论里,提交禅道的是归纳后的总结(几个结论,不是十几条功能点)。
 
 高置信度条目不打扰用户;所有归属问题必须在这一步问完。
 

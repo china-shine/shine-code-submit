@@ -14,8 +14,11 @@
 
 ### 怎么记
 ```
-bun skills/report/scripts/zentao.ts note --work "1. 动宾功能点A\n2. 功能点B" --task <禅道任务ID>
+bun skills/report/scripts/zentao.ts note --work "一句话:这段工作的核心成果" --task <禅道任务ID>
 ```
+- `--work` 记**一句话精炼结论**(这段做了什么的核心成果),**不罗列功能点**——/report 时 AI 会把多条结论归纳成 3-5 个总结提交,细节留 transcript。
+  - ✗ 流水账:`1. 新增 cmdPrepare\n2. 抽 extractTranscriptSignals\n3. 部署 cache`
+  - ✓ 结论:`实现 /prepare 命令(提前批量准备 work+task),/report 直读秒级提交`
 - 不传 `--session` 自动取当天最新活跃会话。
 - 脚本自动拍快照当前会话工时水位（`notedActiveMinutes`）；**未提交会话**的多次 note 按时间段拆到各 task，不会重复算工时。**已提交会话的增量补报例外**：沿用原提交 task（不按多 note 拆），其增量 work 只用提交水位之后记的新 note。
 - 不要把多个 task 揉进一条 note。
