@@ -43,7 +43,7 @@ async function fetchDaemonSessions(
 }
 
 /** daemon ProjectSession → ZenPilot session(字段映射见合并方案 2.1)。 */
-function toZenSession(s: any, branch: string | null): any {
+export function toZenSession(s: any, branch: string | null): any {
   const activeMs = num(s.activeMs);
   const lastActive = num(s.lastActive);
   const tt = s.tokenTotal || {};
@@ -66,7 +66,7 @@ function toZenSession(s: any, branch: string | null): any {
 
 /** 解析 Claude transcript jsonl 成结构化信号(逐行 parse:user prompts + assistant texts + tool_use 的 files/行数/计数)。
  *  extractTranscriptSignals(prepare 热路径)用。未来 transcript 格式变更,改此处。返回 null=空/non-Claude 文件。 */
-function parseTranscriptEvents(raw: string): {
+export function parseTranscriptEvents(raw: string): {
   prompts: string[];
   assistantTexts: string[];
   toolUseCounts: Record<string, number>;

@@ -57,7 +57,7 @@ function waterNotes(notes: any[]): any[] {
     .sort((a: any, b: any) => (Number(a.notedActiveMinutes) || 0) - (Number(b.notedActiveMinutes) || 0));
 }
 
-async function cmdPlan(client?: Client, cfg?: Record<string, any>): Promise<any> {
+export async function cmdPlan(client?: Client, cfg?: Record<string, any>): Promise<any> {
   const data = loadJSON<any>(SESSIONS_PATH, null);
   if (data === null) die(`会话数据不存在: ${SESSIONS_PATH}`);
   const date = data.date;
@@ -768,7 +768,9 @@ async function main(): Promise<void> {
   console.log(JSON.stringify(out, null, 2));
 }
 
-main().catch((e) => {
-  console.error(e);
-  process.exit(1);
-});
+if (import.meta.main) {
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
+}

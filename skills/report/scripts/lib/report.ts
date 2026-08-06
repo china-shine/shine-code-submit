@@ -211,7 +211,7 @@ const REPORT_CSS = `
 
 /** 把多个 work(各自 "1. a\n2. b" 从1编号)的条目拆出,顺延重新编号成单列表(1..N 不重复)。
  *  一天内多次提交同任务时,日报/周报聚合后避免出现多个重复的 1./2.。 */
-function renumberWorks(works: string[]): string {
+export function renumberWorks(works: string[]): string {
   const items: string[] = [];
   for (const w of works) {
     for (const line of String(w).replace(/\r/g, "").split("\n")) {
@@ -224,7 +224,7 @@ function renumberWorks(works: string[]): string {
 }
 
 /** 把报告数据渲染成自包含 HTML(内联 CSS,无外部依赖)。 */
-function renderReportHtml(d: ReportData): string {
+export function renderReportHtml(d: ReportData): string {
   const daily = d.from === d.to;
   const dateText = daily ? d.from : `${d.from} ~ ${d.to}`;
   const reportType = daily ? "日报" : "周报";
@@ -324,7 +324,7 @@ ${body}${grand}
 }
 
 /** 精简纯文本摘要(供 stdout/对话速览,非落盘文件)。 */
-function renderReportText(d: ReportData): string {
+export function renderReportText(d: ReportData): string {
   const daily = d.from === d.to;
   if (d.dates.length === 0) return `${d.title} · ${d.realname}\n该范围内没有禅道提交记录。`;
   const line = (id: string, r: ReportRow): string => {

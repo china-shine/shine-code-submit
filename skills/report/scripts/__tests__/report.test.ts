@@ -1,0 +1,108 @@
+import { describe, test, expect } from "bun:test";
+import { renumberWorks, renderReportHtml, renderReportText } from "../lib/report";
+
+describe("renumberWorks", () => {
+  test("多条 work 跨条顺延编号", () => {
+    expect(renumberWorks(["1. a\n2. b", "3. c"])).toBe("1. a\n2. b\n3. c");
+  });
+  test("无原编号也加编号", () => {
+    expect(renumberWorks(["a", "b"])).toBe("1. a\n2. b");
+  });
+  test("空数组 → 空串", () => {
+    expect(renumberWorks([])).toBe("");
+  });
+  test("空行跳过", () => {
+    expect(renumberWorks(["1. a\n\n2. b"])).toBe("1. a\n2. b");
+  });
+  test("去原编号(多位数)", () => {
+    expect(renumberWorks(["10. x"])).toBe("1. x");
+  });
+  test("trim 空白", () => {
+    expect(renumberWorks(["  1. 带空格  "])).toBe("1. 带空格");
+  });
+});
+
+const mkDaily = (over: Record<string, unknown> = {}): any => ({
+  from: "2026-08-06", to: "2026-08-06", title: "日报 2026-08-06", realname: "张三",
+  dates: ["2026-08-06"],
+  byDate: { "2026-08-06": { "77563": { hours: 1.5, works: ["1. 拆分\n2. 清理"] } } },
+  infoMap: new Map([[77563, { taskName: "AI提效", projectName: "日常工作/AI智能体" }]]),
+  zentaoUrl: "https://zentao",
+  ...over,
+});
+
+describe("renderReportHtml", () => {
+  test("日报: 类型/姓名/任务/工时/合计/链接", () => {
+    const html = renderReportHtml(mkDaily());
+    expect(html).toContain("<!doctype html>");
+    expect(html).toContain("日报");
+    expect(html).toContain("张三");
+    expect(html).toContain("AI提效");
+    expect(html).toContain("#77563");
+    expect(html).toContain("1.5h");
+    expect(html).toContain("合计");
+    expect(html).toContain("taskID=77563");
+  });
+  test("周报: 同任务跨天 rowspan + 本周合计", () => {
+    const d: any = {
+      from: "2026-08-04", to: "2026-08-06", title: "周报", realname: "李四",
+      dates: ["2026-08-05", "2026-08-06"],
+      byDate: {
+        "2026-08-05": { "100": { hours: 2, works: ["任务A"] } },
+        "2026-08-06": { "100": { hours: 1, works: ["任务A续"] }, "200": { hours: 0.5, works: ["任务B"] } },
+      },
+      infoMap: new Map([[100, { taskName: "T1", projectName: "P1" }], [200, { taskName: "T2", projectName: "P2" }]]),
+      zentaoUrl: "https://zentao",
+    };
+    const html = renderReportHtml(d);
+    expect(html).toContain("周报");
+    expect(html).toContain('rowspan="2"'); // 任务 100 跨两天
+    expect(html).toContain("本周合计");
+    expect(html).toContain("3.5h"); // 2+1+0.5
+  });
+  test("空数据: 提示 + 总工时 —", () => {
+    const d: any = { from: "2026-08-06", to: "2026-08-06", title: "日报 2026-08-06", realname: "张三", dates: [], byDate: {}, infoMap: new Map(), zentaoUrl: "u" };
+    const html = renderReportHtml(d);
+    expect(html).toContain("没有禅道提交记录");
+    expect(html).toContain("—"); // statNum
+  });
+  test("HTML 转义 taskName/projectName", () => {
+    const d: any = {
+      from: "2026-08-06", to: "2026-08-06", title: "日报 2026-08-06", realname: "x",
+      dates: ["2026-08-06"],
+      byDate: { "2026-08-06": { "1": { hours: 1, works: ["a"] } } },
+      infoMap: new Map([[1, { taskName: "<script>", projectName: "A&B" }]]),
+      zentaoUrl: "u",
+    };
+    const html = renderReportHtml(d);
+    expect(html).toContain("&lt;script&gt;"); // taskName 被转义
+    expect(html).not.toContain("<script>"); // 无原始危险标签
+    // projectName 仅用于 projects 计数,不渲染文本(此处不验证)
+  });
+});
+
+describe("renderReportText", () => {
+  test("日报文本摘要", () => {
+    const txt = renderReportText(mkDaily());
+    expect(txt).toContain("日报 2026-08-06 · 张三");
+    expect(txt).toContain("日常工作/AI智能体 / AI提效 #77563");
+    expect(txt).toContain("1.5h");
+    expect(txt).toContain("合计 1.5h · 1 个任务");
+  });
+  test("周报文本含 [月-日] 前缀 + 本周合计", () => {
+    const d: any = {
+      from: "2026-08-04", to: "2026-08-06", title: "周报", realname: "x",
+      dates: ["2026-08-06"],
+      byDate: { "2026-08-06": { "1": { hours: 2, works: ["a"] } } },
+      infoMap: new Map([[1, { taskName: "T1", projectName: "P1" }]]),
+      zentaoUrl: "u",
+    };
+    const txt = renderReportText(d);
+    expect(txt).toContain("[08-06");
+    expect(txt).toContain("本周合计 2h");
+  });
+  test("空数据", () => {
+    const d: any = { from: "2026-08-06", to: "2026-08-06", title: "日报 2026-08-06", realname: "张三", dates: [], byDate: {}, infoMap: new Map(), zentaoUrl: "u" };
+    expect(renderReportText(d)).toContain("没有禅道提交记录");
+  });
+});
