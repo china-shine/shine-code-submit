@@ -852,6 +852,21 @@ async function cmdPlan(client?: Client, cfg?: Record<string, any>): Promise<any>
   const mappings = loadJSON<any>(MAPPINGS_PATH, { repoToProject: {}, branchToTask: {} });
   const submittedAll = loadJSON<any>(SUBMITTED_PATH, {});
   const submitted = submittedAll[date] || {};
+  // 跨日期按 session id 查最近提交水位:长会话跨午夜时,提交记录在昨天的日期 key 下,
+  // 仅按"今天 date"查会漏 → 当成全新会话(8h needs_semantic)。取所有日期里该 session 的
+  // 最大 minutes 作水位,increment 才能正确算出跨午夜后的增量。
+  const submittedBySession: Record<string, any> = {};
+  for (const d of Object.keys(submittedAll)) {
+    const day = submittedAll[d];
+    if (!day || typeof day !== "object") continue;
+    for (const sid of Object.keys(day)) {
+      if (sid.startsWith("_")) continue; // _meta 跳过
+      const r = day[sid];
+      if (!r || typeof r !== "object") continue;
+      const cur = submittedBySession[sid];
+      if (!cur || (Number(r.minutes) || 0) > (Number(cur.minutes) || 0)) submittedBySession[sid] = r;
+    }
+  }
   // client 缺省(prepare 路径)走纯本地缓存不联网;调用方(cmdPrepare)须预检 cache 存在
   const cache = client ? await getCache(client, cfg!) : getCacheLocal();
   if (!cache || !Array.isArray(cache.projects) || !Array.isArray(cache.tasks)) {
@@ -887,13 +902,17 @@ async function cmdPlan(client?: Client, cfg?: Record<string, any>): Promise<any>
 
   const items: any[] = [];
   // 开发时 note 写的 summary:有 summary 的 session 直接 resolved(跳过 AI 语义匹配/文案),省 /report 推理
-  // 按会话日期(sessions.json.date)读 summary,防跨午夜报当天会话时读到今天空文件
-  const summaryNotes = loadJSON<any[]>(summaryPathFor(date), []);
+  // 跨日期扫描所有 summary-*.json 按 session 聚合:长会话跨午夜时 note 散在多个日期文件,
+  // 只读当天会漏(昨天的 note 读不到 → work=null)。扫 PROJECT_DIR 全部 summary 文件合并。
   const notesBySession = new Map<string, any[]>();
-  for (const sn of summaryNotes) {
-    const arr = notesBySession.get(sn.session) ?? [];
-    arr.push(sn);
-    notesBySession.set(sn.session, arr);
+  for (const fn of readdirSync(PROJECT_DIR)) {
+    if (!/^summary-\d{4}-\d{2}-\d{2}\.json$/.test(fn)) continue;
+    for (const sn of loadJSON<any[]>(path.join(PROJECT_DIR, fn), [])) {
+      if (!sn || !sn.session) continue;
+      const arr = notesBySession.get(sn.session) ?? [];
+      arr.push(sn);
+      notesBySession.set(sn.session, arr);
+    }
   }
   for (const s of data.sessions) {
     const item: any = {
@@ -907,7 +926,7 @@ async function cmdPlan(client?: Client, cfg?: Record<string, any>): Promise<any>
       increment: false,
       work: null,
     };
-    const rec = submitted[s.id];
+    const rec = submittedBySession[s.id]; // 跨日期水位:长会话跨午夜时提交记录在昨天 key 下
     if (rec) {
       const tasksList = Array.isArray(rec.tasks) && rec.tasks.length ? rec.tasks : [null];
       const taskId = tasksList[tasksList.length - 1];
