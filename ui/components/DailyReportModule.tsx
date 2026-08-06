@@ -49,9 +49,8 @@ export function DailyReportModule() {
     else setChecked(new Set(items.map((it) => it.date)));
   };
 
-  const open = async (date: string) => {
-    const r = await fetch(`${location.origin}/api/reports/daily/${date}`, { headers: { Authorization: `Bearer ${token}` } });
-    window.open(URL.createObjectURL(await r.blob()), "_blank");
+  const open = (date: string) => {
+    window.open(`${location.origin}/reports/daily/${date}?t=${encodeURIComponent(token)}`, "_blank");
   };
 
   const download = async (date: string) => {

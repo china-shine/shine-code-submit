@@ -49,9 +49,8 @@ export function WeeklyReportModule() {
     else setChecked(new Set(items.map((it) => it.date)));
   };
 
-  const open = async (range: string) => {
-    const r = await fetch(`${location.origin}/api/reports/weekly/${range}`, { headers: { Authorization: `Bearer ${token}` } });
-    window.open(URL.createObjectURL(await r.blob()), "_blank");
+  const open = (range: string) => {
+    window.open(`${location.origin}/reports/weekly/${range}?t=${encodeURIComponent(token)}`, "_blank");
   };
 
   const download = async (range: string) => {

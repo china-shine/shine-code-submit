@@ -280,6 +280,22 @@ export function startServer(deps: ServerDeps) {
         return json({ error: "upgrade failed" }, 400);
       }
 
+      // ---- reports 静态预览(?t= query 鉴权,供 dashboard 新窗口直接打开 HTTP URL,免 blob) ----
+      const rd = path.match(/^\/reports\/daily\/(\d{4}-\d{2}-\d{2})$/);
+      if (rd && req.method === "GET") {
+        const q = url.searchParams.get("t");
+        if (!q || !checkToken(`Bearer ${q}`, pid)) return json({ error: "unauthorized" }, 401);
+        const html = readReportHtml(`日报-${rd[1]}.html`);
+        return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
+      }
+      const rw = path.match(/^\/reports\/weekly\/(\d{4}-\d{2}-\d{2}~\d{4}-\d{2}-\d{2})$/);
+      if (rw && req.method === "GET") {
+        const q = url.searchParams.get("t");
+        if (!q || !checkToken(`Bearer ${q}`, pid)) return json({ error: "unauthorized" }, 401);
+        const html = readReportHtml(`周报-${rw[1]}.html`);
+        return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
+      }
+
       // ---- 以下均需鉴权 ----
       if (!authed(req)) return json({ error: "unauthorized" }, 401);
 
