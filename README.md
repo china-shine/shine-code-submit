@@ -61,6 +61,19 @@ Claude Code 共 9 个 hook 事件（[官方清单](https://docs.claude.com/en/do
 - **文案 work + 归属 task** = 开发时 `note` 记到 `summary-YYYY-MM-DD.json` 的一句话结论（按项目 + 日期；**文件名日期取 `sessions.json.date`**，跨午夜报当天会话不错位）；未记的会话才走 AI 语义匹配
 - **note 工时水位**：每条 note 拍快照当时 session 的 `activeMinutes`（`notedActiveMinutes`）。同一会话多条 note 时，按水位**切时间段拆工时到各 task**（段长 = 当前水位 − 上一水位），实现「一个会话干多个任务、工时按段分」
 
+#### 按项目隔离（每次只报当前项目）
+
+`/report`（`plan`/`auto`/`commit`）**只处理当前项目**的工时——脚本靠 `process.cwd()`（`$CLAUDE_PROJECT_DIR || cwd`）识别项目，数据按项目分目录隔离，**没有「一次报多个项目」的选项**：
+
+| 项 | 范围 |
+| --- | --- |
+| `sessions.json` / `summary-*` / `submitted.json` / `plan.json` | 全在 `projects/<编码cwd>/` 下，各项目互不可见 |
+| `/report` 提交 | 锁定当前项目；只有当前项目记的 note 才会被读到 |
+
+- **报多个项目**：分别到各项目目录跑（最省事是在各项目里直接开 Claude Code 会话再 `/report`），一天可多次提交。
+- ⚠️ **cwd 必须对**：cd 错目录或 `$CLAUDE_PROJECT_DIR` 指错 → 读到空 `sessions.json`（报「无当天会话数据」）；在 A 项目记的 note，去 B 项目 `/report` 看不到。
+- **dashboard ≠ report**：本地 dashboard / tokenserver 是**全局**的（所有项目、多台机器按 cwd 分组展示，看全貌用这个）；`/report` 提交禅道则严格限定当前项目。
+
 #### 提交逻辑（`plan` → `render` → `commit`）
 
 plan 按 session 产出 item，commit **按 item 粒度**逐条提交——每个 `resolved` item = 一次独立 `POST /tasks/{taskId}/estimate`（`{date, work, consumed=hours, left=剩余-hours}`，禅道 20.7 前自动降级旧请求体）：
