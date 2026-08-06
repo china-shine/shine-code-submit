@@ -4,14 +4,18 @@
 
 ## 1.3.3 — 2026-08-06
 
-zentao.ts 按职责拆分重构 + 全方位单测 + 日报周报静态预览 + 跨午夜工时修复。
+禅道工时填报闭环 + zentao.ts 拆分重构与单测 + dashboard 禅道/日报周报模块。
 
 ### 改动
-- **zentao.ts 拆分重构**:1935 行单文件按职责拆为入口(zentao.ts 775 行)+ lib/{shared,client,transcript,report} 4 模块,清死代码约 170 行(fullScanToday/mineSession/upsertSession/projectColor 等),行为零变更、调用方式不变。
-- **全方位单测**:补 91 例 bun test(shared 纯函数 / transcript 解析 / report 渲染 / client mock fetch / cmdPlan 全分支含跨午夜)。cmdPlan 用子进程隔离测试避免模块缓存污染真实数据。为可测性给内部函数加 export、main() 加 `import.meta.main` 守卫(零运行时影响)。
-- **日报周报预览改静态 HTTP URL**:daemon 新增 `/reports/{daily,weekly}/:id?t=` 静态端点(query token 鉴权,参考 WS 的 ?t=),dashboard 日报/周报模块点预览直接 `window.open` HTTP URL,不再 `fetch + createObjectURL(blob:)`。下载仍走 blob。
-- **跨午夜工时修复**:cmdPlan 提交水位(submitted)与 summary note 改按 session 跨日期扫描——长会话跨午夜时提交记录在昨天 date key、note 散在多个 summary 文件,原只读当天会漏致增量算错 / work=null。
-- **dashboard 字色提亮**:`--text`/`--muted` 提亮,增加与深色背景对比度。
+- **工时填报闭环**:开发时 note 记 summary → /report 直读提交;/prepare 提前批量准备;Stop hook 对话结束自动记;多 note 按水位拆工时到各 task。
+- **work 总结性**:note 记一句话结论,/report AI 综合成 3-5 条总结(非功能点流水账)。
+- **branchToTask + 匹配失败选项**:手动分支→任务映射接进 plan;匹配失败可更新缓存/建任务/选候选。
+- **缓存本地优先 + TTL**:提交工时只读本地缓存,仅 TTL 过期或手动才拉禅道。
+- **跨午夜工时修复**:submitted/summary 按 session 跨日期聚合,修长会话跨夜丢工时。
+- **zentao.ts 拆分 + 单测**:1935→775 行拆 4 模块,清死代码 -170 行,补 91 例单测。
+- **dashboard 禅道/日报周报模块**:禅道任务/项目查看;日报周报从 efforts 汇总生成 HTML + AI 日/周总结;设置页配禅道账号。
+- **日报周报静态预览**:daemon 加 /reports/?t= 静态端点,预览改 HTTP URL(免 blob)。
+- **字色提亮**:--text/--muted 提亮增对比。
 
 ## 1.3.2 — 2026-08-03
 
