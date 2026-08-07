@@ -2,6 +2,15 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.4 — 2026-08-07
+
+禅道工时 AI 提交标识(可配置开关+文案):提交时标注、报告对账统计 AI 代报。
+
+### 改动
+- **AI 提交标识**:/report 提交禅道工时时在 work 末尾追加标识行(默认「本次内容由AI填报」,独立一行);/daily /weekly 据此对账统计「AI 代报 N h」(hero chip + 合计行);renumberWorks 渲染时自动剥掉标识行、不计入工作内容编号。标识随禅道 effort 走,不依赖本地台账(重装/补报不丢)。
+- **三处可配**:新增 `mark` 子命令(`--on/--off/--text/--show`)+ `/shine-worklog:mark` skill + dashboard 设置页「AI 提交标识」区块,均读写 settings.json 的 `aiSubmitMark:{enabled,text}`,默认开启。
+- **后端**:Settings 接口 + DEFAULTS 加 aiSubmitMark;PUT /api/settings 加嵌套对象合并分支。
+
 ## 1.3.3 — 2026-08-06
 
 禅道工时填报闭环 + zentao.ts 拆分重构与单测 + dashboard 禅道/日报周报模块。
