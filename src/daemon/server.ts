@@ -492,6 +492,13 @@ export function startServer(deps: ServerDeps) {
             ? Math.floor(b.zentaoCacheTtlMin)
             : null;
         }
+        if (b.aiSubmitMark && typeof b.aiSubmitMark === "object") {
+          const m = b.aiSubmitMark as { enabled?: unknown; text?: unknown };
+          cur.aiSubmitMark = {
+            enabled: typeof m.enabled === "boolean" ? m.enabled : true,
+            text: typeof m.text === "string" && m.text ? m.text.trim() : null,
+          };
+        }
         writeSettings(cur);
         return json(cur);
       }

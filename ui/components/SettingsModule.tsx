@@ -12,6 +12,7 @@ interface Settings {
   autoUpdateIntervalMin?: number | null;
   zentaoCacheTtlMin?: number | null;
   latestVersion?: string | null;
+  aiSubmitMark?: { enabled: boolean; text: string | null } | null;
 }
 
 interface ZentaoConfig {
@@ -47,6 +48,8 @@ export function SettingsModule() {
   const [hasZentaoPassword, setHasZentaoPassword] = useState(false);
   const [currentVersion, setCurrentVersion] = useState("");
   const [latestVersion, setLatestVersion] = useState<string | null>(null);
+  const [markEnabled, setMarkEnabled] = useState(true);
+  const [markText, setMarkText] = useState("本次内容由AI填报");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
@@ -65,6 +68,8 @@ export function SettingsModule() {
         setUpdateIntervalStr(s.autoUpdateIntervalMin != null ? String(s.autoUpdateIntervalMin) : "");
         setCacheTtlStr(s.zentaoCacheTtlMin != null ? String(s.zentaoCacheTtlMin) : "");
         setLatestVersion(s.latestVersion ?? null);
+        setMarkEnabled(s.aiSubmitMark?.enabled !== false);
+        setMarkText(s.aiSubmitMark?.text ?? "本次内容由AI填报");
         setCurrentVersion(h.version ?? "");
         setZentaoUrl(z.url ?? "");
         setZentaoAccount(z.account ?? "");
@@ -90,6 +95,7 @@ export function SettingsModule() {
       autoUpdate,
       autoUpdateIntervalMin: Number.isFinite(uiv) && uiv > 0 ? uiv : null,
       zentaoCacheTtlMin: Number.isFinite(ctv) && ctv > 0 ? ctv : null,
+      aiSubmitMark: { enabled: markEnabled, text: markText.trim() || null },
     };
     try {
       const res = await fetch(base + "/api/settings", {
@@ -104,6 +110,8 @@ export function SettingsModule() {
       setAutoUpdate(s.autoUpdate !== false);
       setUpdateIntervalStr(s.autoUpdateIntervalMin != null ? String(s.autoUpdateIntervalMin) : "");
       setCacheTtlStr(s.zentaoCacheTtlMin != null ? String(s.zentaoCacheTtlMin) : "");
+      setMarkEnabled(s.aiSubmitMark?.enabled !== false);
+      setMarkText(s.aiSubmitMark?.text ?? "本次内容由AI填报");
 
       // 禅道账号配置(与 settings 同处保存):url/account 恒写,password 非空才更新(留空=不改)
       // 单独 catch:settings 已存,此步失败(旧 daemon 无路由)只提示、不判整次保存失败
@@ -290,6 +298,40 @@ export function SettingsModule() {
               </div>
               <div className="field-hint">
                 禅道任务/项目缓存(cache.json)默认命中即复用。设了 TTL 后,过期会在下次填报/生成报表时自动重拉,无需手动 refresh。改完无需重启。
+              </div>
+            </section>
+
+            <section className="sum-section">
+              <div className="sum-head">
+                <h3>AI 提交标识</h3>
+              </div>
+              <div className="field-row">
+                <label>启用</label>
+                <input
+                  type="checkbox"
+                  checked={markEnabled}
+                  onChange={(e) => setMarkEnabled(e.target.checked)}
+                />
+                <span className="field-hint" style={{ padding: 0 }}>
+                  开启后 /report 提交禅道工时时,在 work 末尾追加标识行;/daily /weekly 据此对账统计 AI 代报工时
+                </span>
+              </div>
+              <div className="field-row">
+                <label>标识文案</label>
+                <input
+                  className="field-input"
+                  type="text"
+                  placeholder="本次内容由AI填报"
+                  value={markText}
+                  onChange={(e) => setMarkText(e.target.value)}
+                  spellCheck={false}
+                />
+                <span className="field-hint" style={{ padding: 0 }}>
+                  拼到工作内容末尾的独立一行;留空恢复默认文案
+                </span>
+              </div>
+              <div className="field-hint">
+                标识随禅道 effort 走,不依赖本地台账;改文案后历史提交需按旧文案才能被报表识别。命令行亦可用 <code>shine-worklog mark --show/--on/--off/--text</code>。
               </div>
             </section>
 
