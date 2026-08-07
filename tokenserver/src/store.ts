@@ -2,7 +2,7 @@
 // DATA_DIR 双模式:开发(bun run src)= tokenserver/data;编译(二进制)= 二进制旁 data/。
 // (Bun 编译后 import.meta.dir 固化为编译机路径,Linux 上不存在,故编译模式用 process.execPath)
 import { Database } from "bun:sqlite";
-import { existsSync, mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import type { LinesStat, ReportResponse, TokenUsage } from "./types";
 
@@ -309,14 +309,34 @@ interface GitChangeRow {
   aiAdded: number;
 }
 
-/** 查 from..to + members 过滤的 git_changes(commit 代码变化行,AI 占比分母;与 querySessions 同过滤口径)。*/
+/** 读配置(DATA_DIR/config.json,用户手编辑):aiStatsHosts = AI 占比只统计的仓库 host 白名单(空/缺=不过滤=全部)。*/
+function readConfig(): { aiStatsHosts?: string[] } {
+  try {
+    const f = join(DATA_DIR, "config.json");
+    if (!existsSync(f)) return {};
+    return JSON.parse(readFileSync(f, "utf8")) as { aiStatsHosts?: string[] };
+  } catch {
+    return {};
+  }
+}
+
+/** 查 from..to + members 过滤的 git_changes(commit 代码变化行,AI 占比分母;与 querySessions 同过滤口径)。
+ *  host 白名单非空时 JOIN projects,只算 gitRemote 命中 host 的 commit(NULL gitRemote 排除)。*/
 function queryGitChanges(opts: FilterOpts): GitChangeRow[] {
+  const hosts = readConfig().aiStatsHosts ?? [];
+  const params: (number | string)[] = [];
   let sql =
-    "SELECT ts, gitUser, cwd, added, deleted, aiAdded FROM git_changes WHERE ts >= ? AND ts <= ?";
-  const params: (number | string)[] = [opts.from, opts.to];
+    "SELECT g.ts AS ts, g.gitUser AS gitUser, g.cwd AS cwd, g.added AS added, g.deleted AS deleted, g.aiAdded AS aiAdded FROM git_changes g";
+  if (hosts.length > 0) sql += " JOIN projects p ON p.gitUser = g.gitUser AND p.cwd = g.cwd";
+  sql += " WHERE g.ts >= ? AND g.ts <= ?";
+  params.push(opts.from, opts.to);
   if (opts.members.length > 0) {
-    sql += ` AND gitUser IN (${opts.members.map(() => "?").join(",")})`;
+    sql += ` AND g.gitUser IN (${opts.members.map(() => "?").join(",")})`;
     params.push(...opts.members);
+  }
+  if (hosts.length > 0) {
+    sql += ` AND p.gitRemote IS NOT NULL AND (${hosts.map(() => "p.gitRemote LIKE ?").join(" OR ")})`;
+    params.push(...hosts.map((h) => `%${h}%`));
   }
   return db.prepare(sql).all(...params) as GitChangeRow[];
 }
@@ -329,21 +349,29 @@ export function getDenominatorBreakdown(opts: FilterOpts & { member?: string }):
   byAi: Array<{ bucket: "ai" | "no-ai"; denom: number; ai: number; commits: number }>;
   total: { denom: number; ai: number; commits: number };
 } {
+  const hosts = readConfig().aiStatsHosts ?? [];
   const params: (number | string)[] = [opts.from, opts.to];
   let memberClause = "";
   if (opts.member) {
-    memberClause = " AND gitUser = ?";
+    memberClause = " AND g.gitUser = ?";
     params.push(opts.member);
   } else if (opts.members.length > 0) {
-    memberClause = ` AND gitUser IN (${opts.members.map(() => "?").join(",")})`;
+    memberClause = ` AND g.gitUser IN (${opts.members.map(() => "?").join(",")})`;
     params.push(...opts.members);
   }
-  const base = `FROM git_changes WHERE ts >= ? AND ts <= ?${memberClause} AND aiAdded > 0`;
+  let joinClause = "";
+  let hostClause = "";
+  if (hosts.length > 0) {
+    joinClause = " JOIN projects p ON p.gitUser = g.gitUser AND p.cwd = g.cwd";
+    hostClause = ` AND p.gitRemote IS NOT NULL AND (${hosts.map(() => "p.gitRemote LIKE ?").join(" OR ")})`;
+    params.push(...hosts.map((h) => `%${h}%`));
+  }
+  const base = `FROM git_changes g${joinClause} WHERE g.ts >= ? AND g.ts <= ?${memberClause} AND g.aiAdded > 0${hostClause}`;
   const byCwd = db
-    .prepare(`SELECT cwd, SUM(added+deleted) denom, SUM(aiAdded) ai, COUNT(*) commits ${base} GROUP BY cwd ORDER BY denom DESC`)
+    .prepare(`SELECT g.cwd AS cwd, SUM(g.added+g.deleted) AS denom, SUM(g.aiAdded) AS ai, COUNT(*) AS commits ${base} GROUP BY g.cwd ORDER BY denom DESC`)
     .all(...params) as Array<{ cwd: string; denom: number; ai: number; commits: number }>;
   const byAi = db
-    .prepare(`SELECT CASE WHEN aiAdded>0 THEN 'ai' ELSE 'no-ai' END bucket, SUM(added+deleted) denom, SUM(aiAdded) ai, COUNT(*) commits ${base} GROUP BY bucket`)
+    .prepare(`SELECT CASE WHEN g.aiAdded>0 THEN 'ai' ELSE 'no-ai' END AS bucket, SUM(g.added+g.deleted) AS denom, SUM(g.aiAdded) AS ai, COUNT(*) AS commits ${base} GROUP BY bucket`)
     .all(...params) as Array<{ bucket: "ai" | "no-ai"; denom: number; ai: number; commits: number }>;
   const total = {
     denom: byCwd.reduce((s, r) => s + r.denom, 0),
