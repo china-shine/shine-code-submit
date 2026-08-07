@@ -4,7 +4,7 @@
 
 ## 简介
 
-shine-worklog daemon 的 `reportUrl` 指向本服务。daemon 定时（每 `reportIntervalMin` 分钟）或手动（dashboard「上报」按钮）POST `ReportResponse`（含 gitUser/projects/sessions/token）到这里，本服务存储并按三级单页面展示。
+shine-worklog daemon 的 `reportUrl` 指向本服务。daemon 定时（每 `reportIntervalMin` 分钟）或手动（dashboard「上报」按钮）POST `ReportResponse`（含 gitUser/projects/sessions/token + gitCommits/git_changes + worklogs/禅道工时）到这里，本服务存储并按三级单页面展示。
 
 - **后端**：bun + bun:sqlite（无外部依赖）
 - **前端**：React + TSX（组件化，bun build 打包内联）
@@ -12,9 +12,12 @@ shine-worklog daemon 的 `reportUrl` 指向本服务。daemon 定时（每 `repo
 
 ## 功能
 
-- 接收上报：`POST /api/report`
-- 三级展示：用户（一级导航）→ 项目（二级导航）→ 会话表格（三级，与报表结构一致）
-- token 口径同报表：真实输入 = input + cacheCreation + cacheRead（不加权），B 级两位小数，`输入·输出·总数` 带标签
+- 接收上报：`POST /api/report`（gzip 兼容，增量快照 + 24h 全量校准，upsert 入库）
+- 三级展示：用户（成员列表）→ 项目（二级导航）→ 会话表格（三级，与报表结构一致）
+- **AI 代码占比**：总览 7 张 KPI 卡之一（分子 ΣaiAdded / 分母 Σadded+deleted，只统计有 transcript 覆盖的 commit），点「分母」看按项目构成；可选 `aiStatsHosts` host 白名单过滤（见「运行配置」）
+- **禅道工时**：成员详情「禅道工时」表（daemon 随报表 worklogs 上报的长期台账，任务名可点跳禅道）
+- **成员客户端版本号**：成员列表展示各成员上报的 shine-worklog 版本号
+- token 口径同报表：`rawTotal = input + output + cacheCreation + cacheRead`，四字段分别落列、SQL 直接 SUM
 
 ## 目录结构
 
@@ -32,7 +35,7 @@ tokenserver/
     index.html / style.css
     types.ts
     lib/{util,api}.ts
-    components/{App,UserList,ProjectList,SessionTable}.tsx
+    components/      # App + common/ + overview/ + member/ + shell/（7 KPI 卡 / 排行 / 趋势 / 成员详情 / 禅道工时）
   scripts/
     build-ui.ts      # 仅打包 UI(开发用)
     build.ts         # 打包 Linux 二进制(UI + ui-assets + 编译)
@@ -116,6 +119,8 @@ sudo systemctl enable --now tokenserver
 | `PORT` | 36667 | 监听端口 |
 | `TOKENSERVER_DATA_DIR` | 二进制旁 `data/` | sqlite db 目录；二进制目录只读时指向可写路径 |
 
+**运行配置**（`TOKENSERVER_DATA_DIR/config.json`，手编辑）：`aiStatsHosts`（string[]，如 `["8.130.168.121"]`）——AI 占比只统计 `gitRemote` 命中指定 host 的 commit（公司 git 仓库），排除 localhost/个人/无 remote；空或未配 = 不过滤。改后重启生效。
+
 ## 配 daemon 上报
 
 daemon **默认**已上报到 `http://47.98.221.20:36667/api/report`，间隔 10 分钟（见 `src/daemon/settings.ts` 的 `DEFAULTS`）。如需改地址，在 dashboard「设置」页改 `reportUrl`，或：
@@ -126,40 +131,53 @@ curl -X PUT http://127.0.0.1:36666/api/settings \
   -d '{"reportUrl":"http://服务器IP:36667/api/report"}'
 ```
 
-之后 daemon 每 `reportIntervalMin` 分钟（默认 1）自动上报，也可手动点 dashboard「上报」按钮触发。
+之后 daemon 每 `reportIntervalMin` 分钟（默认 10）自动上报，也可手动点 dashboard「上报」按钮触发。
 
 ## API
 
 - `GET /api/health` — 健康检查（无鉴权）
-- `POST /api/report` — daemon 上报，body = `ReportResponse` JSON（全量快照，upsert 入库）
-- `GET /api/stats?range=&members=&granularity=` — 全局聚合（KPI/趋势/排行/规模分布/成员列表），供 overview
-- `GET /api/sessions?range=&members=&member=&page=&pageSize=` — 会话明细分页（翻页查 DB）
-- `GET /api/member/:gitUser?range=&granularity=` — 单成员 KPI + 趋势（成员详情）
+- `POST /api/report` — daemon 上报（gzip 兼容），body = `ReportResponse` JSON（增量快照 + 全量校准，upsert 入库）
+- `GET /api/stats?start=&end=&members=&granularity=` — 全局聚合（7 KPI / 趋势 / 排行 / 成员列表），供 overview
+- `GET /api/sessions?start=&end=&members=&member=&page=&pageSize=` — 会话明细分页（翻页查 DB）
+- `GET /api/denominator-breakdown?start=&end=&members=&member=` — AI 占比分母构成（按项目 / 按有无 AI）
+- `GET /api/member/:gitUser?start=&end=&granularity=` — 单成员 KPI + 趋势（成员详情）
+- `GET /api/member/:gitUser/worklog?start=&end=&page=&pageSize=` — 单成员禅道工时台账（日期字符串比较分页）
 - `GET /` — 单页 UI（app.js/style.css 走 gzip + ETag）
 
 > ⚠️ `POST /api/report` 当前无鉴权，局域网/本地用没问题；公网暴露前建议加 token 校验。
 
 ## 数据模型
 
-规范化两表，upsert 去重（行数稳定，不随上报次数增长）：
+规范化 4 表，upsert 去重（行数稳定，不随上报次数增长）：
 
 ```sql
-projects(gitUser, cwd, name, gitRemote, lastActive, updatedAt)   -- PK(gitUser, cwd)
+projects(gitUser, cwd, name, gitRemote, lastActive, updatedAt, version)   -- PK(gitUser, cwd)
 sessions(sessionId, gitUser, cwd, lastActive,
-         input, output, cacheCreation, cacheRead, updatedAt)     -- PK(sessionId)
+         input, output, cacheCreation, cacheRead,
+         added, deleted, modified, activeMs, title, updatedAt)          -- PK(sessionId)
+git_changes(hash, gitUser, cwd, ts, added, deleted, aiAdded)             -- PK(hash)
+worklogs(gitUser, date, sessionId, taskId, repo, branch, cwd,
+         start, end, minutes, hours, taskName, projectId,
+         projectName, work, status, zentaoUrl, updatedAt)   -- PK(gitUser,date,sessionId,taskId)
 ```
 
 - 上报时拆分逐条 upsert：项目按 `(gitUser, cwd)` 去重，会话按 `sessionId` 去重（仅 `lastActive >= 旧` 时覆盖 token，取最新快照）
-- `tokenTotal` 拆成 4 个整数列，SQL 可直接 SUM
+- token 拆成 4 个整数列（`input/output/cacheCreation/cacheRead`），SQL 可直接 SUM；另存代码行 / `activeMs` / `title`
+- `git_changes` 按 commit hash 去重（`aiAdded` 取 MAX，嵌套项目重复上报不膨胀）——AI 占比分母
+- `worklogs` 按 `(gitUser,date,sessionId,taskId)` 复合 upsert 累积（daemon 每次全量发，靠 PK 去重跨天保留历史）——禅道工时台账
 - 聚合查询（`getStats` / `getMember`）实时算，`getSessions` 走 LIMIT/OFFSET；前端不再有全量拉取，所有响应大小不随会话数膨胀
 
-上报是**全量快照**（daemon 每次上报所有项目/会话，非增量），所以覆盖式取最新即可代表当前状态。
+上报是**增量快照**：daemon 按 `lastReportAt` 水位只发 `last_activity >= 水位` 的 session，成功推进水位；每 24h 或手动触发一次 `since=0` 全量校准（含 daemon 升级后的 gitCommits 全量回填）。服务端 upsert 幂等，天然兼容增量/全量两种。
 
 ## token 口径
 
-与 shine-worklog 报表完全一致：
+与 shine-worklog 报表完全一致（更细口径见 `数据说明.md`）：
 
-- **真实输入** = `input + cacheCreation + cacheRead`（直接累加 Anthropic API 原始字段，不乘系数）
-- **输出** = `output`
+- **显示总量 `rawTotal`** = `input + output + cacheCreation + cacheRead`（直接累加 Anthropic API 原始字段，不乘系数；早期「真实输入 = input + cacheCreation×1.25 + cacheRead×0.1」计费口径已弃用）
+- **四字段分别落列**（sessions 表 `input/output/cacheCreation/cacheRead`），SQL 直接 SUM
 - **fmtTokens**：k/M 一位小数，B/T 两位小数（`1.03e9` → `1.03B`）
 - **详情显示**：`输入 X · 输出 Y · 总数 Z`（带文字标签）
+
+## AI 代码占比
+
+占比 = AI 代码行 / git commit 代码变化行，只统计**有 transcript 覆盖的 commit**（`aiAdded>0`）。详见 `数据说明.md` §9 与主项目 README「AI 代码占比 + 禅道工时台账」。

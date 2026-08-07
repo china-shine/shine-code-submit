@@ -54,6 +54,9 @@ Claude Code 共 9 个 hook 事件（[官方清单](https://docs.claude.com/en/do
 - **`/prepare`**：手动批量读 transcript 生成 work+task（补漏）
 - **`/report`**：读 summary 缓存 → AI 综合成 ≤3 总结 → 提交禅道（读缓存→总结→提交，跳过最耗时的 AI 填空）
 - **`/daily` `/weekly` `/amend`**：日报 / 周报 / 修正最后一次提交
+- **`/mark`**：配置 **AI 提交标识**（开关 + 文案）——提交禅道工时在 work 末尾追加一行标识（默认「本次内容由AI填报」），`/daily` `/weekly` 据此对账统计「AI 代报 N h」；dashboard「设置 → AI 提交标识」区块配同一处（`settings.json` 的 `aiSubmitMark`）
+- **`/mappings`**：查看 / 维护仓库→禅道项目映射缓存（`mappings.json`，`/report` commit 时自动学习）
+- **`/setup`**：配置禅道连接信息（服务器 / 账号 / 密码 + 常用项目）
 
 #### 工时来源与记录缓存（summary）
 
@@ -99,6 +102,10 @@ plan 按 session 产出 item，commit **按 item 粒度**逐条提交——每�
 #### 禅道数据缓存（`cache.json`）
 
 禅道项目/任务/执行本地缓存于 `zenpilot/cache.json`（全局），`plan` 默认读缓存不联网。设了 `zentaoCacheTtlMin`（设置页「禅道 → 刷新间隔」）后**过期自动重拉**——下次 `/report`/`/daily`/`/weekly` 时若缓存超过 TTL 自动联网刷新，无需手动 refresh。
+
+#### Dashboard 禅道模块（与 skill 数据同源，非 skill）
+
+dashboard 另有禅道可视化模块：「禅道」页查看任务/项目缓存（`/api/zentao-cache`，可手动刷新）；「日报 / 周报」页从禅道 efforts 汇总生成 HTML 预览（`/api/reports/daily` `/weekly`，带 token 静态链接）＋ AI 日 / 周总结；「设置」页可配禅道账号 / 上报地址 / 刷新间隔 / AI 提交标识。
 
 详见各 skill 的 `SKILL.md`。
 
@@ -247,7 +254,7 @@ src/             shared/ daemon/ hook/ cli/ install/（多端共用源码）
 ui/              查看页（React/TSX，由 daemon 内嵌 HTTP 服务）
 dist/            install.cjs（npm 发布产物，gitignored）
 scripts/         build.ts、build-ui.ts、build-install.ts、publish.sh、fix-tarball-mode.py、verify-transcript-parity.ts、parity-vs-ccusage.ts（transcript 对齐校验）
-tokenserver/     报表上报接收服务（独立子项目,bun+sqlite+React,可打包 Linux 二进制;见 tokenserver/README.md）
+tokenserver/     报表上报接收服务（独立子项目,bun+sqlite+React,可打包 Linux 二进制;见 tokenserver/README.md + tokenserver/数据说明.md）
 ```
 
 ## 三个目录:工作目录 / plugin cache / DATA_DIR
@@ -289,7 +296,7 @@ daemon.token        持久化 token（daemon 重启/自动升级复用同一 tok
 spool/*.json        待消费事件（每事件一文件，原子写）
 log/daemon.log      日志（按大小轮转）
 db/events.sqlite    事件库（`events` 幂等去重）+ transcript 中枢（`transcript_files`/`transcript_sessions`），按 cwd 隔离
-settings.json       上报与更新配置（reportUrl/reportIntervalMin/autoUpdate/水位 lastReportAt）
+settings.json       上报与更新配置（reportUrl/reportIntervalMin/autoUpdate/水位 lastReportAt+lastFullReportAt/禅道缓存 TTL zentaoCacheTtlMin/AI 提交标识 aiSubmitMark/daemon 升级检测 lastDaemonVersion）
 zenpilot/           禅道工时填报数据（原 ~/.zenpilot/，1.3.0 统一进此；skill 短期工作区，长期台账在 tokenserver worklogs 表）
   config.json         禅道连接（url/account/password/projectIds，明文密码 chmod 600）
   mappings.json       仓库→项目映射（repoToProject 仓库名→禅道项目ID / branchToTask / projectNames；/report commit 时自动学习）
@@ -307,11 +314,31 @@ daemon 默认每 10 分钟（`reportIntervalMin`）或手动（Dashboard「上�
 
 **上报身份 = `git config user.name`**：采集不到（机器未配 `user.name`，如部分 CI/容器/新机）时**跳过本次上报**，不再以「未知用户」上传；手动上报按钮会提示「已跳过：未采集到 git user.name,跳过上报(无上报身份)」。配置 `git config --global user.name <名字>` 后即恢复上报。
 
+**上报范围与 token 显示**：token 统计**不受 `aiStatsHosts`（AI 占比 host 白名单）限制**——白名单只管 git 代码占比（`git_changes` 那条线），token 是全局的：
+
+- **数据源 = transcript，与 git 账号/仓库无关**：本机只要跑过 Claude Code（`~/.claude/projects/**/*.jsonl`），daemon 就算得出 token，不管项目 git remote 是什么、配没配仓库。
+- **配了 `git user.name` 即整机上报**：`buildReport` 扫全量 transcript session，这台机器**所有项目**的 token 一起上报、全部显示。
+- **一台机器 = 一个身份**：`git user.name` 读全局配置，本机所有项目都归到该用户名下；多台机器同名 `user.name` → tokenserver 合并为同一用户、token 累积（tokenserver 总量会大于单机 dashboard 属正常）。
+- **没配 `user.name`**：整台上报跳过，tokenserver 上这台机器任何 token 统计都看不到（即使有 transcript 数据）。
+
 **上报 body gzip 压缩**：daemon POST 时带 `content-encoding: gzip` + gzip body，tokenserver 按 content-encoding gunzip（兼容不压缩的老上报）。体积：97 session 39KB→gzip 10KB。
 
 **增量上报（已实现）**：`settings.json` 持久化水位 `lastReportAt`，每次只发 `last_activity >= 水位` 的 session，成功/无变化后推进水位（失败不推进，下次重发同批不丢），重启不重置。配 **24h 全量校准**：`lastFullReportAt` 每满 24h（或手动「全量上报」）强制 `since=0` 重锚一次，防 tokenserver 数据丢/重置后 daemon 不自愈。tokenserver 端 `saveReport` upsert by sessionId 幂等，天然兼容增量。
 
-**部署顺序**：tokenserver 先升级（gunzip 接收），daemon 再上报 gzip。**剩余待优化（几万 session）**：① 上报超时延长（15s→60s）② tokenserver `Bun.serve` 显式设 `maxRequestBodySize`（默认十几 MB 可能 413）。
+**部署顺序**：tokenserver 先升级（gunzip 接收），daemon 再上报 gzip。上报超时 60s、tokenserver `Bun.serve` 显式 `maxRequestBodySize` 256MB（万级 session / 全量回填防 413）。
+
+## AI 代码占比 + 禅道工时台账（tokenserver 侧指标）
+
+除 token 外，tokenserver 还聚合两类**随报表一起上来**的数据，完整口径见 [`tokenserver/数据说明.md`](./tokenserver/数据说明.md)。
+
+**AI 代码占比** = AI 代码行 / git commit 代码变化行（总览 KPI 卡，点「分母」按钮看按项目拆分）：
+- **分子 Σ aiAdded**：daemon 从 events 表 PostToolUse（Edit/Write/MultiEdit/NotebookEdit）的 `structuredPatch` 提取 AI 改动行，与 `git log -p --unified=0` 采的 commit added 行做**行级内容匹配**（认行不认 commit，手动 commit 的 AI 代码也能识别）；每个 commit 的 `aiAdded` 随报表 `gitCommits` 上报（`src/daemon/lines.ts` + `aggregate.ts`）。
+- **分母 Σ(added+deleted)**：commit 代码变化行，tokenserver 落 `git_changes` 表（hash 幂等 upsert，aiAdded 取 MAX）。
+- **只统计有 transcript 覆盖的 commit（`aiAdded>0`）**：早期版本前 / 别机器未装采集的 commit 无 AI 行记录，不进分母，避免拉低占比；占比卡副标直接显示分子/分母。
+- **host 白名单 `aiStatsHosts`**：tokenserver `data/config.json` 可配数组（如 `["8.130.168.121"]`），只统计 `gitRemote` 命中指定 host 的 commit（公司 git 仓库），排除 localhost / 个人 / 无 remote；空或未配 = 不过滤（向后兼容）。改后重启 tokenserver 生效。
+- **daemon 升级全量回填**：daemon 启动发现版本变化（`lastDaemonVersion`）会重置 `lastFullReportAt`，下次上报强制全量（since=0）重拉 gitCommits，历史 `aiAdded` 由 tokenserver upsert MAX 幂等补齐。
+
+**禅道工时台账**：daemon 每次上报**全量**读 `zenpilot/projects/*/plan.json` 的 `status=resolved` 条目（`src/daemon/worklog.ts`，忽略增量水位），随报表 `worklogs` 上报 → tokenserver 落 `worklogs` 表（`(gitUser,date,sessionId,taskId)` 复合 upsert 累积，跨项目/跨天长期保留）→ 成员详情「禅道工时」表（分页，任务名可点跳禅道）。
 
 ## Token 统计逻辑（与 [ccusage](https://github.com/ccusage/ccusage) 对齐）
 
