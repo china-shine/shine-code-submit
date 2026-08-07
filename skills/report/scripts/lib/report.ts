@@ -2,7 +2,7 @@
  *  纯渲染层:gatherReport 装配数据 → renderReportHtml/Text 渲染 → writeReport 落盘。 */
 import { readdirSync } from "node:fs";
 import * as path from "node:path";
-import { esc, writeText, loadJSON, isObj, pad2, DATA_DIR, ZENPILOT_HOME } from "./shared";
+import { esc, writeText, loadJSON, isObj, pad2, DATA_DIR, ZENPILOT_HOME, loadMarkSetting, isAiWork, stripMark } from "./shared";
 import { getCache, type Client } from "./client";
 
 export function weekStart(): string {
@@ -75,6 +75,7 @@ type ReportData = {
   byDate: Record<string, Record<string, ReportRow>>; // date -> taskId(字符串) -> {hours, works[]}
   infoMap: Map<number, { taskName: string; projectName: string }>;
   zentaoUrl: string;
+  aiHours: number; // 范围内 AI 代报(标识命中)的工时合计
 };
 
 /** 装配日报/周报数据:从禅道 efforts 汇总日期范围内的提交记录(纯数据,不含渲染)。 */
@@ -96,7 +97,10 @@ async function gatherReport(client: Client, cfg: Record<string, any>, from: stri
   );
 
   // 按日期分组:date -> taskId(字符串) -> {hours, works[]}
+  // work 存剥离 AI 标识后的干净文本(供 renumberWorks 编号);同时按标识累计 aiHours 供对账展示
+  const mark = loadMarkSetting();
   const byDate: Record<string, Record<string, ReportRow>> = {};
+  let aiHours = 0;
   for (const id of idList) {
     for (const e of effMap.get(id) || []) {
       if (!e.date || e.date < from || e.date > to) continue;
@@ -104,7 +108,10 @@ async function gatherReport(client: Client, cfg: Record<string, any>, from: stri
       const key = String(id);
       (day[key] ??= { hours: 0, works: [] as string[] });
       day[key].hours += e.consumed;
-      if (e.work) day[key].works.push(e.work);
+      if (e.work) {
+        if (isAiWork(e.work, mark.text)) aiHours += e.consumed;
+        day[key].works.push(stripMark(e.work, mark.text));
+      }
     }
   }
 
@@ -115,7 +122,7 @@ async function gatherReport(client: Client, cfg: Record<string, any>, from: stri
 
   const dates = Object.keys(byDate).sort();
   const title = from === to ? `日报 ${from}` : `周报 ${from} ~ ${to}`;
-  return { from, to, title, realname, dates, byDate, infoMap, zentaoUrl: cfg.url };
+  return { from, to, title, realname, dates, byDate, infoMap, zentaoUrl: cfg.url, aiHours };
 }
 
 const REPORT_CSS = `
@@ -288,6 +295,7 @@ export function renderReportHtml(d: ReportData): string {
     `<span class="chip"><b>${taskCount}</b>个任务</span>`,
     `<span class="chip"><b>${projects.size}</b>个项目</span>`,
     daily ? "" : `<span class="chip"><b>${d.dates.length}</b>天</span>`,
+    d.aiHours > 0 ? `<span class="chip"><b>${round1(d.aiHours)}h</b>AI 代报</span>` : "",
   ].filter(Boolean).join("");
   const grand = ""; // 合计已在表尾行(周报单表含日期列)
 
@@ -339,7 +347,7 @@ export function renderReportText(d: ReportData): string {
       total += day[id].hours;
       lines.push(line(id, day[id]));
     }
-    lines.push(`合计 ${round1(total)}h · ${Object.keys(day).length} 个任务`);
+    lines.push(`合计 ${round1(total)}h · ${Object.keys(day).length} 个任务${d.aiHours > 0 ? `(其中 AI 代报 ${round1(d.aiHours)}h)` : ""}`);
   } else {
     for (const date of d.dates) {
       const day = d.byDate[date];
@@ -349,7 +357,7 @@ export function renderReportText(d: ReportData): string {
         lines.push(`[${date.slice(5)} ${wd}] ${line(id, day[id])}`);
       }
     }
-    lines.push(`本周合计 ${round1(total)}h`);
+    lines.push(`本周合计 ${round1(total)}h${d.aiHours > 0 ? `(其中 AI 代报 ${round1(d.aiHours)}h)` : ""}`);
   }
   return lines.join("\n");
 }

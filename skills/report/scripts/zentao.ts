@@ -7,6 +7,7 @@
  *   executions [--projects 1,2] / create-task --execution ID --name TEXT --estimate H [--type devel --desc TEXT]
  *   refresh / plan / render / commit [--dry-run] / amend [--dry-run]
  *   efforts --task ID / submit --task ID --date D --hours H --work TEXT [--left H] [--dry-run] [--session S --minutes M]
+ *   mark [--on|--off|--text T|--show]   # AI 提交标识开关与文案(存 settings.json,提交时拼到 work 末尾)
  *   learn --repo R --project P [--branch B --task T] / mappings [--forget-repo R]
  *
  * 配置文件 ~/.zenpilot/config.json:
@@ -16,7 +17,7 @@
  *   会话采集+transcript → ./lib/transcript;日报/周报 → ./lib/report。本文件只留命令实现 + 入口分发。 */
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
-import { Args, die, loadJSON, writeJSON, roundPy, todayISO, nowISOSeconds, minutesSinceISO, hoursFromMinutes, fmtHours, isObj, loadConfig, requireStr, requireInt, summaryPathFor, CONFIG_PATH, CACHE_PATH, MAPPINGS_PATH, SESSIONS_PATH, SUBMITTED_PATH, PLAN_PATH, PROJECT_DIR, PROJECT_CWD, COMMIT_COOLDOWN_MINUTES } from "./lib/shared";
+import { Args, die, loadJSON, writeJSON, roundPy, todayISO, nowISOSeconds, minutesSinceISO, hoursFromMinutes, fmtHours, isObj, loadConfig, loadMarkSetting, applyMark, requireStr, requireInt, summaryPathFor, CONFIG_PATH, CACHE_PATH, MAPPINGS_PATH, SETTINGS_PATH, SESSIONS_PATH, SUBMITTED_PATH, PLAN_PATH, PROJECT_DIR, PROJECT_CWD, COMMIT_COOLDOWN_MINUTES } from "./lib/shared";
 import { Client, getCache, getCacheLocal } from "./lib/client";
 import { cmdCollect, extractTranscriptSignals } from "./lib/transcript";
 import { writeReport, weekStart } from "./lib/report";
@@ -46,6 +47,21 @@ function cmdConfig(a: Args): any {
     config: masked,
     missing: ["url", "account", "password"].filter((k) => !cfg[k]),
   };
+}
+
+/** AI 提交标识设置(存 settings.json,不登录禅道):--on/--off 开关、--text 文案、--show 查看。
+ *  无改动参数时只读;返回值恒为合并默认后的 {enabled,text}(loadMarkSetting)。 */
+function cmdMark(a: Args): any {
+  if (a.on || a.off || a.text !== undefined) {
+    const settings = loadJSON<any>(SETTINGS_PATH, {});
+    if (!isObj(settings.aiSubmitMark)) settings.aiSubmitMark = {};
+    const m = settings.aiSubmitMark;
+    if (a.on) m.enabled = true;
+    if (a.off) m.enabled = false;
+    if (a.text !== undefined) m.text = String(a.text);
+    writeJSON(SETTINGS_PATH, settings);
+  }
+  return { path: SETTINGS_PATH, aiSubmitMark: loadMarkSetting() };
 }
 
 /** 有 notedActiveMinutes 水位的新式 note,按水位升序。
@@ -375,11 +391,12 @@ async function cmdCommit(client: Client, opts: { dryRun?: boolean; amend?: boole
     }
   }
   const mappings = loadJSON<any>(MAPPINGS_PATH, { repoToProject: {}, branchToTask: {} });
+  const mark = loadMarkSetting(); // AI 提交标识(开关+文案),循环外读一次
   const results: any[] = [];
   for (const i of toSubmit) {
     let out: any;
     try {
-      out = await client.submitEffort(i.task, plan.date, i.hours, i.work, i.left ?? null, dryRun);
+      out = await client.submitEffort(i.task, plan.date, i.hours, applyMark(i.work, mark), i.left ?? null, dryRun);
     } catch (e) {
       out = { submitted: false, error: e instanceof Error ? e.message : String(e) }; // 单条失败不崩,继续其他条目
     }
@@ -583,7 +600,7 @@ function cmdLearn(a: Args): any {
 // ---------- 参数解析与分发 ----------
 // collect 的分发见 main():它是本地命令(不登录禅道),与 render/config 同区。
 
-const BOOL_FLAGS = new Set(["show", "all-status", "dry-run", "all"]);
+const BOOL_FLAGS = new Set(["show", "all-status", "dry-run", "all", "on", "off"]);
 
 function parseArgs(argv: string[]): Args {
   const cmd = argv[0];
@@ -638,6 +655,10 @@ async function main(): Promise<void> {
   }
   if (cmd === "mappings") {
     console.log(JSON.stringify(cmdMappings(a), null, 2));
+    return;
+  }
+  if (cmd === "mark") {
+    console.log(JSON.stringify(cmdMark(a), null, 2));
     return;
   }
 
@@ -750,7 +771,7 @@ async function main(): Promise<void> {
     const taskId = requireInt(a, "task");
     const date = requireStr(a, "date");
     const hours = parseFloat(String(a.hours));
-    const work = requireStr(a, "work");
+    const work = applyMark(requireStr(a, "work"), loadMarkSetting());
     const left = a.left !== undefined ? parseFloat(String(a.left)) : null;
     out = await client.submitEffort(taskId, date, hours, work, left, !!a["dry-run"]);
     if (out.submitted && a.session !== undefined) {

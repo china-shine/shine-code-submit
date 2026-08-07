@@ -79,6 +79,15 @@ describe("renderReportHtml", () => {
     expect(html).not.toContain("<script>"); // 无原始危险标签
     // projectName 仅用于 projects 计数,不渲染文本(此处不验证)
   });
+  test("aiHours>0: hero 含 'AI 代报' chip", () => {
+    const html = renderReportHtml(mkDaily({ aiHours: 1.5 }));
+    expect(html).toContain("AI 代报");
+    expect(html).toContain("1.5h</b>AI 代报");
+  });
+  test("aiHours 缺省/0: 不显示 AI 代报", () => {
+    expect(renderReportHtml(mkDaily())).not.toContain("AI 代报");
+    expect(renderReportText(mkDaily())).not.toContain("其中 AI 代报");
+  });
 });
 
 describe("renderReportText", () => {
@@ -104,5 +113,8 @@ describe("renderReportText", () => {
   test("空数据", () => {
     const d: any = { from: "2026-08-06", to: "2026-08-06", title: "日报 2026-08-06", realname: "张三", dates: [], byDate: {}, infoMap: new Map(), zentaoUrl: "u" };
     expect(renderReportText(d)).toContain("没有禅道提交记录");
+  });
+  test("aiHours>0: 合计行含 '其中 AI 代报'", () => {
+    expect(renderReportText(mkDaily({ aiHours: 1.2 }))).toContain("其中 AI 代报 1.2h");
   });
 });

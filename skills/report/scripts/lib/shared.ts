@@ -14,6 +14,7 @@ export const ZENPILOT_HOME = path.join(DATA_DIR, "zenpilot"); // 统一数据目
 export const CONFIG_PATH = path.join(ZENPILOT_HOME, "config.json");
 export const CACHE_PATH = path.join(ZENPILOT_HOME, "cache.json"); // 全局:禅道任务缓存
 export const MAPPINGS_PATH = path.join(ZENPILOT_HOME, "mappings.json"); // 全局:仓库→项目映射
+export const SETTINGS_PATH = path.join(DATA_DIR, "settings.json"); // 行为开关(如 zentaoCacheTtlMin、aiSubmitMark),DATA_DIR 下与 config.json(连接信息)分离
 
 // 按项目隔离,镜像 Claude Code 的 ~/.claude/projects/<编码路径>/
 export function encodeProject(cwd: string): string {
@@ -127,6 +128,37 @@ export function loadConfig(): Record<string, any> {
   }
   cfg.url = String(cfg.url).replace(/\/+$/, "");
   return cfg;
+}
+
+// ---------- AI 提交标识 ----------
+// 开关+文案存 settings.json(DATA_DIR 下)。标识拼在 work 末尾随禅道走,对账靠字符串匹配——
+// 不依赖本地台账,重装/补报不丢;代价:改文案后历史提交需按旧文案识别(对账尽力而为)。
+const DEFAULT_MARK = { enabled: true, text: "本次内容由AI填报" };
+
+export function loadMarkSetting(): { enabled: boolean; text: string } {
+  const m = loadJSON<any>(SETTINGS_PATH, {}).aiSubmitMark ?? {};
+  return {
+    enabled: typeof m.enabled === "boolean" ? m.enabled : DEFAULT_MARK.enabled,
+    text: typeof m.text === "string" && m.text ? m.text : DEFAULT_MARK.text,
+  };
+}
+
+/** enabled 且文案非空、且 work 末尾尚未带该标识 → 追加换行+文案;否则原样(幂等,防重复拼)。 */
+export function applyMark(work: string, mark: { enabled: boolean; text: string }): string {
+  if (!mark.enabled || !mark.text) return work;
+  const tail = "\n" + mark.text;
+  return work.endsWith(tail) ? work : work + tail;
+}
+
+export function isAiWork(work: string, text: string): boolean {
+  return !!text && work.endsWith("\n" + text);
+}
+
+/** 剥掉末尾标识行(供报告渲染/编号);不含标识或 text 为空则原样返回。 */
+export function stripMark(work: string, text: string): string {
+  if (!text) return work;
+  const tail = "\n" + text;
+  return work.endsWith(tail) ? work.slice(0, -tail.length) : work;
 }
 
 export function requireStr(a: Args, k: string): string {
