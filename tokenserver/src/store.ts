@@ -338,7 +338,7 @@ export function getDenominatorBreakdown(opts: FilterOpts & { member?: string }):
     memberClause = ` AND gitUser IN (${opts.members.map(() => "?").join(",")})`;
     params.push(...opts.members);
   }
-  const base = `FROM git_changes WHERE ts >= ? AND ts <= ?${memberClause}`;
+  const base = `FROM git_changes WHERE ts >= ? AND ts <= ?${memberClause} AND aiAdded > 0`;
   const byCwd = db
     .prepare(`SELECT cwd, SUM(added+deleted) denom, SUM(aiAdded) ai, COUNT(*) commits ${base} GROUP BY cwd ORDER BY denom DESC`)
     .all(...params) as Array<{ cwd: string; denom: number; ai: number; commits: number }>;
@@ -549,6 +549,7 @@ export function getStats(opts: FilterOpts & { granularity: Granularity }): Stats
 
   // git_changes 分母累加(全局 + 按 member + 按日,与 sessions 同 from/to/members 口径)
   for (const g of gitRows) {
+    if (g.aiAdded <= 0) continue; // AI 占比只统计有 transcript 覆盖(aiAdded>0)的 commit;无覆盖的不进分母,避免拉低占比
     tGitAdded += g.added;
     tGitDeleted += g.deleted;
     tGitAiAdded += g.aiAdded;
@@ -735,6 +736,7 @@ export function getMember(gitUser: string, opts: { from: number; to: number; gra
     dailyMap.set(dk.key, ds);
   }
   for (const g of gitRows) {
+    if (g.aiAdded <= 0) continue; // AI 占比只统计有 transcript 覆盖(aiAdded>0)的 commit;无覆盖的不进分母,避免拉低占比
     tGitAdded += g.added;
     tGitDeleted += g.deleted;
     tGitAiAdded += g.aiAdded;

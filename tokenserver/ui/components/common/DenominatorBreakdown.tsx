@@ -1,9 +1,9 @@
-// AI 占比「分母构成」:按钮 + 弹窗。按项目(cwd)+ 按 AI 覆盖(aiAdded=0 vs >0)拆 git_changes 分母,
-// 让用户/领导看清分母里有多少真实 AI 项目、多少是无 transcript 覆盖的 commit(解释整体占比偏低)。
+// AI 占比「分母构成」:按钮 + 弹窗。按项目(cwd)拆分母。
+// 占比口径:只统计 aiAdded>0(有 transcript 覆盖)的 commit;无覆盖的不进分母,避免拉低占比。
 import { useEffect, useState, type ReactNode } from "react";
 import { Modal } from "./Modal";
 import { fmtFull, fmtPct, displayProjectName } from "../../lib/derive";
-import { Database, Bot, FolderGit2, CheckCircle2, AlertCircle } from "lucide-react";
+import { Database, Bot, FolderGit2 } from "lucide-react";
 
 interface Breakdown {
   byCwd: { cwd: string; denom: number; ai: number; commits: number }[];
@@ -59,29 +59,28 @@ function BreakdownBody({ startDate, endDate, members, member }: { startDate: str
   if (!data) return <div className="text-muted-foreground text-sm py-12 text-center">加载中…</div>;
 
   const total = data.total;
-  const aiRow = data.byAi.find((r) => r.bucket === "ai");
-  const noAiRow = data.byAi.find((r) => r.bucket === "no-ai");
-  const aiDenom = aiRow?.denom ?? 0;
-  const noAiDenom = noAiRow?.denom ?? 0;
-
   return (
     <div className="space-y-6">
       {/* 顶部总览 stat */}
       <div className="grid grid-cols-4 gap-3">
-        <StatCell label="总分母" value={fmtFull(total.denom)} sub="行" icon={<Database className="w-4 h-4" />} tint="bg-slate-100 dark:bg-slate-800 text-slate-500" />
+        <StatCell label="分母" value={fmtFull(total.denom)} sub="行" icon={<Database className="w-4 h-4" />} tint="bg-slate-100 dark:bg-slate-800 text-slate-500" />
         <StatCell label="AI 代码" value={fmtFull(total.ai)} sub="行" icon={<Bot className="w-4 h-4" />} tint="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400" valueClass="text-emerald-600 dark:text-emerald-400" />
-        <StatCell label="整体占比" value={fmtPct(ratio(total.ai, total.denom))} icon={<Bot className="w-4 h-4" />} tint="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400" valueClass="text-emerald-600 dark:text-emerald-400" highlight />
+        <StatCell label="AI 占比" value={fmtPct(ratio(total.ai, total.denom))} icon={<Bot className="w-4 h-4" />} tint="bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400" valueClass="text-emerald-600 dark:text-emerald-400" highlight />
         <StatCell label="commit" value={fmtFull(total.commits)} icon={<Database className="w-4 h-4" />} tint="bg-slate-100 dark:bg-slate-800 text-slate-500" />
+      </div>
+
+      <div className="text-muted-foreground text-xs">
+        仅统计有 transcript 覆盖(commit 的 aiAdded&gt;0)的记录;无覆盖的(早期版本前 / 别机器)不进分母,避免拉低占比——所以这里的 AI 占比反映真实可统计的 AI 代码比例。
       </div>
 
       {/* 按项目 */}
       <Section title="按项目" icon={<FolderGit2 className="w-4 h-4" />} hint={`${data.byCwd.length} 个项目`}>
         <table className="w-full table-fixed">
           <colgroup>
-            <col className="w-[34%]" />
+            <col className="w-[40%]" />
             <col />
             <col />
-            <col className="w-[26%]" />
+            <col className="w-[24%]" />
             <col />
           </colgroup>
           <thead>
@@ -110,32 +109,6 @@ function BreakdownBody({ startDate, endDate, members, member }: { startDate: str
             ))}
           </tbody>
         </table>
-      </Section>
-
-      {/* 按 AI 覆盖 */}
-      <Section title="按 AI 覆盖" icon={<Bot className="w-4 h-4" />}>
-        <div className="grid grid-cols-2 gap-3">
-          <CoverageCard
-            ok
-            label="有 AI 数据"
-            desc="commit 的 aiAdded > 0(transcript 已覆盖)"
-            denom={aiDenom}
-            commits={aiRow?.commits ?? 0}
-            share={ratio(aiDenom, total.denom)}
-          />
-          <CoverageCard
-            ok={false}
-            label="无 AI 数据"
-            desc="aiAdded = 0(早期版本前 / 别机器,未装 transcript)"
-            denom={noAiDenom}
-            commits={noAiRow?.commits ?? 0}
-            share={ratio(noAiDenom, total.denom)}
-          />
-        </div>
-        <div className="mt-3 flex items-start gap-2 text-muted-foreground text-xs">
-          <AlertCircle className="w-3.5 h-3.5 mt-px shrink-0 text-amber-500" />
-          <span>「无 AI 数据」的分母拉低整体占比——这是占比偏低的来源,不代表这些代码不是 AI 写的。</span>
-        </div>
       </Section>
     </div>
   );
@@ -167,29 +140,6 @@ function Section({ title, icon, hint, children }: { title: string; icon: ReactNo
         {hint && <span className="text-muted-foreground text-xs ml-auto">{hint}</span>}
       </div>
       {children}
-    </div>
-  );
-}
-
-function CoverageCard({ ok, label, desc, denom, commits, share }: { ok: boolean; label: string; desc: string; denom: number; commits: number; share: number }) {
-  const Icon = ok ? CheckCircle2 : AlertCircle;
-  const tint = ok ? "bg-emerald-100 dark:bg-emerald-900/40 text-emerald-600 dark:text-emerald-400" : "bg-amber-100 dark:bg-amber-900/40 text-amber-600 dark:text-amber-400";
-  const bar = ok ? "bg-emerald-500" : "bg-amber-500";
-  return (
-    <div className="rounded-lg border border-border p-3">
-      <div className="flex items-center gap-2.5">
-        <span className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${tint}`}><Icon className="w-4 h-4" /></span>
-        <div className="min-w-0">
-          <div className="font-medium text-foreground">{label}</div>
-          <div className="text-muted-foreground text-[11px]">{commits} commit</div>
-        </div>
-        <span className="ml-auto font-mono text-foreground text-lg font-semibold">{fmtFull(denom)}</span>
-      </div>
-      <div className="mt-2.5 flex items-center gap-2">
-        <Bar value={share} className={bar} />
-        <span className="font-mono text-muted-foreground w-11 text-right">{fmtPct(share)}</span>
-      </div>
-      <div className="mt-1.5 text-muted-foreground text-[11px]">{desc}</div>
     </div>
   );
 }
