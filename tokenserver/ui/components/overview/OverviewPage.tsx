@@ -17,6 +17,9 @@ export function OverviewPage({
   onPageChange,
   dark,
   onSelectMember,
+  startDate,
+  endDate,
+  members,
 }: {
   stats: StatsPayload;
   sessionsPage: SessionsPage;
@@ -25,10 +28,13 @@ export function OverviewPage({
   onPageChange: (n: number) => void;
   dark: boolean;
   onSelectMember: (gitUser: string) => void;
+  startDate: string;
+  endDate: string;
+  members: string[];
 }) {
   return (
     <div className="space-y-5">
-      <KpiCards stats={stats} />
+      <KpiCards stats={stats} startDate={startDate} endDate={endDate} members={members} />
 
       <div className="grid grid-cols-12 gap-4">
         <TokenTrendChart trend={stats.trend} dark={dark} />

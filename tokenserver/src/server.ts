@@ -5,7 +5,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { gzipSync, gunzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
-import { saveReport, getStats, getSessions, getMember, getMemberWorklogs, type Granularity } from "./store";
+import { saveReport, getStats, getSessions, getMember, getMemberWorklogs, getDenominatorBreakdown, type Granularity } from "./store";
 import type { ReportResponse } from "./types";
 import { APP_JS, INDEX_HTML, STYLE_CSS } from "./ui-assets";
 
@@ -127,6 +127,14 @@ export function startServer() {
         const gRaw = url.searchParams.get("granularity");
         const granularity: Granularity = gRaw === "week" || gRaw === "month" ? gRaw : "day";
         return json(req, getStats({ from, to, members, granularity }));
+      }
+
+      // AI 占比「分母构成」(占比卡「查看分母」按钮):按 cwd + 有无AI 拆 git_changes 分母。
+      if (path === "/api/denominator-breakdown" && req.method === "GET") {
+        const { from, to } = parseDateRange(url.searchParams.get("start"), url.searchParams.get("end"));
+        const members = (url.searchParams.get("members") ?? "").split(",").filter(Boolean);
+        const member = url.searchParams.get("member") ?? undefined;
+        return json(req, getDenominatorBreakdown({ from, to, members, member }));
       }
 
       // 会话明细分页(RecentSessionsTable 翻页查 DB)

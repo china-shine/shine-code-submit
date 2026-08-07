@@ -120,6 +120,9 @@ export function App() {
                 onPageChange={loadPage}
                 dark={dark}
                 onSelectMember={selectMember}
+                startDate={startDate}
+                endDate={endDate}
+                members={selectedMembers}
               />
             )}
             {page === "member" && stats && (

@@ -321,6 +321,38 @@ function queryGitChanges(opts: FilterOpts): GitChangeRow[] {
   return db.prepare(sql).all(...params) as GitChangeRow[];
 }
 
+/** AI 占比「分母构成」:按 cwd + 按 aiAdded 有无,拆分 git_changes 的分母(added+deleted)。
+ *  过滤口径同 queryGitChanges(from/to/members);member(单成员,成员详情页用)优先于 members。
+ *  让 dashboard 看清分母里有多少真实 AI 项目、多少是无 transcript 覆盖(aiAdded=0)的 commit。 */
+export function getDenominatorBreakdown(opts: FilterOpts & { member?: string }): {
+  byCwd: Array<{ cwd: string; denom: number; ai: number; commits: number }>;
+  byAi: Array<{ bucket: "ai" | "no-ai"; denom: number; ai: number; commits: number }>;
+  total: { denom: number; ai: number; commits: number };
+} {
+  const params: (number | string)[] = [opts.from, opts.to];
+  let memberClause = "";
+  if (opts.member) {
+    memberClause = " AND gitUser = ?";
+    params.push(opts.member);
+  } else if (opts.members.length > 0) {
+    memberClause = ` AND gitUser IN (${opts.members.map(() => "?").join(",")})`;
+    params.push(...opts.members);
+  }
+  const base = `FROM git_changes WHERE ts >= ? AND ts <= ?${memberClause}`;
+  const byCwd = db
+    .prepare(`SELECT cwd, SUM(added+deleted) denom, SUM(aiAdded) ai, COUNT(*) commits ${base} GROUP BY cwd ORDER BY denom DESC`)
+    .all(...params) as Array<{ cwd: string; denom: number; ai: number; commits: number }>;
+  const byAi = db
+    .prepare(`SELECT CASE WHEN aiAdded>0 THEN 'ai' ELSE 'no-ai' END bucket, SUM(added+deleted) denom, SUM(aiAdded) ai, COUNT(*) commits ${base} GROUP BY bucket`)
+    .all(...params) as Array<{ bucket: "ai" | "no-ai"; denom: number; ai: number; commits: number }>;
+  const total = {
+    denom: byCwd.reduce((s, r) => s + r.denom, 0),
+    ai: byCwd.reduce((s, r) => s + r.ai, 0),
+    commits: byCwd.reduce((s, r) => s + r.commits, 0),
+  };
+  return { byCwd, byAi, total };
+}
+
 /** projects 表 (gitUser\0cwd)→name 映射(项目榜/会话表展示名 fallback,前端 displayProjectName 再清洗)。*/
 function projectNameMap(): Map<string, string> {
   const rows = db.prepare("SELECT gitUser, cwd, name FROM projects").all() as Array<{

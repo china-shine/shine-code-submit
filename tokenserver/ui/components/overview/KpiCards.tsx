@@ -5,8 +5,9 @@ import type { StatsPayload } from "../../types";
 import { fmtK, fmtFull, fmtDuration, lineTotal, fmtPct, C } from "../../lib/derive";
 import { MetricCard } from "../common/MetricCard";
 import { MiniSparkline } from "../common/MiniSparkline";
+import { DenominatorBreakdownButton } from "../common/DenominatorBreakdown";
 
-export function KpiCards({ stats }: { stats: StatsPayload }) {
+export function KpiCards({ stats, startDate, endDate, members }: { stats: StatsPayload; startDate: string; endDate: string; members: string[] }) {
   const t = stats.totals;
   const ds = stats.daily;
   const totalSeries = ds.map((d) => d.total);
@@ -77,6 +78,7 @@ export function KpiCards({ stats }: { stats: StatsPayload }) {
         sub={`AI ${fmtFull(aiChurn)} / 共 ${fmtFull(churn)} 行`}
         icon={<Bot className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />}
         color="bg-emerald-50 dark:bg-emerald-900/30"
+        action={<DenominatorBreakdownButton startDate={startDate} endDate={endDate} members={members} />}
         extra={<MiniSparkline data={ratioSeries} color="#10b981" />}
       />
     </div>

@@ -9,6 +9,7 @@ export function MetricCard({
   icon,
   color,
   extra,
+  action,
 }: {
   title: string;
   value: string;
@@ -16,12 +17,16 @@ export function MetricCard({
   icon: ReactNode;
   color: string;
   extra?: ReactNode;
+  action?: ReactNode;
 }) {
   return (
     <div className="bg-card border border-border rounded p-4 flex flex-col gap-3 hover:shadow-md transition-shadow">
       <div className="flex items-center justify-between">
         <span className="text-xs font-medium text-muted-foreground">{title}</span>
-        <span className={`w-8 h-8 rounded-sm flex items-center justify-center ${color}`}>{icon}</span>
+        <div className="flex items-center gap-1">
+          {action}
+          <span className={`w-8 h-8 rounded-sm flex items-center justify-center ${color}`}>{icon}</span>
+        </div>
       </div>
       <div>
         <div className="text-2xl font-semibold text-foreground font-mono tracking-tight">{value}</div>
