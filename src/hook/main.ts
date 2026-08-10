@@ -56,31 +56,14 @@ async function main(): Promise<void> {
   // 2.5 Stop 事件：fork ZenPilot collect（合并进来的禅道工时填报 skill），把同一份 stdin 转发给子进程。
   //     Claude Code 的 Stop 只把 stdin 喂给一个进程，故由本 hook 读一次后转发（不能在 hooks.json 挂两条 command）。
   //     detached + unref，不阻塞；失败一律吞掉，绝不影响 hook 退出码。
-  // Stop | SubagentStop:forkZenCollect 采集 session(不 block,无 error 显示)。
+  // Stop | SubagentStop:不 block(Stop block 在 Claude Code 会显示 "Stop hook error",见 issue #34600,
+  //   即使用 exit 0 + JSON decision:block 亦然——是 Claude Code 固定 UX,无法避免);仅 forkZenCollect 采集 session。
+  //   note 记录靠 UserPromptSubmit 每轮提示词提醒 AI 自觉(不强制,但无 error 显示)。
   if (event.type === "Stop" || event.type === "SubagentStop") {
     try {
       forkZenCollect(event.cwd, stdinRaw);
     } catch {
       /* ignore */
-    }
-  }
-  // Stop 强制记 note:本轮有代码改动(Write/Edit/MultiEdit)且未记 note → block 让 AI 补记。
-  //   用 exit 0 + JSON {decision:block,reason}(不是 exit 2 —— exit 2 会显示红色 "Stop hook error")。
-  //   防死循环:记 note 是 Bash(非 Write/Edit),再 Stop 时 lastTurnHasNote=true → 不再 block → 退出。
-  if (event.type === "Stop") {
-    try {
-      const tp = (event.payload as Record<string, unknown> | null | undefined)?.transcript_path;
-      if (typeof tp === "string" && tp && lastTurnHasCodeChange(tp) && !lastTurnHasNote(tp)) {
-        process.stdout.write(
-          JSON.stringify({
-            decision: "block",
-            reason:
-              '[shine-worklog] 本轮有代码改动(新建/编辑/删除文件)但未记工时 note。请立刻用 note 记一句话结论后再结束: bun skills/report/scripts/zentao.ts note --work "一句话:本轮核心成果" --task <禅道任务ID,不确定传 -1 或省略>',
-          }),
-        );
-      }
-    } catch {
-      /* ignore: block 失败不影响 hook 退出码 */
     }
   }
 
@@ -307,67 +290,6 @@ function detectAndRemind(): void {
   process.stdout.write(
     JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: msg } }),
   );
-}
-
-/** 本轮(最近一次「真实 user 输入」之后)的所有 tool_use,按 transcript 顺序。
- *  「真实 user 输入」= role:user 且 content 非纯 tool_result(排除工具回执)。 */
-function lastTurnToolUses(transcriptPath: string): Array<{ name: string; input: any }> {
-  try {
-    const raw = readFileSync(transcriptPath, "utf8");
-    const lines = raw.split("\n").filter((l) => l.trim());
-    let userIdx = 0;
-    for (let i = lines.length - 1; i >= 0; i--) {
-      const line = lines[i];
-      if (!line) continue;
-      try {
-        const ev = JSON.parse(line);
-        if (ev.message?.role !== "user") continue;
-        const c = ev.message.content;
-        const isToolResult = Array.isArray(c) && c.some((b: any) => b?.type === "tool_result");
-        if (!isToolResult) {
-          userIdx = i;
-          break;
-        }
-      } catch {
-        /* skip */
-      }
-    }
-    const tools: Array<{ name: string; input: any }> = [];
-    for (let i = userIdx; i < lines.length; i++) {
-      const line = lines[i];
-      if (!line) continue;
-      let ev: any;
-      try {
-        ev = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      const content = ev.message?.content;
-      if (!Array.isArray(content)) continue;
-      for (const b of content) {
-        if (b?.type === "tool_use") tools.push({ name: b.name, input: b.input });
-      }
-    }
-    return tools;
-  } catch {
-    return [];
-  }
-}
-
-/** 本轮是否有代码改动(Write/Edit/MultiEdit = 新建/编辑文件)。删除走 Bash 难识别,暂只覆盖新建/编辑。 */
-function lastTurnHasCodeChange(transcriptPath: string): boolean {
-  return lastTurnToolUses(transcriptPath).some(
-    (t) => t.name === "Edit" || t.name === "Write" || t.name === "MultiEdit",
-  );
-}
-
-/** 本轮是否已记 note(Bash 跑 zentao.ts note)。Stop block 防死循环:记过就不再 block。 */
-function lastTurnHasNote(transcriptPath: string): boolean {
-  return lastTurnToolUses(transcriptPath).some((t) => {
-    if (t.name !== "Bash") return false;
-    const cmd = t.input?.command || "";
-    return typeof cmd === "string" && cmd.includes("zentao.ts") && cmd.includes("note");
-  });
 }
 
 /** 读插件根 CLAUDE.md（规则源），SessionStart 注入 additionalContext 教 AI 顺手 note（插件级：所有装插件项目生效）。
