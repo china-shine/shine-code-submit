@@ -216,15 +216,19 @@ const REPORT_CSS = `
   }
 `;
 
+/** 行首序号前缀:手填禅道或 AI 填报都可能带,统一剥离后重新编号,避免「1. 1,xxx」双层序号。
+ *  支持 1. 1、 1, 1， 1) 1） 1: 1： (1) （1）;(?!\d) 防误吃版本号(3.14)/年份(2026.08),序号限 1-2 位。 */
+const LEADING_NUM_RE = /^\s*[（(]?\d{1,2}[）).、,，:：]\s*(?!\d)/;
+
 /** 把多个 work(各自 "1. a\n2. b" 从1编号)的条目拆出,顺延重新编号成单列表(1..N 不重复)。
- *  一天内多次提交同任务时,日报/周报聚合后避免出现多个重复的 1./2.。 */
+ *  一天内多次提交同任务时,日报/周报聚合后避免出现多个重复的 1./2.;手填逗号/顿号/括号序号也一并剥离。 */
 export function renumberWorks(works: string[]): string {
   const items: string[] = [];
   for (const w of works) {
     for (const line of String(w).replace(/\r/g, "").split("\n")) {
       const t = line.trim();
       if (!t) continue;
-      items.push(t.replace(/^\d+\.\s*/, "")); // 去原 "数字. " 前缀,统一重新编号
+      items.push(t.replace(LEADING_NUM_RE, "").trim()); // 去行首序号前缀,统一重新编号
     }
   }
   return items.map((it, i) => `${i + 1}. ${it}`).join("\n");

@@ -20,6 +20,27 @@ describe("renumberWorks", () => {
   test("trim 空白", () => {
     expect(renumberWorks(["  1. 带空格  "])).toBe("1. 带空格");
   });
+  test("手填逗号序号: 不双层编号(1,xxx / 2，xxx)", () => {
+    expect(renumberWorks(["1,由于服务器卡", "2，本地调通"])).toBe("1. 由于服务器卡\n2. 本地调通");
+  });
+  test("手填顿号序号", () => {
+    expect(renumberWorks(["1、第一项", "2、第二项"])).toBe("1. 第一项\n2. 第二项");
+  });
+  test("括号序号(全/半角)", () => {
+    expect(renumberWorks(["（1）全角", "(2) 半角"])).toBe("1. 全角\n2. 半角");
+  });
+  test("冒号序号(全/半角)", () => {
+    expect(renumberWorks(["1: 半角冒号", "2：全角冒号"])).toBe("1. 半角冒号\n2. 全角冒号");
+  });
+  test("手填带序号 + 无序号混合(复现禅道双层 bug)", () => {
+    expect(renumberWorks(["1,服务器卡\n2，本地调通", "配置gitignore\n整理Dify"])).toBe(
+      "1. 服务器卡\n2. 本地调通\n3. 配置gitignore\n4. 整理Dify",
+    );
+  });
+  test("版本号不误剥(3.14 / 2026.08)", () => {
+    expect(renumberWorks(["3.14 升级版本"])).toBe("1. 3.14 升级版本");
+    expect(renumberWorks(["2026.08 配置"])).toBe("1. 2026.08 配置");
+  });
 });
 
 const mkDaily = (over: Record<string, unknown> = {}): any => ({
