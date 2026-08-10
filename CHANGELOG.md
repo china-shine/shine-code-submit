@@ -2,6 +2,23 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.5 — 2026-08-10
+
+note 工时记录机制重构:每轮提示词驱动完成后记 + task 不确定记 -1 + /report unmatched 集中匹配统一提交。
+
+### 改动
+- **note 触发机制**:删除中间每轮的 ≥30min 未记兜底提醒,简化为每轮 UserPromptSubmit 注入基础提示词(本轮有代码改动→完成后记,task 不确定记 -1,不跳过不问)。
+- **task=-1 无感记录**:cmdNote --task 可省/传 -1(找不到任务不跳过不问);/report 时 task=-1 的 note 标 unmatched(带候选)集中匹配。
+- **/report unmatched 统一提交**:task>0 先就绪,task=-1 集中匹配候选后一次统一提交(避开 30min 二次冷却)。
+- **cmdNote inferProjectTask**:task≤0 自动沿用项目历史关联任务(防 AI 偷懒传 -1 丢失已关联项目归属)。
+- **increment 沿用原 task**:已提交会话增量补报沿用原 task(-1=不确定,用会话已知归属)。
+
+### 修复
+- cmdPlan 碎 note 拆段工时膨胀:每段 0.5h 下限累加 >> 整 session → 检测后合并单 item 取整 session 工时。
+- cmdNote --task 非数字归 -1(防 NaN 写进 summary)。
+- cmdAuto/cmdRender/cmdCommit 的 pending session 去重。
+- candidatesFor 抽出复用(needs_semantic + unmatched)。
+
 ## 1.3.4 — 2026-08-07
 
 禅道工时 AI 提交标识(可配置开关+文案):提交时标注、报告对账统计 AI 代报。
