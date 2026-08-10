@@ -2,6 +2,13 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.9 — 2026-08-11
+
+提示词加强措辞,提高 AI 记 note 的遵循率。
+
+### 改动
+- **提示词加强**:UserPromptSubmit 每轮提示词从中性措辞("若有...就...")改为强指令("一旦...【必须】...不得遗漏"),提高 AI 记 note 的执行率(尤其 helloworld 这类简单任务完成后)。本质仍是提醒(非强制),复杂任务 AI 可能仍忽略。
+
 ## 1.3.8 — 2026-08-11
 
 回退 1.3.7 的 Stop 强制记 note(Stop block 在 Claude Code 必然显示 "Stop hook error",无法避免)。
