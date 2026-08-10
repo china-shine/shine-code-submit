@@ -285,8 +285,11 @@ function forkZenCollect(cwd: string, stdinRaw: string): void {
 /** UserPromptSubmit:每轮 stdout 注入 additionalContext,提示 AI「本轮有代码改动就在响应完成时记 note」。
  *  纯提示词驱动(不 block、不读文件、无未记兜底);AI 据此在响应末尾自觉记(task 不确定记 -1)。失败静默。 */
 function detectAndRemind(): void {
+  // note 命令用 plugin 绝对路径(CLAUDE_PLUGIN_ROOT),不依赖 cwd——任何项目/目录都能直接跑。
+  const root = process.env.CLAUDE_PLUGIN_ROOT;
+  const zentao = root ? `${root}/skills/report/scripts/zentao.ts` : "skills/report/scripts/zentao.ts";
   const msg =
-    "[shine-worklog] 本轮一旦有代码改动(新建/编辑/删除文件),响应结束前【必须】用 note 记一句话结论,不得遗漏(--work \"一句话:本轮核心成果\" --task <禅道任务ID>);不确定 task 记 -1(不跳过、不问)。纯问答/无文件改动可不记。";
+    `[shine-worklog] 本轮一旦有代码改动(新建/编辑/删除文件),响应结束前【必须】记工时 note,不得遗漏。完整命令(直接执行): bun "${zentao}" note --work "一句话:本轮核心成果" --task <禅道任务ID,不确定传 -1 或省略>。纯问答/无文件改动可不记。`;
   process.stdout.write(
     JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: msg } }),
   );
