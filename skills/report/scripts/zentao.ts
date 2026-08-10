@@ -170,37 +170,23 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>): Promi
       if (delta < 15) {
         Object.assign(item, { status: "already", task: taskId, submittedHours: rec.hours ?? null }, await taskInfo(taskId));
       } else {
-        // 增量补报:work 取水位之后的新 note。若新 note 含 task<=0(-1),不沿用原 task 静默提交,
-        // 整段标 unmatched 让用户匹配(防 task=-1 的 work 被并入原 task 误报)。
+        // 增量补报:已提交会话已归属,增量沿用原 task(note 的 task=-1 表示"不确定",用会话已知归属)。
         const incNotes = notesBySession.get(s.id) || [];
         const submittedMin = rec.minutes ?? 0;
         const newIncNotes = waterNotes(incNotes).filter((n: any) => (Number(n.notedActiveMinutes) || 0) >= submittedMin);
-        if (newIncNotes.some((n: any) => !(Number(n.task) > 0))) {
-          Object.assign(item, {
-            status: "unmatched",
+        Object.assign(
+          item,
+          {
+            status: "resolved",
             increment: true,
-            task: -1,
+            task: taskId,
             hours: hoursFromMinutes(delta),
-            confidence: 0,
-            reason: "已提交会话的增量含 task=-1 note,待匹配任务",
+            confidence: 95,
+            reason: "已提交会话的增量补报,沿用原任务",
             work: newIncNotes.length ? newIncNotes.map((n: any) => n.work).join("\n") : null,
-            candidates: candidatesFor(s.repo, mappings, tasks, projectNames),
-          });
-        } else {
-          Object.assign(
-            item,
-            {
-              status: "resolved",
-              increment: true,
-              task: taskId,
-              hours: hoursFromMinutes(delta),
-              confidence: 95,
-              reason: "已提交会话的增量补报,沿用原任务",
-              work: newIncNotes.length ? newIncNotes.map((n: any) => n.work).join("\n") : null,
-            },
-            await taskInfo(taskId),
-          );
-        }
+          },
+          await taskInfo(taskId),
+        );
       }
       items.push(item);
       continue;
@@ -214,6 +200,7 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>): Promi
         const total = Math.max(0, s.activeMinutes);
         if (total < 1) continue; // 0 工时会话不拆(避免 hoursFromMinutes(0)=0.5 凭空造条目)
         let prev = 0; // baseline:summary 分支无 prior submit
+        const segItems: any[] = [];
         for (let i = 0; i < wn.length; i++) {
           const n = wn[i];
           if (!n) continue;
@@ -230,7 +217,7 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>): Promi
             : n.taskName
               ? { taskName: n.taskName, project: n.project, projectName: n.projectName }
               : await taskInfo(n.task);
-          items.push({
+          segItems.push({
             ...item,
             status: isUnmatched ? "unmatched" : "resolved",
             task: n.task,
@@ -241,6 +228,31 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>): Promi
             reason: isUnmatched ? "note 记录 task=-1,待 /report 匹配任务" : "开发时 summary 记录(多 note 按水位拆分)",
             ...(isUnmatched ? { candidates: candidatesFor(s.repo, mappings, tasks, projectNames) } : info),
           });
+        }
+        // 膨胀检测:碎 note 每段 0.5h 下限累加会让拆段总 hours >> 整 session 工时
+        // (如 18min 会话 3 条 note 拆 3 段=1.5h,实际 0.5h)。检测到则合并单 item,工时取整 session。
+        const totalHours = hoursFromMinutes(total);
+        const segSumHours = segItems.reduce((a: number, it: any) => a + (Number(it.hours) || 0), 0);
+        if (segItems.length > 1 && segSumHours > totalHours + 0.01) {
+          const allUnmatched = !segItems.some((it: any) => Number(it.task) > 0);
+          const mainTask = segItems.find((it: any) => Number(it.task) > 0) || segItems[segItems.length - 1];
+          const merged: any = {
+            ...mainTask,
+            hours: totalHours,
+            work: segItems.map((it: any) => it.work).filter(Boolean).join("\n") || null,
+            reason: "开发时 summary 记录(多 note 合并,避免拆段工时膨胀)",
+            confidence: allUnmatched ? 0 : 100,
+          };
+          if (allUnmatched) {
+            merged.status = "unmatched";
+            merged.task = -1;
+            merged.candidates = candidatesFor(s.repo, mappings, tasks, projectNames);
+          } else {
+            merged.status = "resolved";
+          }
+          items.push(merged);
+        } else {
+          items.push(...segItems);
         }
         continue;
       }
@@ -490,14 +502,36 @@ async function cmdAuto(client: Client, cfg: Record<string, any>, a: Args): Promi
   return { action: "committed", draft, result };
 }
 
+/** task<=0 时,沿用项目已关联任务:优先该 session 历史提交的 task,次选该项目任意会话最近的 task。
+ *  防 AI 记 note 偷懒传 -1 导致已关联项目丢失归属。无关联返回 -1。 */
+function inferProjectTask(session: string): number {
+  try {
+    const all = loadJSON<any>(SUBMITTED_PATH, {});
+    const dates = Object.keys(all).sort().reverse();
+    for (const d of dates) {
+      const rec = all[d]?.[session];
+      if (rec?.tasks?.length) return Number(rec.tasks[rec.tasks.length - 1]) || -1;
+    }
+    for (const d of dates) {
+      const day = all[d];
+      if (!isObj(day)) continue;
+      for (const sid of Object.keys(day)) {
+        if (sid.startsWith("_")) continue;
+        const rec = (day as any)[sid];
+        if (rec?.tasks?.length) return Number(rec.tasks[rec.tasks.length - 1]) || -1;
+      }
+    }
+  } catch {
+    /* 无 submitted 或读失败 → -1 */
+  }
+  return -1;
+}
+
 /** 开发时记一条功能总结到 summary-YYYY-MM-DD.json(按项目+日期)。
  *  work=功能点编号文案, task=禅道任务ID, session 未传则取当天最新活跃会话。
  *  自动从 cache.json 补 taskName/project/projectName。/report plan 直读省 AI 填空。 */
 function cmdNote(a: Args): any {
   const work = requireStr(a, "work");
-  // task 可选:不确定归属时记 -1(/report 时集中匹配),不跳过不问。requireInt→允许缺省 -1。
-  const taskRaw = a.task !== undefined ? parseInt(String(a.task), 10) : -1;
-  const task = Number.isNaN(taskRaw) ? -1 : taskRaw; // 非数字(--task abc)归 -1,防 NaN 写进 summary
   let session = a.session !== undefined ? String(a.session) : undefined;
   if (!session) {
     const data = loadJSON<{ sessions: any[] }>(SESSIONS_PATH, { sessions: [] });
@@ -508,6 +542,10 @@ function cmdNote(a: Args): any {
     session = latest?.id;
     if (!session) die("无法从当天会话推断 session,请显式传 --session");
   }
+  // task:显式传 > 项目历史关联任务(防 AI 偷懒传 -1 丢失已关联项目归属)> -1
+  const taskRaw = a.task !== undefined ? parseInt(String(a.task), 10) : -1;
+  let task = Number.isNaN(taskRaw) ? -1 : taskRaw;
+  if (task <= 0) task = inferProjectTask(session);
   let taskName: string | null = null;
   let project: number | null = null;
   let projectName: string | null = null;

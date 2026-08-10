@@ -206,7 +206,7 @@ describe("cmdPlan — task=-1 unmatched", () => {
     expect(items[1].candidates.map((c: any) => c.id)).toEqual([100, 200]);
   });
 
-  test("增量补报含 task=-1 note → unmatched(不沿用原 task 误报)", async () => {
+  test("增量补报含 task=-1 note → 沿用原 task(已提交会话已归属)", async () => {
     const items = await runPlan({
       sessions: [{ id: "s12", repo: "r", branch: "main", activeMinutes: 120, start: "09:00", end: "11:00" }],
       submitted: { "2026-08-06": { s12: { tasks: [100], hours: 1, minutes: 60 } } },
@@ -214,9 +214,49 @@ describe("cmdPlan — task=-1 unmatched", () => {
       mappings: { repoToProject: { r: 1 }, branchToTask: {} },
       cache: { projects: [{ id: 1, name: "P1" }], tasks: [{ id: 100, name: "T1", project: 1 }], executions: [], taskDetails: {} },
     });
-    expect(items[0].status).toBe("unmatched");
+    // increment 沿用原 task(100):会话已归属,note 的 task=-1(不确定)用已知归属
+    expect(items[0].status).toBe("resolved");
     expect(items[0].increment).toBe(true);
-    expect(items[0].task).toBe(-1);
-    expect(items[0].candidates.map((c: any) => c.id)).toEqual([100]);
+    expect(items[0].task).toBe(100);
+  });
+});
+
+describe("cmdPlan — 碎 note 膨胀合并", () => {
+  test("小会话多 note 拆段总>整 session → 合并单 item(工时不膨胀)", async () => {
+    const items = await runPlan({
+      sessions: [{ id: "s13", repo: "r", branch: "main", activeMinutes: 18, start: "09:00", end: "09:18" }],
+      submitted: {},
+      summaries: { "2026-08-06": [
+        { session: "s13", work: "A", task: 100, notedActiveMinutes: 5 },
+        { session: "s13", work: "B", task: 100, notedActiveMinutes: 10 },
+        { session: "s13", work: "C", task: 100, notedActiveMinutes: 15 },
+      ] },
+      cache: { projects: [{ id: 1, name: "P1" }], tasks: [{ id: 100, name: "T1", project: 1 }], executions: [], taskDetails: {} },
+    });
+    expect(items.length).toBe(1); // 合并成 1 个(不拆 3 段膨胀)
+    expect(items[0].hours).toBe(0.5); // 整 session(18min→0.5h),不是 1.5h
+    expect(items[0].task).toBe(100);
+    expect(items[0].work).toContain("A");
+    expect(items[0].work).toContain("C"); // work join 所有 note
+    expect(items[0].reason).toContain("合并");
+  });
+
+  test("大会话多 note 不膨胀 → 正常拆段(不误合并)", async () => {
+    const items = await runPlan({
+      sessions: [{ id: "s14", repo: "r", branch: "main", activeMinutes: 120, start: "09:00", end: "11:00" }],
+      submitted: {},
+      summaries: { "2026-08-06": [
+        { session: "s14", work: "A", task: 100, notedActiveMinutes: 60 },
+        { session: "s14", work: "B", task: 200, notedActiveMinutes: 90 },
+      ] },
+      mappings: { repoToProject: {}, branchToTask: {} },
+      cache: { projects: [{ id: 1, name: "P1" }], tasks: [
+        { id: 100, name: "T1", project: 1 }, { id: 200, name: "T2", project: 1 },
+      ], executions: [], taskDetails: {} },
+    });
+    // 120min 拆 2 段各 60min=1h,总 2h=整 session,不膨胀 → 正常拆 2 item
+    expect(items.length).toBe(2);
+    expect(items[0].hours).toBe(1);
+    expect(items[1].hours).toBe(1);
   });
 });
