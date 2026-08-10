@@ -13,6 +13,19 @@ export function weekStart(): string {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
+/** 上周区间 [周一, 周日](YYYY-MM-DD),供 /lastweek 一键生成上周周报。 */
+export function lastWeekRange(): [string, string] {
+  const d = new Date();
+  d.setHours(0, 0, 0, 0);
+  const day = d.getDay(); // 0=周日
+  const mondayThis = new Date(d);
+  mondayThis.setDate(d.getDate() - (day === 0 ? 6 : day - 1)); // 本周一
+  const sundayLast = new Date(mondayThis); sundayLast.setDate(mondayThis.getDate() - 1); // 上周日
+  const mondayLast = new Date(mondayThis); mondayLast.setDate(mondayThis.getDate() - 7); // 上周一
+  const fmt = (x: Date) => `${x.getFullYear()}-${pad2(x.getMonth() + 1)}-${pad2(x.getDate())}`;
+  return [fmt(mondayLast), fmt(sundayLast)];
+}
+
 /** 收集日期范围内出现过的任务 ID(遍历所有项目的 submitted.json) */
 function collectTaskIds(from: string, to: string): number[] {
   const root = path.join(ZENPILOT_HOME, "projects");
@@ -76,6 +89,7 @@ type ReportData = {
   infoMap: Map<number, { taskName: string; projectName: string }>;
   zentaoUrl: string;
   aiHours: number; // 范围内 AI 代报(标识命中)的工时合计
+  pendingTasks: { id: number; name: string; status: string | null; left: number; consumed: number; estimate: number; projectName: string }[];
 };
 
 /** 装配日报/周报数据:从禅道 efforts 汇总日期范围内的提交记录(纯数据,不含渲染)。 */
@@ -122,7 +136,21 @@ async function gatherReport(client: Client, cfg: Record<string, any>, from: stri
 
   const dates = Object.keys(byDate).sort();
   const title = from === to ? `日报 ${from}` : `周报 ${from} ~ ${to}`;
-  return { from, to, title, realname, dates, byDate, infoMap, zentaoUrl: cfg.url, aiHours };
+  // 未完成任务(禅道 doing/wait/pause,排除 done/closed/cancel)→ 供 AI 写「下周计划」(数据驱动,非主观推测)
+  const projNames: Record<number, string> = {};
+  for (const p of cache.projects) projNames[p.id] = p.name;
+  const pendingTasks = (cache.tasks || [])
+    .filter((t: any) => t.status !== "done" && t.status !== "closed" && t.status !== "cancel")
+    .map((t: any) => ({
+      id: t.id,
+      name: t.name ?? `#${t.id}`,
+      status: t.status ?? null,
+      left: Number(t.left) || 0,
+      consumed: Number(t.consumed) || 0,
+      estimate: Number(t.estimate) || 0,
+      projectName: projNames[t.project] ?? "",
+    }));
+  return { from, to, title, realname, dates, byDate, infoMap, zentaoUrl: cfg.url, aiHours, pendingTasks };
 }
 
 const REPORT_CSS = `
@@ -379,5 +407,5 @@ export async function writeReport(client: Client, cfg: Record<string, any>, from
   const dir = path.join(DATA_DIR, "reports");
   const file = path.join(dir, reportFilename(from, to, data.realname));
   writeText(file, html);
-  return { ok: true, file, title: data.title, empty: data.dates.length === 0, text: renderReportText(data) };
+  return { ok: true, file, title: data.title, empty: data.dates.length === 0, text: renderReportText(data), pendingTasks: data.pendingTasks };
 }

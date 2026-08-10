@@ -20,7 +20,7 @@ import * as path from "node:path";
 import { Args, die, loadJSON, writeJSON, roundPy, todayISO, nowISOSeconds, minutesSinceISO, hoursFromMinutes, fmtHours, isObj, loadConfig, loadMarkSetting, applyMark, requireStr, requireInt, summaryPathFor, CONFIG_PATH, CACHE_PATH, MAPPINGS_PATH, SETTINGS_PATH, SESSIONS_PATH, SUBMITTED_PATH, PLAN_PATH, PROJECT_DIR, PROJECT_CWD, COMMIT_COOLDOWN_MINUTES } from "./lib/shared";
 import { Client, getCache, getCacheLocal } from "./lib/client";
 import { cmdCollect, extractTranscriptSignals } from "./lib/transcript";
-import { writeReport, weekStart } from "./lib/report";
+import { writeReport, weekStart, lastWeekRange } from "./lib/report";
 
 // ---------- 命令实现 ----------
 
@@ -675,6 +675,11 @@ async function main(): Promise<void> {
   }
   if (cmd === "weekly") {
     console.log(JSON.stringify(await writeReport(client, cfg, (a.from as string) || weekStart(), (a.to as string) || todayISO()), null, 2));
+    return;
+  }
+  if (cmd === "lastweek") {
+    const [from, to] = lastWeekRange();
+    console.log(JSON.stringify(await writeReport(client, cfg, from, to), null, 2));
     return;
   }
   if (cmd === "check") {

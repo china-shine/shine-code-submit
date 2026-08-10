@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { renumberWorks, renderReportHtml, renderReportText, reportFilename } from "../lib/report";
+import { renumberWorks, renderReportHtml, renderReportText, reportFilename, lastWeekRange } from "../lib/report";
 
 describe("renumberWorks", () => {
   test("多条 work 跨条顺延编号", () => {
@@ -152,5 +152,18 @@ describe("reportFilename", () => {
   });
   test("去路径非法字符", () => {
     expect(reportFilename("2026-08-06", "2026-08-06", "a/b:c")).toBe("日报-2026-08-06-abc.html");
+  });
+});
+
+describe("lastWeekRange", () => {
+  test("返回上周一~上周日(周一开头、周日结尾、间隔6天)", () => {
+    const [from, to] = lastWeekRange();
+    const f = new Date(from + "T00:00:00");
+    const t = new Date(to + "T00:00:00");
+    expect(f.getDay()).toBe(1); // 周一
+    expect(t.getDay()).toBe(0); // 周日
+    expect(Math.round((t.getTime() - f.getTime()) / 86400000)).toBe(6); // 跨 6 天
+    expect(from).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(to).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 });
