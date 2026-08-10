@@ -166,3 +166,43 @@ describe("cmdPlan — 跨午夜", () => {
     expect(items[0].work).toBe("跨夜新增");
   });
 });
+
+describe("cmdPlan — task=-1 unmatched", () => {
+  test("summary note task=-1 → unmatched + candidates", async () => {
+    const items = await runPlan({
+      sessions: [{ id: "s10", repo: "r", branch: "main", activeMinutes: 60, start: "09:00", end: "10:00" }],
+      submitted: {},
+      summaries: { "2026-08-06": [{ session: "s10", work: "待匹配工作", task: -1, notedActiveMinutes: 60 }] },
+      mappings: { repoToProject: { r: 1 }, branchToTask: {} },
+      cache: { projects: [{ id: 1, name: "P1" }], tasks: [
+        { id: 100, name: "T1", project: 1 }, { id: 200, name: "T2", project: 1 },
+      ], executions: [], taskDetails: {} },
+    });
+    expect(items[0].status).toBe("unmatched");
+    expect(items[0].task).toBe(-1);
+    expect(items[0].work).toBe("待匹配工作");
+    expect(items[0].candidates.map((c: any) => c.id)).toEqual([100, 200]);
+    expect(items[0].reason).toContain("task=-1");
+  });
+
+  test("多 note 混合 task>0 与 task=-1 → resolved + unmatched 各一", async () => {
+    const items = await runPlan({
+      sessions: [{ id: "s11", repo: "r", branch: "main", activeMinutes: 120, start: "09:00", end: "11:00" }],
+      submitted: {},
+      summaries: { "2026-08-06": [
+        { session: "s11", work: "确定任务部分", task: 100, notedActiveMinutes: 50 },
+        { session: "s11", work: "不确定部分", task: -1, notedActiveMinutes: 100 },
+      ] },
+      mappings: { repoToProject: { r: 1 }, branchToTask: {} },
+      cache: { projects: [{ id: 1, name: "P1" }], tasks: [
+        { id: 100, name: "T1", project: 1 }, { id: 200, name: "T2", project: 1 },
+      ], executions: [], taskDetails: {} },
+    });
+    expect(items.length).toBe(2);
+    expect(items[0].status).toBe("resolved");
+    expect(items[0].task).toBe(100);
+    expect(items[1].status).toBe("unmatched");
+    expect(items[1].task).toBe(-1);
+    expect(items[1].candidates.map((c: any) => c.id)).toEqual([100, 200]);
+  });
+});

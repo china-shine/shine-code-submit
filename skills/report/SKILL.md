@@ -34,7 +34,7 @@ bun "<Base directory>/scripts/zentao.ts" auto        # 默认直接提交;加 --
 auto 内部 collect → plan →(全 resolved)→ commit 一次跑完,**默认自动提交、不再逐条确认**(summary 自记归属可信,错可 amend)。按返回的 `action` 分支处理:
 
 - `committed` — 已提交:用 `result`(成功/跳过条数、每条任务) + `draft`(草稿文本)直接汇报,本次只 1 次工具调用。
-- `needs_review` — 有 `pending`(needs_semantic)或 `noWork`(resolved 缺 work):只对这些条目走下面的「AI 填空」,改 plan.json 后跑 `commit`(其余条目已就绪,无需重跑 auto)。**下次可先跑 `/shine-worklog:prepare` 把 AI 填空前置,本动作即变秒级**。
+- `needs_review` — 有 `pending`(needs_semantic / **unmatched** 即 task=-1)或 `noWork`(resolved 缺 work):只对这些条目走下面的「AI 填空 / unmatched 匹配」,改 plan.json 后跑 `commit`(其余条目已就绪,无需重跑 auto)。**下次可先跑 `/shine-worklog:prepare` 把 AI 填空前置,本动作即变秒级**。
 - `cooldown` — 距上次提交 < 30 分钟:告知用户需等待 `waitMinutes` 分钟。
 - `nothing` — 全 already/skipped,无可提交:说明本次无需提交。
 - `abort` — collect 失败(通常 daemon 未启动):提示用户启 daemon 或走分步 collect 排查。
@@ -45,18 +45,18 @@ auto 内部 collect → plan →(全 resolved)→ commit 一次跑完,**默认�
 
 > 更省事:直接跑 `/shine-worklog:prepare`,AI 一次性读 transcript 批量生成当天所有会话的 work+task 写 summary,无需手动一条条记。下面的手动 `note` 适合「边做边记」或补 prepare 漏掉的单条。
 
-**完成一个功能模块后,立即**记一条 summary(不等 /report):
+**一轮对话完成时**(响应结束前)记一次 summary(不等 /report;一轮干多个模块可拆多条):
 
 ```
 bun "<Base directory>/scripts/zentao.ts" note --work "一句话:这段工作的核心成果" --task <任务ID>
 ```
 
 - `--work`:**一句话精炼结论**(这段的核心成果),不罗列功能点——/report 时 AI 会把多条结论归纳成 3-5 个总结提交,细节留 transcript(✗ `1.功能A\n2.功能B` 流水账;✓ `实现X功能,达成Y效果`)
-- `--task`:关联的禅道任务 ID(开发时已知,如本会话做的归 #77563 就传 77563)
+- `--task`:关联的禅道任务 ID;**不确定归属时传 `-1`(或省略,默认 -1),不跳过、不问用户**——这些留到 `/report` 集中匹配(见下「unmatched 匹配」)
 - `--session`:可选,未传自动取当天最新活跃会话
-- 写入 `~/.zenpilot/projects/<编码项目>/summary-YYYY-MM-DD.json`,taskName/project 从 cache.json 自动补
+- 写入 `~/.zenpilot/projects/<编码项目>/summary-YYYY-MM-DD.json`,taskName/project 从 cache.json 自动补(task=-1 时为 null,正常)
 
-`plan` 会优先读 summary:**有 summary 的会话直接 `resolved`(置信度 100,跳过 AI 语义匹配 + 文案生成)**,工时仍取 daemon 的 session 活跃时长。开发时都记了,/report 的「AI 填空」步骤基本为空,省掉最耗时的推理。
+`plan` 会优先读 summary:**有 summary 且 task>0 的会话直接 `resolved`(置信度 100,跳过 AI 语义匹配 + 文案生成)**,工时仍取 daemon 的 session 活跃时长。**task=-1 的 note 标 `unmatched`**(有 work、带候选任务),留到 /report 匹配。开发时记了归属,「AI 填空」基本为空;没记归属的(task=-1)集中一次匹配。
 
 ### 1. plan(读缓存:summary + 工时 + 防重 + cooldown 预判)
 
@@ -73,6 +73,8 @@ bun "<Base directory>/scripts/zentao.ts" plan
 > 防 `work=null`:已提交会话的增量补报,work 取"提交水位之后记的新 note";若为 null 说明这段没记 note(或水位时序),AI 据 note/上下文补一句总结写 plan.json。
 
 ### 2. AI 填空(直接编辑 plan.json)
+
+**unmatched(task=-1 的 note)优先匹配**:对每个 `unmatched` 条目(已有 `work`,只是 task 待定),用 AskUserQuestion 列出该条目的 `candidates` 让用户选任务(AI 据 work 语义高置信可自行定)。选定后编辑 `plan.json`(`task`→ID、补 `taskName`/`project`/`projectName`、`status`→`resolved`),并**同步改 `summary-*.json` 对应 note 的 `task` 字段**(从 -1 改选定 ID,持久化,下次不再 unmatched)。全 resolved 后统一 `commit`(task>0 + 匹配后的 task=-1 一次提交,无二次冷却)。
 
 1. **语义匹配**:对每个 `needs_semantic` 条目,比较 `summary` 与 `candidates` 任务名,选最可能的任务,写入 `task`、`confidence`(0-100)、`reason`(一句话),状态改为 `resolved`。置信度 ≥85 自行确定;<85 或无合理候选(匹配失败)时,用 AskUserQuestion 给出以下选项让用户选(按候选情况取舍,AskUserQuestion ≤4 个选项):
    - **更新禅道缓存后重新匹配** — 候选明显不全/陈旧(仓库映射到的项目候选为空、或禅道新加了任务还没进缓存)时首选:执行 `refresh` 重拉任务/项目 → 重跑 `plan` 重新匹配(新任务会进缓存)

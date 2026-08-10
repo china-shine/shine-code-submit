@@ -5,7 +5,6 @@
 //   全程失败静默，退出码恒为 0（绝不影响 Claude Code）。
 import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
 import { ensureDirs, DATA_DIR, NOTICE_FILE } from "../shared/paths";
-import { encodeProject, todayISO } from "../shared/datetime";
 import { readToken } from "../shared/pidfile";
 import { writeSpoolFile } from "../shared/spool";
 import { BASE_URL, PUBLIC_BASE_URL, HOOK_POST_TIMEOUT_MS, SERVICE_VERSION } from "../shared/config";
@@ -58,7 +57,6 @@ async function main(): Promise<void> {
   //     Claude Code 的 Stop 只把 stdin 喂给一个进程，故由本 hook 读一次后转发（不能在 hooks.json 挂两条 command）。
   //     detached + unref，不阻塞；失败一律吞掉，绝不影响 hook 退出码。
   // Stop | SubagentStop:不 block(避免 Claude Code "blocking error" 显示);仅 forkZenCollect 采集 session。
-  // "对话结束记"改由 UserPromptSubmit(detectAndRemind)每轮提示,让 AI 在响应里自觉记,无需 block 强制。
   if (event.type === "Stop" || event.type === "SubagentStop") {
     try {
       forkZenCollect(event.cwd, stdinRaw);
@@ -67,11 +65,11 @@ async function main(): Promise<void> {
     }
   }
 
-  // 2.6 UserPromptSubmit：检测今日未记工时累积，≥阈值则 stdout 注入 additionalContext 提醒 AI 补 note。
-  //     纯本地读 3 个 JSON（<10ms），不联网不 spawn；hook 注入不保证 AI 执行（靠 CLAUDE.md 规则兜底）。
+  // UserPromptSubmit:每轮注入提示词,告诉 AI「本轮有代码改动就在响应完成时记 note」。
+  // 纯提示词驱动(不 block、不读文件、无 30min 兜底);AI 据此在响应末尾自觉记(task 不确定记 -1)。
   if (event.type === "UserPromptSubmit") {
     try {
-      detectAndRemind(event);
+      detectAndRemind();
     } catch {
       /* ignore */
     }
@@ -280,145 +278,20 @@ function forkZenCollect(cwd: string, stdinRaw: string): void {
   child.unref(); // 关键：不阻塞父进程退出
 }
 
-// ---------- ZenPilot 未记工时检测（UserPromptSubmit 提醒 AI 顺手 note）----------
+// ---------- 每轮提示 AI 完成后记 note（UserPromptSubmit 注入提示词）----------
 
-// encodeProject/todayISO 见 src/shared/datetime.ts(此处 import);pad2 是 todayISO 内部依赖,不直接用
-
-/** UserPromptSubmit：读本地 sessions/summary/submitted 算"未记 activeMinutes"，
- *  ≥30 分钟则 stdout 输出 additionalContext（JSON），Claude Code 注入为 system reminder 提醒 AI 补 note。
- *  AI note 后（新式带水位）uncovered→0，下轮不再提醒（水位推进自然止）。失败静默，绝不影响 hook。 */
-function detectAndRemind(event: HookEvent): void {
-  const cwd = event.cwd;
-  if (!cwd) return;
-  // base:每轮提示"本轮若有代码改动,响应结束前 note"(替代 Stop block,无 error 显示;AI 在响应里自觉记)
-  let msg =
-    "[shine-worklog] 本轮若有代码改动,响应结束前用 note 记一句话结论(--work \"一句话:本轮核心成果\" --task <禅道任务ID>);不确定 task/纯调试/纯问答跳过,不记空内容。";
-  const projectDir = join(DATA_DIR, "zenpilot", "projects", encodeProject(cwd));
-  const today = todayISO();
-  const sessionsPath = join(projectDir, "sessions.json");
-  const summaryPath = join(projectDir, `summary-${today}.json`);
-  const submittedPath = join(projectDir, "submitted.json");
-  if (!existsSync(sessionsPath)) return; // 还没采集过
-
-  let sd: any;
-  try {
-    sd = JSON.parse(readFileSync(sessionsPath, "utf8"));
-  } catch {
-    return;
-  }
-  if (!sd || sd.date !== today || !Array.isArray(sd.sessions)) return;
-  // 粗筛:无任何 session 活跃达阈值(30=THRESHOLD)就不可能产生 offender,跳过 summary/submitted 读取(省 UserPromptSubmit 热路径 IO)
-  if (!sd.sessions.some((s: any) => (Number(s.activeMinutes) || 0) >= 30)) return;
-
-  let notes: any[] = [];
-  try {
-    notes = JSON.parse(readFileSync(summaryPath, "utf8")) || [];
-  } catch {
-    /* [] */
-  }
-  const notesBySession = new Map<string, any[]>();
-  for (const n of notes) {
-    if (!n || typeof n.session !== "string") continue;
-    const arr = notesBySession.get(n.session) ?? [];
-    arr.push(n);
-    notesBySession.set(n.session, arr);
-  }
-
-  let submittedAll: any = {};
-  try {
-    submittedAll = JSON.parse(readFileSync(submittedPath, "utf8")) || {};
-  } catch {
-    /* {} */
-  }
-  const submitted = submittedAll[today] || {};
-
-  const THRESHOLD = 30; // 单 session 未记累计≥30 分钟才提醒(= CLAUDE.md「≥30 分钟」,改阈值两处同步)
-  const offenders: Array<{ id: string; minutes: number; branch: string | null }> = [];
-  let totalUnnoted = 0;
-  for (const s of sd.sessions) {
-    if (!s || typeof s.id !== "string") continue;
-    const sNotes = notesBySession.get(s.id) || [];
-    const sActive = Number(s.activeMinutes) || 0;
-    const subMin = Number(submitted[s.id]?.minutes) || 0;
-    // 新式 note（有 notedActiveMinutes）取最大水位；仅有老 note→视为全覆盖；无 note→0
-    // 同 zentao.ts waterNotes 的有水位过滤(main.ts 零依赖隔离内联,水位策略调整两处同步)
-    const newNotes = sNotes.filter((n: any) => typeof n.notedActiveMinutes === "number");
-    let noteWatermark: number;
-    if (newNotes.length > 0) {
-      noteWatermark = Math.max(...newNotes.map((n: any) => Number(n.notedActiveMinutes) || 0));
-    } else if (sNotes.length > 0) {
-      noteWatermark = sActive; // 仅有老 note → 视为全覆盖，不打扰
-    } else {
-      noteWatermark = 0;
-    }
-    const covered = Math.max(subMin, noteWatermark);
-    const uncovered = sActive - covered;
-    if (uncovered >= THRESHOLD) {
-      totalUnnoted += uncovered;
-      offenders.push({ id: s.id, minutes: uncovered, branch: s.branch ?? null });
-    }
-  }
-
-  // 每轮都输出 base(开头已设);≥30min 未记则追加未记信息(detectAndRemind 原兜底)
-  if (totalUnnoted >= THRESHOLD && offenders.length > 0) {
-    const lines = offenders.slice(0, 3).map((o) => `· 会话 ${o.id}（branch ${o.branch ?? "?"}）：约 ${o.minutes} 分钟`);
-    msg += `\n另:检测到今日有约 ${totalUnnoted} 分钟工作未记入 summary：\n${lines.join("\n")}\n若刚完成一个功能模块,补记一条。`;
-  }
+/** UserPromptSubmit:每轮 stdout 注入 additionalContext,提示 AI「本轮有代码改动就在响应完成时记 note」。
+ *  纯提示词驱动(不 block、不读文件、无未记兜底);AI 据此在响应末尾自觉记(task 不确定记 -1)。失败静默。 */
+function detectAndRemind(): void {
+  const msg =
+    "[shine-worklog] 本轮若有代码改动,响应结束前用 note 记一句话结论(--work \"一句话:本轮核心成果\" --task <禅道任务ID>);不确定 task 记 -1(不跳过、不问);纯问答/无代码改动不记。";
   process.stdout.write(
     JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: msg } }),
   );
 }
 
-/** 本轮(Stop 前)是否有代码改动:本轮 = 最近一次"用户真实输入"(role:user 且非 tool_result)之后到末尾。
- *  在本轮里找 tool_use Edit/Write/MultiEdit。无代码改动(纯问答/讨论/审查)→ false(不 block 打扰);有→ true。 */
-function lastTurnHasCodeChange(transcriptPath: string): boolean {
-  try {
-    const raw = readFileSync(transcriptPath, "utf8");
-    const lines = raw.split("\n").filter((l) => l.trim());
-    // 从后往前找最近"用户真实输入"(排除 tool_result,它也是 role:user 但是工具结果)
-    let userIdx = 0;
-    for (let i = lines.length - 1; i >= 0; i--) {
-      const line = lines[i];
-      if (!line) continue;
-      try {
-        const ev = JSON.parse(line);
-        if (ev.message?.role !== "user") continue;
-        const c = ev.message.content;
-        const isToolResult = Array.isArray(c) && c.some((b: any) => b?.type === "tool_result");
-        if (!isToolResult) {
-          userIdx = i;
-          break;
-        }
-      } catch {
-        /* skip */
-      }
-    }
-    // 本轮(userIdx 之后)找代码改动 tool_use
-    for (let i = userIdx; i < lines.length; i++) {
-      const line = lines[i];
-      if (!line) continue;
-      let ev: any;
-      try {
-        ev = JSON.parse(line);
-      } catch {
-        continue;
-      }
-      const content = ev.message?.content;
-      if (!Array.isArray(content)) continue;
-      for (const b of content) {
-        if (b?.type === "tool_use" && (b.name === "Edit" || b.name === "Write" || b.name === "MultiEdit")) {
-          return true;
-        }
-      }
-    }
-    return false;
-  } catch {
-    return false;
-  }
-}
-
 /** 读插件根 CLAUDE.md（规则源），SessionStart 注入 additionalContext 教 AI 顺手 note（插件级：所有装插件项目生效）。
- *  注:plugin SessionStart additionalContext 可能受官方 bug #16538 影响(未确认修复);不生效时由 detectAndRemind 自包含提醒兜底。
+ *  注:plugin SessionStart additionalContext 可能受官方 bug #16538 影响(未确认修复);SessionStart 注入是 note 规则的唯一入口。
  *  CLAUDE_PLUGIN_ROOT 优先,回退相对 main.ts（src/hook → 插件根）。 */
 function readRule(): string | null {
   const rel = "CLAUDE.md";

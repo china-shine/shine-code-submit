@@ -73,6 +73,15 @@ function waterNotes(notes: any[]): any[] {
     .sort((a: any, b: any) => (Number(a.notedActiveMinutes) || 0) - (Number(b.notedActiveMinutes) || 0));
 }
 
+/** 生成候选任务列表(repo→项目映射收窄候选,无映射=全部任务),供 needs_semantic / unmatched(task=-1) 给 AI 匹配。
+ *  抽出原 cmdPlan needs_semantic 分支的候选构造,两处复用。 */
+function candidatesFor(repo: string, mappings: any, tasks: any[], projectNames: Record<number, string>): any[] {
+  const pid = mappings?.repoToProject ? mappings.repoToProject[repo] : undefined;
+  return tasks
+    .filter((t: any) => pid == null || t.project === pid)
+    .map((t: any) => ({ id: t.id, name: t.name, project: t.project, projectName: projectNames[t.project] ?? null }));
+}
+
 export async function cmdPlan(client?: Client, cfg?: Record<string, any>): Promise<any> {
   const data = loadJSON<any>(SESSIONS_PATH, null);
   if (data === null) die(`会话数据不存在: ${SESSIONS_PATH}`);
@@ -203,39 +212,47 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>): Promi
           const segment = Math.max(0, segEnd - prev);
           prev = w; // 推进水位(即便本段=0 被跳过,下一条仍以 w 为起点)
           if (segment < 1) continue; // 跳过 0 段(同分钟多 note)
-          const info = n.taskName
-            ? { taskName: n.taskName, project: n.project, projectName: n.projectName }
-            : await taskInfo(n.task);
+          // task<=0(-1):note 记录时未匹配任务 → unmatched,带候选任务供 /report 集中匹配,不进 resolved 提交
+          const isUnmatched = !(Number(n.task) > 0);
+          const info = isUnmatched
+            ? null
+            : n.taskName
+              ? { taskName: n.taskName, project: n.project, projectName: n.projectName }
+              : await taskInfo(n.task);
           items.push({
             ...item,
-            status: "resolved",
+            status: isUnmatched ? "unmatched" : "resolved",
             task: n.task,
             work: n.work, // 单条 note 自己的 work(不 join)
             hours: hoursFromMinutes(segment),
             minutes: segEnd, // 该段末水位:recordSubmission 据此写防重水位(部分提交失败时不掩盖后续 task 工时)
-            confidence: 100,
-            reason: "开发时 summary 记录(多 note 按水位拆分)",
-            ...info,
+            confidence: isUnmatched ? 0 : 100,
+            reason: isUnmatched ? "note 记录 task=-1,待 /report 匹配任务" : "开发时 summary 记录(多 note 按水位拆分)",
+            ...(isUnmatched ? { candidates: candidatesFor(s.repo, mappings, tasks, projectNames) } : info),
           });
         }
         continue;
       }
       // 退化:有 note 但缺水位(老数据) → 单 item(join 所有 work、n0.task、整 session hours)
       const n0 = notes[0];
-      const info = n0.taskName
-        ? { taskName: n0.taskName, project: n0.project, projectName: n0.projectName }
-        : await taskInfo(n0.task);
+      const isUnmatched0 = !(Number(n0.task) > 0);
+      const info0 = isUnmatched0
+        ? null
+        : n0.taskName
+          ? { taskName: n0.taskName, project: n0.project, projectName: n0.projectName }
+          : await taskInfo(n0.task);
       Object.assign(
         item,
         {
-          status: "resolved",
+          status: isUnmatched0 ? "unmatched" : "resolved",
           task: n0.task,
           work: notes.map((n: any) => n.work).join("\n"),
           hours: hoursFromMinutes(s.activeMinutes),
-          confidence: 100,
-          reason: "开发时 summary 记录",
+          confidence: isUnmatched0 ? 0 : 100,
+          reason: isUnmatched0 ? "note 记录 task=-1,待 /report 匹配任务" : "开发时 summary 记录",
+          ...(isUnmatched0 ? { candidates: candidatesFor(s.repo, mappings, tasks, projectNames) } : null),
         },
-        info,
+        info0,
       );
       items.push(item);
       continue;
@@ -252,16 +269,10 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>): Promi
       Object.assign(item, { status: "resolved", task: btid, confidence: 95, reason: "branchToTask 手动映射" }, await taskInfo(btid));
     } else {
       const pid = mappings.repoToProject ? mappings.repoToProject[s.repo] : undefined;
-      const cands = tasks.filter((t: any) => pid == null || t.project === pid);
       Object.assign(item, {
         status: "needs_semantic",
         reason: pid != null ? `仓库映射到项目 ${pid},候选已收窄` : "无仓库映射,候选为全部任务",
-        candidates: cands.map((t: any) => ({
-          id: t.id,
-          name: t.name,
-          project: t.project,
-          projectName: projectNames[t.project] ?? null,
-        })),
+        candidates: candidatesFor(s.repo, mappings, tasks, projectNames),
       });
     }
     items.push(item);
@@ -290,8 +301,8 @@ function cmdRender(): string {
   const plan = loadJSON<any>(PLAN_PATH, null);
   if (plan === null) die(`计划不存在,请先运行 plan 命令: ${PLAN_PATH}`);
   const items = plan.items;
-  const pending = items.filter((i: any) => i.status === "needs_semantic").map((i: any) => i.session);
-  if (pending.length) die("尚有会话未完成归属(needs_semantic),补全后才能渲染草稿", { sessions: pending });
+  const pending = items.filter((i: any) => i.status === "needs_semantic" || i.status === "unmatched").map((i: any) => i.session);
+  if (pending.length) die("尚有会话未完成归属(needs_semantic/unmatched),补全后才能渲染草稿", { sessions: pending });
   const noWork = items.filter((i: any) => i.status === "resolved" && !i.work).map((i: any) => i.session);
   if (noWork.length) die("以下 resolved 条目缺少 work 字段(工作内容)", { sessions: noWork });
   plan.draftSeq = (plan.draftSeq ?? 0) + 1;
@@ -365,8 +376,8 @@ async function cmdCommit(client: Client, opts: { dryRun?: boolean; amend?: boole
   const plan = loadJSON<any>(PLAN_PATH, null);
   if (plan === null) die(`计划不存在,请先运行 plan 命令: ${PLAN_PATH}`);
   const items = plan.items;
-  const pending = items.filter((i: any) => i.status === "needs_semantic").map((i: any) => i.session);
-  if (pending.length) die("尚有会话未完成归属,不能提交", { sessions: pending });
+  const pending = items.filter((i: any) => i.status === "needs_semantic" || i.status === "unmatched").map((i: any) => i.session);
+  if (pending.length) die("尚有会话未完成归属(needs_semantic/unmatched),不能提交", { sessions: pending });
   const toSubmit = items.filter((i: any) => i.status === "resolved");
   const noWork = toSubmit.filter((i: any) => !i.work).map((i: any) => i.session);
   if (noWork.length) die("以下条目缺少 work 字段,不能提交", { sessions: noWork });
@@ -449,8 +460,11 @@ async function cmdAuto(client: Client, cfg: Record<string, any>, a: Args): Promi
   if (collected.error) return { action: "abort", step: "collect", error: collected.error };
   const plan = await cmdPlan(client, cfg);
   const items = plan.items;
-  const pending = items.filter((i: any) => i.status === "needs_semantic").map((i: any) => i.session);
-  if (pending.length) return { action: "needs_review", reason: "有 needs_semantic 需 AI 填空", pending, plan };
+  const pending = items.filter((i: any) => i.status === "needs_semantic" || i.status === "unmatched").map((i: any) => i.session);
+  const unmatched = items
+    .filter((i: any) => i.status === "unmatched")
+    .map((i: any) => ({ session: i.session, work: i.work, hours: i.hours, repo: i.repo, branch: i.branch, candidates: i.candidates ?? [] }));
+  if (pending.length) return { action: "needs_review", reason: "有待匹配(needs_semantic/unmatched)需 AI 处理", pending, unmatched, plan };
   const toSubmit = items.filter((i: any) => i.status === "resolved");
   const noWork = toSubmit.filter((i: any) => !i.work).map((i: any) => i.session);
   if (noWork.length) return { action: "needs_review", reason: "有 resolved 缺 work", noWork, plan };
@@ -470,7 +484,8 @@ async function cmdAuto(client: Client, cfg: Record<string, any>, a: Args): Promi
  *  自动从 cache.json 补 taskName/project/projectName。/report plan 直读省 AI 填空。 */
 function cmdNote(a: Args): any {
   const work = requireStr(a, "work");
-  const task = requireInt(a, "task");
+  // task 可选:不确定归属时记 -1(/report 时集中匹配),不跳过不问。requireInt→允许缺省 -1。
+  const task = a.task !== undefined ? parseInt(String(a.task), 10) : -1;
   let session = a.session !== undefined ? String(a.session) : undefined;
   if (!session) {
     const data = loadJSON<{ sessions: any[] }>(SESSIONS_PATH, { sessions: [] });
