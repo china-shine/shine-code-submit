@@ -2,6 +2,15 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.8 — 2026-08-11
+
+回退 1.3.7 的 Stop 强制记 note(Stop block 在 Claude Code 必然显示 "Stop hook error",无法避免)。
+
+### 改动
+- **回退 Stop 强制**:去掉 1.3.7 的 Stop hook block(本轮有代码改动未记 note → block)。原因:Stop block 在 Claude Code 必然显示 "Stop hook error"(issue [#34600](https://github.com/anthropics/claude-code/issues/34600),exit 0 + JSON decision:block 亦然),用户不接受 error 显示。
+- **恢复纯提示词**:note 记录靠 UserPromptSubmit 每轮提示词提醒 AI 自觉(不强制,但无 error)。
+- 去掉 lastTurnToolUses / lastTurnHasCodeChange / lastTurnHasNote 三个检测函数。
+
 ## 1.3.7 — 2026-08-11
 
 Stop hook 强制记 note:本轮有代码改动(新建/编辑文件)但未记 note 时 block,补上"提示词自觉"路线的兜底。
