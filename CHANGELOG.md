@@ -2,6 +2,15 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.7 — 2026-08-11
+
+Stop hook 强制记 note:本轮有代码改动(新建/编辑文件)但未记 note 时 block,补上"提示词自觉"路线的兜底。
+
+### 改动
+- **Stop 强制记 note**:响应结束(Stop)时,若本轮有 Write/Edit/MultiEdit 且未跑 note → block 让 AI 补记。解决"提示词提醒但 AI 忽略不记"(如 helloworld 场景)。
+- **避免 stop error**:用 exit 0 + JSON `{decision:block,reason}`(而非 exit 2),block 显示为柔和提示,不是红色 "Stop hook error"。
+- **防死循环**:lastTurnHasNote 检测本轮已跑过 `zentao.ts note` → 记过就不再 block;AI 记完 note(Bash)再次 Stop 时正常退出。
+
 ## 1.3.6 — 2026-08-11
 
 UserPromptSubmit 提示词明确"代码改动"定义。
