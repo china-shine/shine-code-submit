@@ -670,16 +670,16 @@ async function main(): Promise<void> {
   let out: any;
   if (cmd === "daily") {
     const from = (a.from as string) || todayISO();
-    console.log(JSON.stringify(await writeReport(client, cfg, from, (a.to as string) || from), null, 2));
+    console.log(JSON.stringify(await writeReport(client, cfg, from, (a.to as string) || from, "daily"), null, 2));
     return;
   }
   if (cmd === "weekly") {
-    console.log(JSON.stringify(await writeReport(client, cfg, (a.from as string) || weekStart(), (a.to as string) || todayISO()), null, 2));
+    console.log(JSON.stringify(await writeReport(client, cfg, (a.from as string) || weekStart(), (a.to as string) || todayISO(), "weekly"), null, 2));
     return;
   }
   if (cmd === "lastweek") {
     const [from, to] = lastWeekRange();
-    console.log(JSON.stringify(await writeReport(client, cfg, from, to), null, 2));
+    console.log(JSON.stringify(await writeReport(client, cfg, from, to, "weekly"), null, 2));
     return;
   }
   if (cmd === "check") {

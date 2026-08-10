@@ -2,7 +2,7 @@
  *  纯渲染层:gatherReport 装配数据 → renderReportHtml/Text 渲染 → writeReport 落盘。 */
 import { readdirSync } from "node:fs";
 import * as path from "node:path";
-import { esc, writeText, loadJSON, isObj, pad2, DATA_DIR, ZENPILOT_HOME, loadMarkSetting, isAiWork, stripMark } from "./shared";
+import { esc, writeText, loadJSON, isObj, pad2, DATA_DIR, ZENPILOT_HOME, loadMarkSetting, isAiWork } from "./shared";
 import { getCache, type Client } from "./client";
 
 export function weekStart(): string {
@@ -82,6 +82,7 @@ type ReportRow = { hours: number; works: string[] };
 type ReportData = {
   from: string;
   to: string;
+  daily: boolean; // true=日报(单天表格), false=周报(按任务分组+日期列);由 kind 显式决定,不靠 from===to 反推
   title: string;
   realname: string;
   dates: string[]; // 有数据的天,升序
@@ -89,11 +90,12 @@ type ReportData = {
   infoMap: Map<number, { taskName: string; projectName: string }>;
   zentaoUrl: string;
   aiHours: number; // 范围内 AI 代报(标识命中)的工时合计
+  markText: string; // AI 标识文案:兼容历史换行格式记录(标识独立行时附尾、不单独编号);新括号格式行内不触发
   pendingTasks: { id: number; name: string; status: string | null; left: number; consumed: number; estimate: number; projectName: string }[];
 };
 
 /** 装配日报/周报数据:从禅道 efforts 汇总日期范围内的提交记录(纯数据,不含渲染)。 */
-async function gatherReport(client: Client, cfg: Record<string, any>, from: string, to: string): Promise<ReportData> {
+async function gatherReport(client: Client, cfg: Record<string, any>, from: string, to: string, kind?: "daily" | "weekly"): Promise<ReportData> {
   const cache = await getCache(client, cfg);
   const ids = new Set<number>(collectTaskIds(from, to));
   for (const t of cache.tasks) ids.add(t.id);
@@ -111,7 +113,7 @@ async function gatherReport(client: Client, cfg: Record<string, any>, from: stri
   );
 
   // 按日期分组:date -> taskId(字符串) -> {hours, works[]}
-  // work 存剥离 AI 标识后的干净文本(供 renumberWorks 编号);同时按标识累计 aiHours 供对账展示
+  // work 存原文(含括号 AI 标识,渲染时作为内容一部分行内显示);同时按标识累计 aiHours 供对账展示
   const mark = loadMarkSetting();
   const byDate: Record<string, Record<string, ReportRow>> = {};
   let aiHours = 0;
@@ -124,7 +126,7 @@ async function gatherReport(client: Client, cfg: Record<string, any>, from: stri
       day[key].hours += e.consumed;
       if (e.work) {
         if (isAiWork(e.work, mark.text)) aiHours += e.consumed;
-        day[key].works.push(stripMark(e.work, mark.text));
+        day[key].works.push(e.work); // 保留原文(含括号标识);renumberWorks 按行处理时标识自然留在行末
       }
     }
   }
@@ -135,7 +137,9 @@ async function gatherReport(client: Client, cfg: Record<string, any>, from: stri
   } catch {}
 
   const dates = Object.keys(byDate).sort();
-  const title = from === to ? `日报 ${from}` : `周报 ${from} ~ ${to}`;
+  // 报告类型由调用方显式传入;kind 缺省(测试/老调用)才回退 from===to。避免 /weekly 在周一(from===to)被误判成日报
+  const daily = kind === "daily" ? true : kind === "weekly" ? false : from === to;
+  const title = daily ? `日报 ${from}` : `周报 ${from} ~ ${to}`;
   // 未完成任务(禅道 doing/wait/pause,排除 done/closed/cancel)→ 供 AI 写「下周计划」(数据驱动,非主观推测)
   const projNames: Record<number, string> = {};
   for (const p of cache.projects) projNames[p.id] = p.name;
@@ -150,7 +154,7 @@ async function gatherReport(client: Client, cfg: Record<string, any>, from: stri
       estimate: Number(t.estimate) || 0,
       projectName: projNames[t.project] ?? "",
     }));
-  return { from, to, title, realname, dates, byDate, infoMap, zentaoUrl: cfg.url, aiHours, pendingTasks };
+  return { from, to, daily, title, realname, dates, byDate, infoMap, zentaoUrl: cfg.url, aiHours, markText: mark.text, pendingTasks };
 }
 
 const REPORT_CSS = `
@@ -250,12 +254,18 @@ const LEADING_NUM_RE = /^\s*[（(]?\d{1,2}[）).、,，:：]\s*(?!\d)/;
 
 /** 把多个 work(各自 "1. a\n2. b" 从1编号)的条目拆出,顺延重新编号成单列表(1..N 不重复)。
  *  一天内多次提交同任务时,日报/周报聚合后避免出现多个重复的 1./2.;手填逗号/顿号/括号序号也一并剥离。 */
-export function renumberWorks(works: string[]): string {
+export function renumberWorks(works: string[], markText?: string): string {
   const items: string[] = [];
   for (const w of works) {
     for (const line of String(w).replace(/\r/g, "").split("\n")) {
       const t = line.trim();
       if (!t) continue;
+      // AI 标识独立行(旧换行格式历史记录):作为尾行保留、不单独编号。新括号格式标识在行内,不触发此分支
+      if (markText && t === markText) {
+        if (items.length) items[items.length - 1] += "\n" + t;
+        else items.push(t);
+        continue;
+      }
       items.push(t.replace(LEADING_NUM_RE, "").trim()); // 去行首序号前缀,统一重新编号
     }
   }
@@ -264,7 +274,7 @@ export function renumberWorks(works: string[]): string {
 
 /** 把报告数据渲染成自包含 HTML(内联 CSS,无外部依赖)。 */
 export function renderReportHtml(d: ReportData): string {
-  const daily = d.from === d.to;
+  const daily = d.daily ?? (d.from === d.to);
   const dateText = daily ? d.from : `${d.from} ~ ${d.to}`;
   const reportType = daily ? "日报" : "周报";
 
@@ -273,7 +283,7 @@ export function renderReportHtml(d: ReportData): string {
     : `<table>\n<thead><tr><th>任务</th><th class="cell-date">日期</th><th class="hours">工时</th><th>工作内容</th></tr></thead>\n<tbody>`;
   const taskRow = (id: string, r: ReportRow, dateCell = "", bg = ""): string => {
     const info = d.infoMap.get(Number(id));
-    return `<tr${bg ? ` style="background:${bg}"` : ""}>${dateCell}<td><a class="cell-task" href="${d.zentaoUrl}/index.php?m=task&amp;f=view&amp;taskID=${id}" target="_blank" rel="noopener">${esc(info?.taskName)}</a><span class="tid">#${esc(id)}</span></td><td class="hours">${round1(r.hours)}h</td><td>${esc(renumberWorks(r.works)).replace(/\n/g, "<br>")}</td></tr>`;
+    return `<tr${bg ? ` style="background:${bg}"` : ""}>${dateCell}<td><a class="cell-task" href="${d.zentaoUrl}/index.php?m=task&amp;f=view&amp;taskID=${id}" target="_blank" rel="noopener">${esc(info?.taskName)}</a><span class="tid">#${esc(id)}</span></td><td class="hours">${round1(r.hours)}h</td><td>${esc(renumberWorks(r.works, d.markText)).replace(/\n/g, "<br>")}</td></tr>`;
   };
 
   let total = 0;
@@ -316,7 +326,7 @@ export function renderReportHtml(d: ReportData): string {
         const taskCell = i === 0
           ? `<td${g.rows.length > 1 ? ` rowspan="${g.rows.length}"` : ""}><a class="cell-task" href="${d.zentaoUrl}/index.php?m=task&amp;f=view&amp;taskID=${g.id}" target="_blank" rel="noopener">${esc(info?.taskName)}</a><span class="tid">#${g.id}</span></td>`
           : "";
-        rows.push(`<tr>${taskCell}<td class="cell-date">${esc(row.date.slice(5))}</td><td class="hours">${round1(row.r.hours)}h</td><td>${esc(renumberWorks(row.r.works)).replace(/\n/g, "<br>")}</td></tr>`);
+        rows.push(`<tr>${taskCell}<td class="cell-date">${esc(row.date.slice(5))}</td><td class="hours">${round1(row.r.hours)}h</td><td>${esc(renumberWorks(row.r.works, d.markText)).replace(/\n/g, "<br>")}</td></tr>`);
       });
     }
     body = `${TABLE_HEAD}\n${rows.join("\n")}\n<tr class="total"><td colspan="2">本周合计</td><td class="hours">${round1(total)}h</td><td>${taskCount} 个任务</td></tr>\n</tbody>\n</table>`;
@@ -365,11 +375,11 @@ ${body}${grand}
 
 /** 精简纯文本摘要(供 stdout/对话速览,非落盘文件)。 */
 export function renderReportText(d: ReportData): string {
-  const daily = d.from === d.to;
+  const daily = d.daily ?? (d.from === d.to);
   if (d.dates.length === 0) return `${d.title} · ${d.realname}\n该范围内没有禅道提交记录。`;
   const line = (id: string, r: ReportRow): string => {
     const info = d.infoMap.get(Number(id));
-    return `${info?.projectName ?? ""} / ${info?.taskName ?? ""} #${id}  ${round1(r.hours)}h  ${renumberWorks(r.works).replace(/\n/g, "; ")}`;
+    return `${info?.projectName ?? ""} / ${info?.taskName ?? ""} #${id}  ${round1(r.hours)}h  ${renumberWorks(r.works, d.markText).replace(/\n/g, "; ")}`;
   };
   const lines: string[] = [`${d.title} · ${d.realname}`];
   let total = 0;
@@ -395,17 +405,19 @@ export function renderReportText(d: ReportData): string {
 }
 
 /** 日报/周报文件名:带归属人 realname,归档/分发时一眼区分谁的作品;去路径非法字符防意外。 */
-export function reportFilename(from: string, to: string, realname: string): string {
+export function reportFilename(from: string, to: string, realname: string, kind?: "daily" | "weekly"): string {
   const who = String(realname || "unknown").replace(/[\\/:*?"<>|]/g, "");
-  return from === to ? `日报-${from}-${who}.html` : `周报-${from}~${to}-${who}.html`;
+  // kind 显式优先(供 /weekly 在周一等 from===to 的场景强制周报);缺省回退 from===to
+  const daily = kind === "daily" ? true : kind === "weekly" ? false : from === to;
+  return daily ? `日报-${from}-${who}.html` : `周报-${from}~${to}-${who}.html`;
 }
 
 /** 生成日报/周报 HTML 并落盘到 DATA_DIR/reports/(daemon 可稳定访问,dashboard 日报/周报模块查看),返回文件路径与文本摘要。 */
-export async function writeReport(client: Client, cfg: Record<string, any>, from: string, to: string) {
-  const data = await gatherReport(client, cfg, from, to);
+export async function writeReport(client: Client, cfg: Record<string, any>, from: string, to: string, kind?: "daily" | "weekly") {
+  const data = await gatherReport(client, cfg, from, to, kind);
   const html = renderReportHtml(data);
   const dir = path.join(DATA_DIR, "reports");
-  const file = path.join(dir, reportFilename(from, to, data.realname));
+  const file = path.join(dir, reportFilename(from, to, data.realname, kind));
   writeText(file, html);
   return { ok: true, file, title: data.title, empty: data.dates.length === 0, text: renderReportText(data), pendingTasks: data.pendingTasks };
 }

@@ -41,6 +41,14 @@ describe("renumberWorks", () => {
     expect(renumberWorks(["3.14 升级版本"])).toBe("1. 3.14 升级版本");
     expect(renumberWorks(["2026.08 配置"])).toBe("1. 2026.08 配置");
   });
+  test("work 含括号 AI 标识:正常编号、标识保留在行末", () => {
+    expect(renumberWorks(["修复bug(本次内容由AI填报)", "其他工作"]))
+      .toBe("1. 修复bug(本次内容由AI填报)\n2. 其他工作");
+  });
+  test("旧换行格式 + markText:标识行附尾不单独编号(历史记录兼容)", () => {
+    expect(renumberWorks(["修复bug\n本次内容由AI填报"], "本次内容由AI填报"))
+      .toBe("1. 修复bug\n本次内容由AI填报");
+  });
 });
 
 const mkDaily = (over: Record<string, unknown> = {}): any => ({
@@ -49,6 +57,7 @@ const mkDaily = (over: Record<string, unknown> = {}): any => ({
   byDate: { "2026-08-06": { "77563": { hours: 1.5, works: ["1. 拆分\n2. 清理"] } } },
   infoMap: new Map([[77563, { taskName: "AI提效", projectName: "日常工作/AI智能体" }]]),
   zentaoUrl: "https://zentao",
+  markText: "",
   ...over,
 });
 
@@ -109,6 +118,12 @@ describe("renderReportHtml", () => {
     expect(renderReportHtml(mkDaily())).not.toContain("AI 代报");
     expect(renderReportText(mkDaily())).not.toContain("其中 AI 代报");
   });
+  test("work 含括号 AI 标识: HTML 行内显示标识在内容末尾", () => {
+    const html = renderReportHtml(mkDaily({
+      byDate: { "2026-08-06": { "77563": { hours: 1.5, works: ["调研claude-mem(本次内容由AI填报)"] } } },
+    }));
+    expect(html).toContain("调研claude-mem(本次内容由AI填报)"); // 标识行内保留在内容末尾
+  });
 });
 
 describe("renderReportText", () => {
@@ -152,6 +167,9 @@ describe("reportFilename", () => {
   });
   test("去路径非法字符", () => {
     expect(reportFilename("2026-08-06", "2026-08-06", "a/b:c")).toBe("日报-2026-08-06-abc.html");
+  });
+  test("kind=weekly 强制周报(即便 from===to,复现周一 /weekly 误判)", () => {
+    expect(reportFilename("2026-08-10", "2026-08-10", "任桂峰", "weekly")).toBe("周报-2026-08-10~2026-08-10-任桂峰.html");
   });
 });
 

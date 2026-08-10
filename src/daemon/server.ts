@@ -139,7 +139,7 @@ function findReportFile(kind: "daily" | "weekly", dateKey: string | undefined): 
     return null;
   }
   const prefix = kind === "daily" ? "日报-" : "周报-";
-  const re = new RegExp(`^${prefix}${dateKey}(?:-.+)\\.html$`);
+  const re = new RegExp(`^${prefix}${dateKey}(?:-.+)?\\.html$`); // (?:-.+)? 姓名段可选:兼容无姓名旧格式,否则旧报表 DELETE 永远 404
   let best: { f: string; mtime: number } | null = null;
   for (const f of files) {
     if (!re.test(f)) continue;
@@ -148,6 +148,24 @@ function findReportFile(kind: "daily" | "weekly", dateKey: string | undefined): 
     if (!best || mtime >= best.mtime) best = { f, mtime };
   }
   return best?.f ?? null;
+}
+
+/** 删除某 date/区间段的【所有】匹配报表文件(新旧格式共存一次删净)。返回删除数。
+ *  listReports 按 date 去重只展示 mtime 最新一个;DELETE 该 date 应清掉同 date 全部文件,
+ *  否则删一个浮现一个、用户得删多次(日报频繁生成新旧共存尤甚)。 */
+function deleteReportFiles(kind: "daily" | "weekly", dateKey: string | undefined): number {
+  if (!dateKey || !/^[\d~-]+$/.test(dateKey)) return 0;
+  const dir = join(DATA_DIR, "reports");
+  let files: string[] = [];
+  try { files = readdirSync(dir); } catch { return 0; }
+  const prefix = kind === "daily" ? "日报-" : "周报-";
+  const re = new RegExp(`^${prefix}${dateKey}(?:-.+)?[.]html$`);
+  let n = 0;
+  for (const f of files) {
+    if (!re.test(f)) continue;
+    try { unlinkSync(join(dir, f)); n++; } catch {}
+  }
+  return n;
 }
 
 /** 读单个报表 HTML(按文件名),不存在返回 null。 */
@@ -577,13 +595,13 @@ export function startServer(deps: ServerDeps) {
       // DELETE 日报/周报(按 date 段定位实际文件再删,兼容带/不带姓名段)
       const dmDel = path.match(/^\/api\/reports\/daily\/(\d{4}-\d{2}-\d{2})$/);
       if (dmDel && req.method === "DELETE") {
-        const fn = findReportFile("daily", dmDel[1]);
-        try { if (!fn) throw new Error("nf"); unlinkSync(join(DATA_DIR, "reports", fn)); return json({ ok: true }); } catch { return json({ error: "not found" }, 404); }
+        const n = deleteReportFiles("daily", dmDel[1]);
+        return n > 0 ? json({ ok: true, deleted: n }) : json({ error: "not found" }, 404);
       }
       const wmDel = path.match(/^\/api\/reports\/weekly\/(\d{4}-\d{2}-\d{2}~\d{4}-\d{2}-\d{2})$/);
       if (wmDel && req.method === "DELETE") {
-        const fn = findReportFile("weekly", wmDel[1]);
-        try { if (!fn) throw new Error("nf"); unlinkSync(join(DATA_DIR, "reports", fn)); return json({ ok: true }); } catch { return json({ error: "not found" }, 404); }
+        const n = deleteReportFiles("weekly", wmDel[1]);
+        return n > 0 ? json({ ok: true, deleted: n }) : json({ error: "not found" }, 404);
       }
 
       return json({ error: "not found" }, 404);

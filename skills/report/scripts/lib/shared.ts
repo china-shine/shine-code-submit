@@ -131,8 +131,8 @@ export function loadConfig(): Record<string, any> {
 }
 
 // ---------- AI 提交标识 ----------
-// 开关+文案存 settings.json(DATA_DIR 下)。标识拼在 work 末尾随禅道走,对账靠字符串匹配——
-// 不依赖本地台账,重装/补报不丢;代价:改文案后历史提交需按旧文案识别(对账尽力而为)。
+// 开关+文案存 settings.json(DATA_DIR 下)。标识以全角括号行内拼在 work 末尾随禅道走,对账靠字符串匹配——
+// 不依赖本地台账,重装/补报不丢;代价:改文案或拼接格式后,历史提交需按旧格式识别(isAiWork 兼容括号+换行两种)。
 const DEFAULT_MARK = { enabled: true, text: "本次内容由AI填报" };
 
 export function loadMarkSetting(): { enabled: boolean; text: string } {
@@ -143,22 +143,25 @@ export function loadMarkSetting(): { enabled: boolean; text: string } {
   };
 }
 
-/** enabled 且文案非空、且 work 末尾尚未带该标识 → 追加换行+文案;否则原样(幂等,防重复拼)。 */
+/** enabled 且文案非空、且 work 末尾尚未带该标识 → 行内追加 (文案)(全角括号,不换行,作为内容一部分);否则原样(幂等,防重复拼)。 */
 export function applyMark(work: string, mark: { enabled: boolean; text: string }): string {
   if (!mark.enabled || !mark.text) return work;
-  const tail = "\n" + mark.text;
+  const tail = `(${mark.text})`;
   return work.endsWith(tail) ? work : work + tail;
 }
 
 export function isAiWork(work: string, text: string): boolean {
-  return !!text && work.endsWith("\n" + text);
+  // 命中新括号格式 work(文案) 或旧换行格式 work\n文案(历史已提交记录),任一即算 AI 代报
+  return !!text && (work.endsWith(`(${text})`) || work.endsWith("\n" + text));
 }
 
-/** 剥掉末尾标识行(供报告渲染/编号);不含标识或 text 为空则原样返回。 */
+/** 剥掉末尾标识(新括号格式或旧换行格式);不含标识或 text 为空则原样返回。 */
 export function stripMark(work: string, text: string): string {
   if (!text) return work;
-  const tail = "\n" + text;
-  return work.endsWith(tail) ? work.slice(0, -tail.length) : work;
+  const paren = `(${text})`;
+  if (work.endsWith(paren)) return work.slice(0, -paren.length);
+  const newline = "\n" + text;
+  return work.endsWith(newline) ? work.slice(0, -newline.length) : work;
 }
 
 export function requireStr(a: Args, k: string): string {
