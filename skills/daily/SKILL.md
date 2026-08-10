@@ -18,7 +18,7 @@ description: 生成今天的工时日报(从禅道提交记录 efforts 汇总),�
    stdout 是 JSON:`{ ok, file, title, empty, text }`。
 2. **生成 AI 日总结**(若 `empty: true` 跳过本步):**先分析再提炼,不要复述表格已有的工作内容**。只写两块:
    - **今日重心**:一句话判断今天的主线/节点
-   - **明日建议**:只给具体工作方向(联调/验证/收尾),不要空话
+   - **明日计划**:只给具体工作方向(联调/验证/收尾),不要空话
    
    关键:每条带**判断 / 数字**,不要把表格内容换个说法重述。
    
@@ -28,7 +28,7 @@ description: 生成今天的工时日报(从禅道提交记录 efforts 汇总),�
          <h2>AI 日总结</h2>
          <p>今日汇总……</p>
          <h3>重点产出</h3><ul><li>……</li></ul>
-         <h3>明日关注</h3><ul><li>……</li></ul>
+         <h3>明日计划</h3><ul><li>……</li></ul>
        </section>
    ```
 3. 把 `text`(精简纯文本摘要)**放进代码块**展示给用户,并告知 **HTML 文件路径** + **dashboard 链接**(跑 `bun "<Base directory>/../report/scripts/zentao.ts" ui` 取带 token 链接,打开后点左侧「日报」模块查看;Windows 也可 `start <file>` 直接打开 HTML),说明底部含 AI 日总结。
