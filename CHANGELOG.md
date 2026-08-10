@@ -2,6 +2,13 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.10 — 2026-08-11
+
+修复提示词 note 命令路径(非 livesetting 项目 command not found)。
+
+### 修复
+- **note 命令绝对路径**:UserPromptSubmit 提示词的 note 命令从相对路径(`skills/report/scripts/zentao.ts`,只在 livesetting 源码目录有效)改为用 `CLAUDE_PLUGIN_ROOT` 拼绝对路径。之前在其他项目/目录(如 temp/aaa)AI 跑会 `command not found`(找不到 skills/...,AI 还简化成裸 note);现在任何 cwd/项目都能直接跑。
+
 ## 1.3.9 — 2026-08-11
 
 提示词加强措辞,提高 AI 记 note 的遵循率。
