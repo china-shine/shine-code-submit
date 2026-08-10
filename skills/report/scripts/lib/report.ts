@@ -196,33 +196,32 @@ const REPORT_CSS = `
   /* Body */
   .report-body { padding:12px 24px 16px; }
 
-  /* Day header (weekly) */
-  .day-head { display:flex; align-items:baseline; justify-content:space-between;
-              margin:16px 0 0; padding-bottom:5px; border-bottom:2px solid var(--line-soft); }
-  .day-head:first-child { margin-top:0; }
-  .day-date { font-size:16px; font-weight:800; color:var(--ink); }
-  .day-week { font-size:12.5px; color:var(--muted); margin-left:8px; font-weight:500; }
-  .day-total { font-size:15px; font-weight:800; color:var(--accent); font-variant-numeric:tabular-nums; }
+  /* Task collapsible(按任务折叠,默认收起;点击 summary 展开工作内容) */
+  details.task { margin:8px 0; border:1px solid var(--line); border-radius:10px; overflow:hidden; background:#fff; transition:border-color .15s; }
+  details.task:hover { border-color:#c7d2fe; }
+  details.task > summary { list-style:none; cursor:pointer; padding:11px 16px; display:flex; align-items:center; gap:8px; font-weight:700; color:var(--ink); }
+  details.task > summary::-webkit-details-marker { display:none; }
+  details.task > summary::before { content:"▸"; color:var(--accent); font-size:12px; transition:transform .15s ease; display:inline-block; }
+  details.task[open] > summary::before { transform:rotate(90deg); }
+  details.task[open] > summary { border-bottom:1px solid var(--line-soft); }
+  .task-summary .cell-task { font-size:14.5px; }
+  .task-hours { margin-left:auto; color:var(--accent); font-variant-numeric:tabular-nums; font-size:14px; }
+  .task-body { padding:10px 16px 12px 30px; font-size:13.5px; color:#334155; line-height:1.7; }
+  .task-days .day-row { display:flex; gap:12px; padding:5px 0; align-items:baseline; border-bottom:1px dashed var(--line-soft); }
+  .task-days .day-row:last-child { border-bottom:none; }
+  .day-date { color:var(--muted); font-size:12.5px; min-width:46px; font-variant-numeric:tabular-nums; }
+  .day-hours { color:var(--accent); font-weight:700; min-width:42px; font-variant-numeric:tabular-nums; }
+  .day-works { flex:1; }
 
-  /* Table */
-  table { width:100%; border-collapse:collapse; font-size:14px; margin-top:8px; }
-  thead th { background:#f8fafc; color:#475569; font-weight:600; font-size:13px; }
-  th, td { border:1px solid var(--line); padding:8px 12px; text-align:left; vertical-align:top; }
-  tbody tr:nth-child(even) { background:#fcfcfd; }
-  td.hours, th.hours { text-align:right; white-space:nowrap; font-variant-numeric:tabular-nums; font-weight:600; }
   .tid { color:#94a3b8; font-weight:400; font-size:13px; margin-left:4px; }
-  .cell-proj { color:var(--ink); font-weight:700; }
   .cell-task { font-weight:700; color:var(--ink); text-decoration:none; }
   a.cell-task:hover { color:var(--accent); text-decoration:underline; }
-  .cell-date { width:110px; white-space:nowrap; }
-  tr.total td { font-weight:700; color:var(--accent); background:#f3f0ff; }
 
-  /* Grand total (weekly) */
-  .grand { margin:16px 0 0; padding:11px 18px; border-radius:12px;
-           background:linear-gradient(135deg,#eef2ff,#faf5ff); border:1px solid #e0e7ff;
-           display:flex; align-items:center; justify-content:space-between; }
-  .grand-label { font-size:14px; color:#475569; font-weight:600; }
-  .grand-num { font-size:24px; font-weight:800; color:var(--accent); font-variant-numeric:tabular-nums; }
+  /* total bar(合计) */
+  .report-total { display:flex; align-items:center; gap:14px; margin:14px 0 0; padding:11px 16px; border-radius:10px;
+                  background:linear-gradient(135deg,#eef2ff,#faf5ff); border:1px solid #e0e7ff; font-weight:700; }
+  .report-total .total-num { font-size:20px; color:var(--accent); font-variant-numeric:tabular-nums; }
+  .report-total .total-sub { margin-left:auto; color:var(--muted); font-weight:500; font-size:13px; }
 
   /* Empty */
   .empty { padding:56px 0; text-align:center; }
@@ -244,7 +243,10 @@ const REPORT_CSS = `
     body { background:#fff; padding:0; }
     .report { box-shadow:none; max-width:none; border-radius:0; }
     .foot { display:none; }
-    .task:hover { transform:none; box-shadow:none; }
+    details.task { break-inside:avoid; }
+    details.task > summary::before { content:""; }
+    details.task > summary { border-bottom:none; }
+    details.task .task-body { display:block !important; }
   }
 `;
 
@@ -278,13 +280,12 @@ export function renderReportHtml(d: ReportData): string {
   const dateText = daily ? d.from : `${d.from} ~ ${d.to}`;
   const reportType = daily ? "日报" : "周报";
 
-  const TABLE_HEAD = daily
-    ? `<table>\n<thead><tr><th>任务</th><th class="hours">工时</th><th>工作内容</th></tr></thead>\n<tbody>`
-    : `<table>\n<thead><tr><th>任务</th><th class="cell-date">日期</th><th class="hours">工时</th><th>工作内容</th></tr></thead>\n<tbody>`;
-  const taskRow = (id: string, r: ReportRow, dateCell = "", bg = ""): string => {
-    const info = d.infoMap.get(Number(id));
-    return `<tr${bg ? ` style="background:${bg}"` : ""}>${dateCell}<td><a class="cell-task" href="${d.zentaoUrl}/index.php?m=task&amp;f=view&amp;taskID=${id}" target="_blank" rel="noopener">${esc(info?.taskName)}</a><span class="tid">#${esc(id)}</span></td><td class="hours">${round1(r.hours)}h</td><td>${esc(renumberWorks(r.works, d.markText)).replace(/\n/g, "<br>")}</td></tr>`;
+  // 任务折叠块 summary:任务名(禅道链接)+ #ID + 工时。<details> 默认折叠,点击 summary 展开工作内容
+  const summary = (id: number, hours: number): string => {
+    const info = d.infoMap.get(id);
+    return `<summary class="task-summary"><a class="cell-task" href="${d.zentaoUrl}/index.php?m=task&amp;f=view&amp;taskID=${id}" target="_blank" rel="noopener">${esc(info?.taskName)}</a><span class="tid">#${id}</span><span class="task-hours">${round1(hours)}h</span></summary>`;
   };
+  const worksHtml = (w: string[]): string => esc(renumberWorks(w, d.markText)).replace(/\n/g, "<br>");
 
   let total = 0;
   let taskCount = 0;
@@ -294,16 +295,17 @@ export function renderReportHtml(d: ReportData): string {
   if (d.dates.length === 0) {
     body = `<div class="empty"><div class="empty-icon">📭</div><div class="empty-text">该范围内没有禅道提交记录</div></div>`;
   } else if (daily) {
+    // 日报:每任务一个折叠块,默认收起,展开看工作内容
     const day = d.byDate[d.dates[0]];
-    const rows: string[] = [];
+    const blocks: string[] = [];
     for (const id of Object.keys(day)) {
       total += day[id].hours; taskCount++;
       const info = d.infoMap.get(Number(id)); if (info?.projectName) projects.add(info.projectName);
-      rows.push(taskRow(id, day[id]));
+      blocks.push(`<details class="task">${summary(Number(id), day[id].hours)}<div class="task-body">${worksHtml(day[id].works)}</div></details>`);
     }
-    body = `${TABLE_HEAD}\n${rows.join("\n")}\n<tr class="total"><td>合计</td><td class="hours">${round1(total)}h</td><td>${taskCount} 个任务</td></tr>\n</tbody>\n</table>`;
+    body = `${blocks.join("\n")}\n<div class="report-total"><span>本日合计</span><span class="total-num">${round1(total)}h</span><span class="total-sub">${taskCount} 个任务</span></div>`;
   } else {
-    // 按任务分组(同 taskId 聚一起),任务列用 rowspan 合并相同任务
+    // 周报:按任务分组,每任务一个折叠块,块内列各日期记录(日期 + 工时 + 工作内容)
     const groups: { id: number; rows: { date: string; r: ReportRow }[] }[] = [];
     const idxOf = new Map<number, number>();
     for (const date of d.dates) {
@@ -318,18 +320,15 @@ export function renderReportHtml(d: ReportData): string {
       }
     }
     taskCount = groups.length;
-    const rows: string[] = [];
-    for (let gi = 0; gi < groups.length; gi++) {
-      const g = groups[gi];
-      const info = d.infoMap.get(g.id);
-      g.rows.forEach((row, i) => {
-        const taskCell = i === 0
-          ? `<td${g.rows.length > 1 ? ` rowspan="${g.rows.length}"` : ""}><a class="cell-task" href="${d.zentaoUrl}/index.php?m=task&amp;f=view&amp;taskID=${g.id}" target="_blank" rel="noopener">${esc(info?.taskName)}</a><span class="tid">#${g.id}</span></td>`
-          : "";
-        rows.push(`<tr>${taskCell}<td class="cell-date">${esc(row.date.slice(5))}</td><td class="hours">${round1(row.r.hours)}h</td><td>${esc(renumberWorks(row.r.works, d.markText)).replace(/\n/g, "<br>")}</td></tr>`);
-      });
+    const blocks: string[] = [];
+    for (const g of groups) {
+      const taskTotal = g.rows.reduce((s: number, row) => s + row.r.hours, 0);
+      const dayRows = g.rows.map((row) =>
+        `<div class="day-row"><span class="day-date">${esc(row.date.slice(5))}</span><span class="day-hours">${round1(row.r.hours)}h</span><div class="day-works">${worksHtml(row.r.works)}</div></div>`,
+      ).join("");
+      blocks.push(`<details class="task">${summary(g.id, taskTotal)}<div class="task-body"><div class="task-days">${dayRows}</div></div></details>`);
     }
-    body = `${TABLE_HEAD}\n${rows.join("\n")}\n<tr class="total"><td colspan="2">本周合计</td><td class="hours">${round1(total)}h</td><td>${taskCount} 个任务</td></tr>\n</tbody>\n</table>`;
+    body = `${blocks.join("\n")}\n<div class="report-total"><span>本周合计</span><span class="total-num">${round1(total)}h</span><span class="total-sub">${taskCount} 个任务</span></div>`;
   }
 
   const statNum = d.dates.length === 0 ? "—" : `${round1(total)}h`;
@@ -339,7 +338,6 @@ export function renderReportHtml(d: ReportData): string {
     daily ? "" : `<span class="chip"><b>${d.dates.length}</b>天</span>`,
     d.aiHours > 0 ? `<span class="chip"><b>${round1(d.aiHours)}h</b>AI 代报</span>` : "",
   ].filter(Boolean).join("");
-  const grand = ""; // 合计已在表尾行(周报单表含日期列)
 
   return `<!doctype html>
 <html lang="zh-CN">
@@ -364,7 +362,7 @@ export function renderReportHtml(d: ReportData): string {
     </div>
     <div class="meta">${chips}</div>
     <div class="report-body">
-${body}${grand}
+${body}
     </div>
     <!--AI_SUMMARY-->
     <div class="foot">由 ZenPilot 自动生成 · ${esc(dateText)}</div>

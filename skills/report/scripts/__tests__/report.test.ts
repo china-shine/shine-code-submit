@@ -73,7 +73,7 @@ describe("renderReportHtml", () => {
     expect(html).toContain("合计");
     expect(html).toContain("taskID=77563");
   });
-  test("周报: 同任务跨天 rowspan + 本周合计", () => {
+  test("周报: 同任务跨天合并到一个折叠块 + 本周合计", () => {
     const d: any = {
       from: "2026-08-04", to: "2026-08-06", title: "周报", realname: "李四",
       dates: ["2026-08-05", "2026-08-06"],
@@ -86,7 +86,9 @@ describe("renderReportHtml", () => {
     };
     const html = renderReportHtml(d);
     expect(html).toContain("周报");
-    expect(html).toContain('rowspan="2"'); // 任务 100 跨两天
+    expect(html).toContain('<details class="task">'); // 按任务折叠(默认收起)
+    expect(html).toContain("08-05");
+    expect(html).toContain("08-06"); // 任务 100 跨两天合并到同一折叠块(两 day-row)
     expect(html).toContain("本周合计");
     expect(html).toContain("3.5h"); // 2+1+0.5
   });
