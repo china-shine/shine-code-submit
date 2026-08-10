@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { renumberWorks, renderReportHtml, renderReportText } from "../lib/report";
+import { renumberWorks, renderReportHtml, renderReportText, reportFilename } from "../lib/report";
 
 describe("renumberWorks", () => {
   test("多条 work 跨条顺延编号", () => {
@@ -137,5 +137,20 @@ describe("renderReportText", () => {
   });
   test("aiHours>0: 合计行含 '其中 AI 代报'", () => {
     expect(renderReportText(mkDaily({ aiHours: 1.2 }))).toContain("其中 AI 代报 1.2h");
+  });
+});
+
+describe("reportFilename", () => {
+  test("日报带 realname", () => {
+    expect(reportFilename("2026-08-06", "2026-08-06", "任桂峰")).toBe("日报-2026-08-06-任桂峰.html");
+  });
+  test("周报带 realname", () => {
+    expect(reportFilename("2026-08-03", "2026-08-09", "任桂峰")).toBe("周报-2026-08-03~2026-08-09-任桂峰.html");
+  });
+  test("realname 空 → unknown", () => {
+    expect(reportFilename("2026-08-06", "2026-08-06", "")).toBe("日报-2026-08-06-unknown.html");
+  });
+  test("去路径非法字符", () => {
+    expect(reportFilename("2026-08-06", "2026-08-06", "a/b:c")).toBe("日报-2026-08-06-abc.html");
   });
 });

@@ -37,7 +37,7 @@ import {
 } from "./aggregate";
 import { readSettings, writeSettings } from "./settings";
 import { DATA_DIR } from "../shared/paths";
-import { existsSync, mkdirSync, readFileSync, readdirSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { autoUpdateIfNeeded } from "../shared/updater";
@@ -94,8 +94,15 @@ function readZentaoCachePayload(): {
   return { cache, ttl, expired, zentaoUrl };
 }
 
-/** 列 DATA_DIR/reports/ 下的日报/周报 HTML(由 /daily /weekly skill 生成)。kind=daily→日报-*.html, weekly→周报-*.html。按日期倒序。 */
-function listReports(kind: "daily" | "weekly"): { date: string; filename: string }[] {
+/** 文件名 → {date, name}:日报-YYYY-MM-DD[-姓名].html / 周报-区间[-姓名].html;兼容旧格式(无姓名段)。 */
+const REPORT_RE: Record<"daily" | "weekly", RegExp> = {
+  daily: /^日报-(\d{4}-\d{2}-\d{2})(?:-(.+))?\.html$/,
+  weekly: /^周报-(\d{4}-\d{2}-\d{2}~\d{4}-\d{2}-\d{2})(?:-(.+))?\.html$/,
+};
+
+/** 列 DATA_DIR/reports/ 下的日报/周报 HTML(由 /daily /weekly skill 生成)。提取纯日期/区间段 + 姓名;
+ *  同日期多文件(新旧格式共存/多用户)取 mtime 最新。按日期倒序。 */
+function listReports(kind: "daily" | "weekly"): { date: string; name: string; filename: string }[] {
   const dir = join(DATA_DIR, "reports");
   let files: string[] = [];
   try {
@@ -103,11 +110,44 @@ function listReports(kind: "daily" | "weekly"): { date: string; filename: string
   } catch {
     return [];
   }
-  const prefix = kind === "daily" ? "日报-" : "周报-";
-  return files
-    .filter((f) => f.startsWith(prefix) && f.endsWith(".html"))
-    .map((f) => ({ date: f.slice(prefix.length, -5), filename: f }))
+  const re = REPORT_RE[kind];
+  const latest = new Map<string, { name: string; filename: string; mtime: number }>();
+  for (const f of files) {
+    const m = f.match(re);
+    if (!m) continue;
+    const date = m[1]!;
+    const name = m[2] ?? "";
+    let mtime = 0;
+    try { mtime = statSync(join(dir, f)).mtimeMs; } catch {}
+    const prev = latest.get(date);
+    if (!prev || mtime >= prev.mtime) latest.set(date, { name, filename: f, mtime });
+  }
+  return [...latest.entries()]
+    .map(([date, v]) => ({ date, name: v.name, filename: v.filename }))
     .sort((a, b) => b.date.localeCompare(a.date));
+}
+
+/** 按 date/区间段定位实际文件(前缀 + 可选 -姓名);多个取 mtime 最新,无则 null。
+ *  daemon 不知 realname,靠 date 段模糊匹配兼容新旧格式。dateKey 仅允许日期/区间字符(防穿越)。 */
+function findReportFile(kind: "daily" | "weekly", dateKey: string | undefined): string | null {
+  if (!dateKey || !/^[\d~-]+$/.test(dateKey)) return null;
+  const dir = join(DATA_DIR, "reports");
+  let files: string[] = [];
+  try {
+    files = readdirSync(dir);
+  } catch {
+    return null;
+  }
+  const prefix = kind === "daily" ? "日报-" : "周报-";
+  const re = new RegExp(`^${prefix}${dateKey}(?:-.+)\\.html$`);
+  let best: { f: string; mtime: number } | null = null;
+  for (const f of files) {
+    if (!re.test(f)) continue;
+    let mtime = 0;
+    try { mtime = statSync(join(dir, f)).mtimeMs; } catch {}
+    if (!best || mtime >= best.mtime) best = { f, mtime };
+  }
+  return best?.f ?? null;
 }
 
 /** 读单个报表 HTML(按文件名),不存在返回 null。 */
@@ -285,14 +325,18 @@ export function startServer(deps: ServerDeps) {
       if (rd && req.method === "GET") {
         const q = url.searchParams.get("t");
         if (!q || !checkToken(`Bearer ${q}`, pid)) return json({ error: "unauthorized" }, 401);
-        const html = readReportHtml(`日报-${rd[1]}.html`);
+        const fn = findReportFile("daily", rd[1]);
+        const html = fn ? readReportHtml(fn) : null;
+        if (!html) return json({ error: "not found" }, 404);
         return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
       }
       const rw = path.match(/^\/reports\/weekly\/(\d{4}-\d{2}-\d{2}~\d{4}-\d{2}-\d{2})$/);
       if (rw && req.method === "GET") {
         const q = url.searchParams.get("t");
         if (!q || !checkToken(`Bearer ${q}`, pid)) return json({ error: "unauthorized" }, 401);
-        const html = readReportHtml(`周报-${rw[1]}.html`);
+        const fn = findReportFile("weekly", rw[1]);
+        const html = fn ? readReportHtml(fn) : null;
+        if (!html) return json({ error: "not found" }, 404);
         return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
       }
 
@@ -518,24 +562,28 @@ export function startServer(deps: ServerDeps) {
       }
       const dm = path.match(/^\/api\/reports\/daily\/(\d{4}-\d{2}-\d{2})$/);
       if (dm && req.method === "GET") {
-        const html = readReportHtml(`日报-${dm[1]}.html`);
+        const fn = findReportFile("daily", dm[1]);
+        const html = fn ? readReportHtml(fn) : null;
         if (!html) return json({ error: "not found" }, 404);
         return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
       }
       const wm = path.match(/^\/api\/reports\/weekly\/(\d{4}-\d{2}-\d{2}~\d{4}-\d{2}-\d{2})$/);
       if (wm && req.method === "GET") {
-        const html = readReportHtml(`周报-${wm[1]}.html`);
+        const fn = findReportFile("weekly", wm[1]);
+        const html = fn ? readReportHtml(fn) : null;
         if (!html) return json({ error: "not found" }, 404);
         return new Response(html, { headers: { "content-type": "text/html; charset=utf-8" } });
       }
-      // DELETE 日报/周报(删 DATA_DIR/reports/ 文件)
+      // DELETE 日报/周报(按 date 段定位实际文件再删,兼容带/不带姓名段)
       const dmDel = path.match(/^\/api\/reports\/daily\/(\d{4}-\d{2}-\d{2})$/);
       if (dmDel && req.method === "DELETE") {
-        try { unlinkSync(join(DATA_DIR, "reports", `日报-${dmDel[1]}.html`)); return json({ ok: true }); } catch { return json({ error: "not found" }, 404); }
+        const fn = findReportFile("daily", dmDel[1]);
+        try { if (!fn) throw new Error("nf"); unlinkSync(join(DATA_DIR, "reports", fn)); return json({ ok: true }); } catch { return json({ error: "not found" }, 404); }
       }
       const wmDel = path.match(/^\/api\/reports\/weekly\/(\d{4}-\d{2}-\d{2}~\d{4}-\d{2}-\d{2})$/);
       if (wmDel && req.method === "DELETE") {
-        try { unlinkSync(join(DATA_DIR, "reports", `周报-${wmDel[1]}.html`)); return json({ ok: true }); } catch { return json({ error: "not found" }, 404); }
+        const fn = findReportFile("weekly", wmDel[1]);
+        try { if (!fn) throw new Error("nf"); unlinkSync(join(DATA_DIR, "reports", fn)); return json({ ok: true }); } catch { return json({ error: "not found" }, 404); }
       }
 
       return json({ error: "not found" }, 404);

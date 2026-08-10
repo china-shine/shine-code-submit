@@ -53,11 +53,11 @@ export function WeeklyReportModule() {
     window.open(`${location.origin}/reports/weekly/${range}?t=${encodeURIComponent(token)}`, "_blank");
   };
 
-  const download = async (range: string) => {
+  const download = async (range: string, filename: string) => {
     const r = await fetch(`${location.origin}/api/reports/weekly/${range}`, { headers: { Authorization: `Bearer ${token}` } });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(await r.blob());
-    a.download = `周报-${range}.html`;
+    a.download = filename;
     a.click();
     URL.revokeObjectURL(a.href);
   };
@@ -66,7 +66,8 @@ export function WeeklyReportModule() {
     setBatchDl(true);
     try {
       for (const range of checked) {
-        await download(range);
+        const fn = items.find((i) => i.date === range)?.filename ?? `周报-${range}.html`;
+        await download(range, fn);
         await new Promise((r) => setTimeout(r, 200));
       }
     } finally {
@@ -163,7 +164,7 @@ export function WeeklyReportModule() {
                   <td className="rt-num">{i + 1}</td>
                   <td style={{ cursor: "pointer", color: "var(--accent)" }} onClick={() => void open(it.date)}>{it.date}</td>
                   <td style={{ whiteSpace: "nowrap" }}>
-                    <button type="button" className="tab" onClick={() => void download(it.date)}>下载</button>{" "}
+                    <button type="button" className="tab" onClick={() => void download(it.date, it.filename)}>下载</button>{" "}
                     <button type="button" className="tab" onClick={() => setDelTarget(it.date)}>删除</button>
                   </td>
                 </tr>

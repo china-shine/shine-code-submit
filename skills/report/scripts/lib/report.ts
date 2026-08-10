@@ -366,13 +366,18 @@ export function renderReportText(d: ReportData): string {
   return lines.join("\n");
 }
 
+/** 日报/周报文件名:带归属人 realname,归档/分发时一眼区分谁的作品;去路径非法字符防意外。 */
+export function reportFilename(from: string, to: string, realname: string): string {
+  const who = String(realname || "unknown").replace(/[\\/:*?"<>|]/g, "");
+  return from === to ? `日报-${from}-${who}.html` : `周报-${from}~${to}-${who}.html`;
+}
+
 /** 生成日报/周报 HTML 并落盘到 DATA_DIR/reports/(daemon 可稳定访问,dashboard 日报/周报模块查看),返回文件路径与文本摘要。 */
 export async function writeReport(client: Client, cfg: Record<string, any>, from: string, to: string) {
   const data = await gatherReport(client, cfg, from, to);
   const html = renderReportHtml(data);
   const dir = path.join(DATA_DIR, "reports");
-  const name = from === to ? `日报-${from}.html` : `周报-${from}~${to}.html`;
-  const file = path.join(dir, name);
+  const file = path.join(dir, reportFilename(from, to, data.realname));
   writeText(file, html);
   return { ok: true, file, title: data.title, empty: data.dates.length === 0, text: renderReportText(data) };
 }
