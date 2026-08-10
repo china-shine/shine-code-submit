@@ -84,7 +84,7 @@ async function main(): Promise<void> {
   if (event.type === "SessionStart") {
     const out: Record<string, unknown> = {};
     // 规则注入(给 Claude):所有 SessionStart source 都注入插件根 CLAUDE.md,教 AI 顺手 note(clear/compact 后重载)。
-    // 注:plugin SessionStart 的 additionalContext 可能受官方 bug #16538 影响(未确认修复);不生效时由 detectAndRemind 自包含提醒兜底。
+    // 注:plugin SessionStart 的 additionalContext 可能受官方 bug #16538 影响(未确认修复);不生效时 detectAndRemind 每轮注入的提示词会兜底。
     const rule = readRule();
     if (rule) out.hookSpecificOutput = { hookEventName: "SessionStart", additionalContext: rule };
     // Dashboard 链接(给用户):仅 startup/resume(避免 clear/compact 刷屏)
@@ -291,7 +291,7 @@ function detectAndRemind(): void {
 }
 
 /** 读插件根 CLAUDE.md（规则源），SessionStart 注入 additionalContext 教 AI 顺手 note（插件级：所有装插件项目生效）。
- *  注:plugin SessionStart additionalContext 可能受官方 bug #16538 影响(未确认修复);SessionStart 注入是 note 规则的唯一入口。
+ *  注:plugin SessionStart additionalContext 可能受官方 bug #16538 影响(未确认修复);不生效时 detectAndRemind 每轮注入的提示词会兜底。
  *  CLAUDE_PLUGIN_ROOT 优先,回退相对 main.ts（src/hook → 插件根）。 */
 function readRule(): string | null {
   const rel = "CLAUDE.md";

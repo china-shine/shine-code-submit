@@ -205,4 +205,18 @@ describe("cmdPlan — task=-1 unmatched", () => {
     expect(items[1].task).toBe(-1);
     expect(items[1].candidates.map((c: any) => c.id)).toEqual([100, 200]);
   });
+
+  test("增量补报含 task=-1 note → unmatched(不沿用原 task 误报)", async () => {
+    const items = await runPlan({
+      sessions: [{ id: "s12", repo: "r", branch: "main", activeMinutes: 120, start: "09:00", end: "11:00" }],
+      submitted: { "2026-08-06": { s12: { tasks: [100], hours: 1, minutes: 60 } } },
+      summaries: { "2026-08-06": [{ session: "s12", work: "不确定的增量", task: -1, notedActiveMinutes: 90 }] },
+      mappings: { repoToProject: { r: 1 }, branchToTask: {} },
+      cache: { projects: [{ id: 1, name: "P1" }], tasks: [{ id: 100, name: "T1", project: 1 }], executions: [], taskDetails: {} },
+    });
+    expect(items[0].status).toBe("unmatched");
+    expect(items[0].increment).toBe(true);
+    expect(items[0].task).toBe(-1);
+    expect(items[0].candidates.map((c: any) => c.id)).toEqual([100]);
+  });
 });

@@ -170,26 +170,37 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>): Promi
       if (delta < 15) {
         Object.assign(item, { status: "already", task: taskId, submittedHours: rec.hours ?? null }, await taskInfo(taskId));
       } else {
-        // 增量补报:task 沿用原提交;work 优先取该会话的 summary-note(若有),免去 AI 填空,
-        // 让 auto 一键能跑通;无 summary-note 则留 null,由 auto/render 的缺 work 检查拦下
+        // 增量补报:work 取水位之后的新 note。若新 note 含 task<=0(-1),不沿用原 task 静默提交,
+        // 整段标 unmatched 让用户匹配(防 task=-1 的 work 被并入原 task 误报)。
         const incNotes = notesBySession.get(s.id) || [];
-        // 增量 work 只用"上次提交水位(含)之后"记的新 note(notedActiveMinutes >= rec.minutes,含==防 sessions 滞后导致 work=null);
-        // 无新 note → null(让 auto/render 的缺 work 检查拦下 AI 填),不退化用已提交的旧 note(避免陈旧文案)
         const submittedMin = rec.minutes ?? 0;
         const newIncNotes = waterNotes(incNotes).filter((n: any) => (Number(n.notedActiveMinutes) || 0) >= submittedMin);
-        Object.assign(
-          item,
-          {
-            status: "resolved",
+        if (newIncNotes.some((n: any) => !(Number(n.task) > 0))) {
+          Object.assign(item, {
+            status: "unmatched",
             increment: true,
-            task: taskId,
+            task: -1,
             hours: hoursFromMinutes(delta),
-            confidence: 95,
-            reason: "已提交会话的增量补报,沿用原任务",
+            confidence: 0,
+            reason: "已提交会话的增量含 task=-1 note,待匹配任务",
             work: newIncNotes.length ? newIncNotes.map((n: any) => n.work).join("\n") : null,
-          },
-          await taskInfo(taskId),
-        );
+            candidates: candidatesFor(s.repo, mappings, tasks, projectNames),
+          });
+        } else {
+          Object.assign(
+            item,
+            {
+              status: "resolved",
+              increment: true,
+              task: taskId,
+              hours: hoursFromMinutes(delta),
+              confidence: 95,
+              reason: "已提交会话的增量补报,沿用原任务",
+              work: newIncNotes.length ? newIncNotes.map((n: any) => n.work).join("\n") : null,
+            },
+            await taskInfo(taskId),
+          );
+        }
       }
       items.push(item);
       continue;
@@ -301,7 +312,7 @@ function cmdRender(): string {
   const plan = loadJSON<any>(PLAN_PATH, null);
   if (plan === null) die(`计划不存在,请先运行 plan 命令: ${PLAN_PATH}`);
   const items = plan.items;
-  const pending = items.filter((i: any) => i.status === "needs_semantic" || i.status === "unmatched").map((i: any) => i.session);
+  const pending = [...new Set(items.filter((i: any) => i.status === "needs_semantic" || i.status === "unmatched").map((i: any) => i.session))];
   if (pending.length) die("尚有会话未完成归属(needs_semantic/unmatched),补全后才能渲染草稿", { sessions: pending });
   const noWork = items.filter((i: any) => i.status === "resolved" && !i.work).map((i: any) => i.session);
   if (noWork.length) die("以下 resolved 条目缺少 work 字段(工作内容)", { sessions: noWork });
@@ -376,7 +387,7 @@ async function cmdCommit(client: Client, opts: { dryRun?: boolean; amend?: boole
   const plan = loadJSON<any>(PLAN_PATH, null);
   if (plan === null) die(`计划不存在,请先运行 plan 命令: ${PLAN_PATH}`);
   const items = plan.items;
-  const pending = items.filter((i: any) => i.status === "needs_semantic" || i.status === "unmatched").map((i: any) => i.session);
+  const pending = [...new Set(items.filter((i: any) => i.status === "needs_semantic" || i.status === "unmatched").map((i: any) => i.session))];
   if (pending.length) die("尚有会话未完成归属(needs_semantic/unmatched),不能提交", { sessions: pending });
   const toSubmit = items.filter((i: any) => i.status === "resolved");
   const noWork = toSubmit.filter((i: any) => !i.work).map((i: any) => i.session);
@@ -460,7 +471,7 @@ async function cmdAuto(client: Client, cfg: Record<string, any>, a: Args): Promi
   if (collected.error) return { action: "abort", step: "collect", error: collected.error };
   const plan = await cmdPlan(client, cfg);
   const items = plan.items;
-  const pending = items.filter((i: any) => i.status === "needs_semantic" || i.status === "unmatched").map((i: any) => i.session);
+  const pending = [...new Set(items.filter((i: any) => i.status === "needs_semantic" || i.status === "unmatched").map((i: any) => i.session))];
   const unmatched = items
     .filter((i: any) => i.status === "unmatched")
     .map((i: any) => ({ session: i.session, work: i.work, hours: i.hours, repo: i.repo, branch: i.branch, candidates: i.candidates ?? [] }));
@@ -485,7 +496,8 @@ async function cmdAuto(client: Client, cfg: Record<string, any>, a: Args): Promi
 function cmdNote(a: Args): any {
   const work = requireStr(a, "work");
   // task 可选:不确定归属时记 -1(/report 时集中匹配),不跳过不问。requireInt→允许缺省 -1。
-  const task = a.task !== undefined ? parseInt(String(a.task), 10) : -1;
+  const taskRaw = a.task !== undefined ? parseInt(String(a.task), 10) : -1;
+  const task = Number.isNaN(taskRaw) ? -1 : taskRaw; // 非数字(--task abc)归 -1,防 NaN 写进 summary
   let session = a.session !== undefined ? String(a.session) : undefined;
   if (!session) {
     const data = loadJSON<{ sessions: any[] }>(SESSIONS_PATH, { sessions: [] });
