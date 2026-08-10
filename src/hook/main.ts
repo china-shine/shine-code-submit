@@ -284,7 +284,7 @@ function forkZenCollect(cwd: string, stdinRaw: string): void {
  *  纯提示词驱动(不 block、不读文件、无未记兜底);AI 据此在响应末尾自觉记(task 不确定记 -1)。失败静默。 */
 function detectAndRemind(): void {
   const msg =
-    "[shine-worklog] 本轮若有代码改动,响应结束前用 note 记一句话结论(--work \"一句话:本轮核心成果\" --task <禅道任务ID>);不确定 task 记 -1(不跳过、不问);纯问答/无代码改动不记。";
+    "[shine-worklog] 本轮若有代码改动(新建/编辑/删除文件),响应结束前用 note 记一句话结论(--work \"一句话:本轮核心成果\" --task <禅道任务ID>);不确定 task 记 -1(不跳过、不问);纯问答/无文件改动不记。";
   process.stdout.write(
     JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: msg } }),
   );
