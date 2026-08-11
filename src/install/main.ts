@@ -9,7 +9,7 @@ import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { ensureBun } from "./bun";
-import { cacheDir, deployPlugin, pruneOldVersions } from "./deploy";
+import { cacheDir, deployPlugin } from "./deploy";
 import { migrateLayout, cleanupOldPlugin } from "./migrate";
 import { enablePlugin, registerMarketplace, registerPlugin, unregisterAll } from "./register";
 import { PUBLIC_BASE_URL, SERVICE_VERSION } from "../shared/config";
@@ -70,9 +70,9 @@ async function runInstall(): Promise<void> {
   ensureDirs();
   const ready = await startDaemonWithBun(bunPath, cachePath);
   if (ready) {
-    // 新 daemon 已 probe 确认运行正常(alive && version 匹配),才清旧 version——
-    // 保证当前版本已能跑再删旧,启动失败/超时则保留旧版可用,绝不两头空。
-    pruneOldVersions();
+    // 新 daemon 已 probe 确认运行正常。⚠️ 不在这里清旧 version 目录——会话中升级若删旧目录,
+    // 当前 Claude Code 会话的 hook 仍锁定旧目录 → "Plugin directory does not exist" error。
+    // 旧目录改由 SessionStart hook 清理(Claude Code 启动时新会话已锁定新版,删旧安全)。
   } else {
     warn("[shine-worklog] 新 daemon 未确认就绪,保留旧 version 目录不清理(下次成功启动后再清)");
   }

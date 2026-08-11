@@ -2,6 +2,17 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.13 — 2026-08-11
+
+修复 autoUpdate 升级打断当前 Claude Code 会话的问题(升级时旧目录被删 → hook 报错 + 旧 hook 把新 daemon 反复降级)。
+
+### 修复
+- **升级时不再立即删旧版本目录**:`install` 移除 `pruneOldVersions()` 调用——原升级即删旧目录,导致当前会话 hook 因旧目录消失而 `Plugin directory does not exist` error。改由 SessionStart hook 清理(Claude Code 启动时新会话已锁定新版,删 sibling 旧版本目录安全)。
+- **forward 升级检测加方向判断**:原 `daemon version !== SERVICE_VERSION` 不分方向,autoUpdate 升 daemon 后,旧会话 hook 转发时会把新 daemon `stopDaemon + spawnDaemon` 降级回旧版(反复降级)。改为 `isNewer(SERVICE_VERSION, daemonVersion)`——仅 hook 新于 daemon 才重启 daemon(真正升级旧 daemon);daemon 新于 hook 时不动(等用户重启 Claude Code 让 hook 跟上)。
+
+### 新增
+- **Stop hook 升级提示**:autoUpdate 升级 daemon 后,当前会话 hook 仍跑旧版(Claude Code 会话锁定版本,不能热切)。Stop/SubagentStop hook 检测 daemon version 严格新于自己(semver 比较)→ 返回 `systemMessage` 温和提示「✨ 已升级到 vX,重启 Claude Code 后生效」。非 block、非 error(避开 #34600),每轮提示直到重启(重启后 daemon 版本重新等于 hook,提示自然消失)。
+
 ## 1.3.12 — 2026-08-11
 
 README 与代码对齐 + launcher 日志路径统一到 DATA_DIR。

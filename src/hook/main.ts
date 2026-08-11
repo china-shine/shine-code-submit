@@ -3,14 +3,14 @@
 //   2. 原子落盘 spool（tmp+rename）—— 唯一必成功环节
 //   3. 热转发 POST；连接失败才走故障路径（ensureDaemon：探测→认自己人→拉起→轮询 ready）→ 重读 token → 重试
 //   全程失败静默，退出码恒为 0（绝不影响 Claude Code）。
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync, rmSync } from "node:fs";
 import { ensureDirs, DATA_DIR, NOTICE_FILE } from "../shared/paths";
 import { readToken } from "../shared/pidfile";
 import { writeSpoolFile } from "../shared/spool";
 import { BASE_URL, PUBLIC_BASE_URL, HOOK_POST_TIMEOUT_MS, SERVICE_VERSION } from "../shared/config";
 import { ensureDaemon, openBrowser, spawnDaemon, stopDaemon } from "../shared/daemonctl";
 import { spawn } from "node:child_process";
-import { dirname, join } from "node:path";
+import { dirname, join, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { HookEvent, HookEventType } from "../shared/types";
 
@@ -65,6 +65,17 @@ async function main(): Promise<void> {
     } catch {
       /* ignore */
     }
+    // 升级提示:daemon 已被 autoUpdate 升到新版,但当前会话 hook 仍跑旧版(Claude Code 会话锁定版本,
+    // 不能热切)→ 提示用户重启 Claude Code 生效。每轮 Stop 提示直到重启(重启后 daemon 版本重新等于
+    // hook 版本,提示自然消失)。仅 daemon 严格新于 hook 才提示(避免反方向——hook 新 daemon 旧——误报)。
+    try {
+      const dv = await fetchHealthVersion();
+      if (dv && isNewer(dv, SERVICE_VERSION)) {
+        process.stdout.write(JSON.stringify({ systemMessage: `✨ shine-worklog 已升级到 v${dv}(当前会话仍跑 v${SERVICE_VERSION}),重启 Claude Code 后生效` }));
+      }
+    } catch {
+      /* ignore */
+    }
   }
 
   // UserPromptSubmit:每轮注入提示词,告诉 AI「本轮有代码改动就在响应完成时记 note」。
@@ -84,6 +95,21 @@ async function main(): Promise<void> {
   //    · 升级/首次时链接前带「✨ 已升级 vX / ✨ vX」（upgradeNotice，凭 NOTICE_FILE 版本差异，同版本不带）。
   //    · 读不到 token（daemon 未就绪）则静默跳过。
   if (event.type === "SessionStart") {
+    // 清理非当前版本的旧 cache 目录:install/autoUpdate 升级时不再立即删(会话中删旧目录会让当前
+    // Claude Code 会话的 hook 因旧目录消失而断 "Plugin directory does not exist");改到这里——
+    // Claude Code 启动时新会话已锁定当前版本目录(installed_plugins 已指向最新),删 sibling 旧版本安全。
+    try {
+      const root = process.env.CLAUDE_PLUGIN_ROOT;
+      if (root) {
+        const verDir = basename(root);
+        const parent = dirname(root); // .../plugins/cache/<marketplace>/<plugin>
+        for (const name of readdirSync(parent)) {
+          if (name === verDir || !/^\d+\.\d+\.\d+/.test(name)) continue; // 跳过当前版本 + 非 semver 目录
+          const p = join(parent, name);
+          try { if (statSync(p).isDirectory()) rmSync(p, { recursive: true, force: true }); } catch { /* Windows 占用/权限,留下次 */ }
+        }
+      }
+    } catch { /* ignore */ }
     // 早采集 session(写 sessions.json):Stop hook 在响应结束才采集,note 在响应中段跑会读不到
     // sessions.json(新项目第一次必中)。SessionStart 先采集一次,让第一轮 note 能读到 session。
     try {
@@ -173,8 +199,10 @@ async function forward(event: HookEvent): Promise<void> {
   const url = `${BASE_URL}/api/hook/${event.type}`;
   const r = await postOnce(url, event, token);
   if (r.ok) {
-    // 升级检测:daemon 版本旧 → 停旧启新(不等 ready;本次事件已入库 + 已落 spool,新 daemon 起来后回捞后续)
-    if (r.version && r.version !== SERVICE_VERSION) {
+    // 升级检测:仅当 hook 新于 daemon 时才重启 daemon(把旧 daemon 升到 hook 新版)。
+    // ⚠️ 反方向绝不能动——daemon 新于 hook(即 autoUpdate 已升 daemon、但当前会话 hook 还是旧版)时,
+    // 若 stopDaemon+spawnDaemon 会用旧 hook 版本把新 daemon 降级(反复降)。daemon 已是新版,等用户重启 Claude Code 让 hook 跟上即可。
+    if (r.version && isNewer(SERVICE_VERSION, r.version)) {
       await stopDaemon();
       spawnDaemon();
     }
@@ -184,6 +212,29 @@ async function forward(event: HookEvent): Promise<void> {
   await ensureDaemon();
   // 重读 token(拉起后 pid 文件已更新)
   await postOnce(url, event, readToken() ?? token);
+}
+
+/** GET daemon /api/health 拿 version(升级检测:daemon 新于 hook 说明 autoUpdate 升级了,提示用户重启)。 */
+async function fetchHealthVersion(): Promise<string | null> {
+  try {
+    const r = await fetch(`${BASE_URL}/api/health`, { signal: AbortSignal.timeout(2000) });
+    const j = (await r.json().catch(() => ({}))) as { version?: string };
+    return j.version ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** semver:a 是否严格新于 b(x.y.z 逐段数值比较,非字符串字典序)。 */
+function isNewer(a: string, b: string): boolean {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const x = pa[i] || 0;
+    const y = pb[i] || 0;
+    if (x !== y) return x > y;
+  }
+  return false;
 }
 
 async function postOnce(url: string, event: HookEvent, token: string | null): Promise<{ ok: boolean; version?: string }> {
