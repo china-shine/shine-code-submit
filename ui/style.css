@@ -335,6 +335,27 @@ ul { list-style: none; margin: 0; padding: 0; }
 .report-toolbar .tab-upload:hover { background: var(--accent-line); filter: brightness(1.12); }
 .report-toolbar .tab-upload:disabled { opacity: 0.6; cursor: default; }
 .report-toolbar .upload-slot { min-width: 9rem; display: inline-flex; align-items: center; }
+/* 顶栏手动更新按钮 */
+.hdr-update { display: flex; align-items: center; gap: var(--space-2); }
+.update-btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: transparent; color: var(--muted);
+  border: 1px solid var(--border-light); border-radius: 4px;
+  padding: 2px var(--space-2); font-size: var(--fs-sm); cursor: pointer;
+  white-space: nowrap;
+}
+.update-btn:hover:not(:disabled) { background: var(--hover); color: var(--text); border-color: var(--border); }
+.update-btn:disabled { opacity: 0.6; cursor: default; }
+.update-btn .spin { display: inline-block; animation: sw-spin 0.8s linear infinite; }
+@keyframes sw-spin { to { transform: rotate(360deg); } }
+.update-msg {
+  font-size: var(--fs-sm); padding: 2px var(--space-2);
+  border-radius: 4px; border: 1px solid var(--border-light);
+  background: var(--hover); white-space: nowrap;
+}
+.update-msg.ok { color: #16a34a; border-color: #16a34a; }
+.update-msg.err { color: #ef4444; border-color: #ef4444; }
+.update-msg.info { color: var(--muted); }
 .icon-btn {
   display: inline-flex;
   align-items: center;

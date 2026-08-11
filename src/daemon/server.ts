@@ -520,6 +520,11 @@ export function startServer(deps: ServerDeps) {
       if (path === "/api/settings" && req.method === "GET") {
         return json(readSettings());
       }
+      // 手动检查更新:force(不受 autoUpdate 开关限制)。有新版 → spawn npx install(VBS 隐藏,daemon 自动重启);无新版 → updated:false。
+      if (path === "/api/update" && req.method === "POST") {
+        const r = await autoUpdateIfNeeded(true);
+        return json({ updated: r.updated, latest: r.latest ?? null, current: SERVICE_VERSION });
+      }
       // 禅道缓存只读展示:cache.json + TTL 过期判断 + 禅道地址(daemon 不调禅道,仅读本地 JSON)。
       if (path === "/api/zentao-cache" && req.method === "GET") {
         return json(readZentaoCachePayload());

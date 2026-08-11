@@ -2,6 +2,14 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.14 — 2026-08-11
+
+dashboard 顶部加手动「检查更新」按钮。
+
+### 新增
+- **手动检查更新**:dashboard 顶栏加「⤓ 检查更新」按钮,POST `/api/update`(`force`,不受 autoUpdate 开关限制)→ daemon 查 npm,有新版则 spawn install(VBS 隐藏无弹窗)+ daemon 自动重启。比 autoUpdate 60min tick 更即时,配合 Stop 升级提示(1.3.13)形成「发现新版 → 升级 → 提示重启」闭环。
+- 按钮交互:检查中 spinner 旋转(文字始终显示不隐藏)、结果胶囊(成功绿/失败红/信息灰)固定停留不自动消失。
+
 ## 1.3.13 — 2026-08-11
 
 修复 autoUpdate 升级打断当前 Claude Code 会话的问题(升级时旧目录被删 → hook 报错 + 旧 hook 把新 daemon 反复降级)。
