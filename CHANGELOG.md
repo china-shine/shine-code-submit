@@ -2,6 +2,15 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.11 — 2026-08-11
+
+修复新项目第一次 note 报错 + note 输出简洁。
+
+### 修复
+- **新项目第一次 note 不报错**:cmdNote 无 sessions.json + 无 CLAUDE_SESSION_ID env 时记 session=null(不再 die);cmdPlan 把 session=null 的 note 归到当天最新 session。之前新文件夹第一次写代码记 note 会报「无当天会话数据」(因为 sessions.json 要等 Stop 才采集,note 在响应中段跑读不到)。
+- **note 输出简洁**:成功只显示「✓ 工时已记录:<work>」一行,不输出 JSON(减少对话杂乱)。
+- SessionStart 加 forkZenCollect 早采集;inferProjectTask 签名接受 string|null|undefined。
+
 ## 1.3.10 — 2026-08-11
 
 修复提示词 note 命令路径(非 livesetting 项目 command not found)。
