@@ -260,3 +260,18 @@ describe("cmdPlan — 碎 note 膨胀合并", () => {
     expect(items[1].hours).toBe(1);
   });
 });
+
+describe("cmdPlan — session=null note 归属", () => {
+  test("session=null 的 note → 归当天最新 session", async () => {
+    const items = await runPlan({
+      sessions: [{ id: "s15", repo: "r", branch: "main", activeMinutes: 60, start: "09:00", end: "10:00" }],
+      submitted: {},
+      summaries: { "2026-08-06": [{ session: null, work: "无session的note", task: 100, notedActiveMinutes: null }] },
+      cache: { projects: [{ id: 1, name: "P1" }], tasks: [{ id: 100, name: "T1", project: 1 }], executions: [], taskDetails: {} },
+    });
+    expect(items.length).toBe(1);
+    expect(items[0].session).toBe("s15");
+    expect(items[0].work).toBe("无session的note");
+    expect(items[0].task).toBe(100);
+  });
+});

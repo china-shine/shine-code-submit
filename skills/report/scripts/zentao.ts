@@ -141,13 +141,21 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>): Promi
   // 跨日期扫描所有 summary-*.json 按 session 聚合:长会话跨午夜时 note 散在多个日期文件,
   // 只读当天会漏(昨天的 note 读不到 → work=null)。扫 PROJECT_DIR 全部 summary 文件合并。
   const notesBySession = new Map<string, any[]>();
+  // session=null 的 note(note 时新项目第一次未采集 session)→ 归当天最新 session(/report 时 Stop 已采集)
+  const fallbackSid = (() => {
+    const ss: any[] = Array.isArray(data.sessions) ? data.sessions : [];
+    if (ss.length === 0) return "";
+    return String([...ss].sort((x: any, y: any) => String(y.end ?? "").localeCompare(String(x.end ?? "")))[0]?.id ?? "");
+  })();
   for (const fn of readdirSync(PROJECT_DIR)) {
     if (!/^summary-\d{4}-\d{2}-\d{2}\.json$/.test(fn)) continue;
     for (const sn of loadJSON<any[]>(path.join(PROJECT_DIR, fn), [])) {
-      if (!sn || !sn.session) continue;
-      const arr = notesBySession.get(sn.session) ?? [];
+      if (!sn) continue;
+      const sid = sn.session || fallbackSid;
+      if (!sid) continue;
+      const arr = notesBySession.get(sid) ?? [];
       arr.push(sn);
-      notesBySession.set(sn.session, arr);
+      notesBySession.set(sid, arr);
     }
   }
   for (const s of data.sessions) {
@@ -504,7 +512,7 @@ async function cmdAuto(client: Client, cfg: Record<string, any>, a: Args): Promi
 
 /** task<=0 时,沿用项目已关联任务:优先该 session 历史提交的 task,次选该项目任意会话最近的 task。
  *  防 AI 记 note 偷懒传 -1 导致已关联项目丢失归属。无关联返回 -1。 */
-function inferProjectTask(session: string): number {
+function inferProjectTask(session: string | null | undefined): number {
   try {
     const all = loadJSON<any>(SUBMITTED_PATH, {});
     const dates = Object.keys(all).sort().reverse();
@@ -532,15 +540,18 @@ function inferProjectTask(session: string): number {
  *  自动从 cache.json 补 taskName/project/projectName。/report plan 直读省 AI 填空。 */
 function cmdNote(a: Args): any {
   const work = requireStr(a, "work");
-  let session = a.session !== undefined ? String(a.session) : undefined;
+  let session: string | null | undefined = a.session !== undefined ? String(a.session) : undefined;
   if (!session) {
     const data = loadJSON<{ sessions: any[] }>(SESSIONS_PATH, { sessions: [] });
     const sessions = Array.isArray(data.sessions) ? data.sessions : [];
-    if (sessions.length === 0) die(`未指定 --session 且无当天会话数据(先 collect): ${SESSIONS_PATH}`);
-    // 取 end 最晚的(最新活跃);end 是 "HH:MM" 字符串,字符串排序即时间序
-    const latest = [...sessions].sort((x, y) => String(y.end ?? "").localeCompare(String(x.end ?? "")))[0];
-    session = latest?.id;
-    if (!session) die("无法从当天会话推断 session,请显式传 --session");
+    if (sessions.length > 0) {
+      // 取 end 最晚的(最新活跃);end 是 "HH:MM" 字符串,字符串排序即时间序
+      const latest = [...sessions].sort((x, y) => String(y.end ?? "").localeCompare(String(x.end ?? "")))[0];
+      session = latest?.id;
+    }
+    // 新项目第一次:sessions.json 未采集(Stop 在响应结束才采集)+ 无 CLAUDE_SESSION_ID env
+    // → 记 session=null,/report 时 plan 把 session=null 的 note 归到当天最新 session(那时 Stop 已采集)
+    if (!session) session = process.env.CLAUDE_SESSION_ID || null;
   }
   // task:显式传 > 项目历史关联任务(防 AI 偷懒传 -1 丢失已关联项目归属)> -1
   const taskRaw = a.task !== undefined ? parseInt(String(a.task), 10) : -1;
@@ -574,7 +585,7 @@ function cmdNote(a: Args): any {
   const list = loadJSON<any[]>(smp, []);
   list.push({ session, ts: nowISOSeconds(), work, task, taskName, project, projectName, notedActiveMinutes });
   writeJSON(smp, list);
-  return { ok: true, file: smp, session, entries: list.length };
+  return { ok: true, file: smp, session, entries: list.length, work };
 }
 
 /** 提前准备:collect→plan(本地)→挑 pending→附 transcript 信号。把 /report 最慢的 AI 填空前置到这里。
@@ -707,7 +718,9 @@ async function main(): Promise<void> {
     return;
   }
   if (cmd === "note") {
-    console.log(JSON.stringify(cmdNote(a), null, 2));
+    const r: any = cmdNote(a);
+    // 简洁人类可读输出(不 JSON),减少对话杂乱;失败时 cmdNote 内 die 已输出 error 并退出
+    console.log(`✓ 工时已记录:${r?.work ?? "(无内容)"}`);
     return;
   }
   if (cmd === "prepare") {

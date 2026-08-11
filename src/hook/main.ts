@@ -84,6 +84,13 @@ async function main(): Promise<void> {
   //    · 升级/首次时链接前带「✨ 已升级 vX / ✨ vX」（upgradeNotice，凭 NOTICE_FILE 版本差异，同版本不带）。
   //    · 读不到 token（daemon 未就绪）则静默跳过。
   if (event.type === "SessionStart") {
+    // 早采集 session(写 sessions.json):Stop hook 在响应结束才采集,note 在响应中段跑会读不到
+    // sessions.json(新项目第一次必中)。SessionStart 先采集一次,让第一轮 note 能读到 session。
+    try {
+      forkZenCollect(event.cwd, stdinRaw);
+    } catch {
+      /* ignore */
+    }
     const out: Record<string, unknown> = {};
     // 规则注入(给 Claude):所有 SessionStart source 都注入插件根 CLAUDE.md,教 AI 顺手 note(clear/compact 后重载)。
     // 注:plugin SessionStart 的 additionalContext 可能受官方 bug #16538 影响(未确认修复);不生效时 detectAndRemind 每轮注入的提示词会兜底。
