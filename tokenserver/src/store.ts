@@ -477,9 +477,22 @@ export function getStats(opts: FilterOpts & { granularity: Granularity }): Stats
   const rows = querySessions(opts);
   const gitRows = queryGitChanges(opts);
   const names = projectNameMap();
-  // 每成员最新上报的 daemon 版本(projects.version,report 级,同 gitUser 各 cwd 相同;MAX 取最新)
+  // 每成员最近上报的 daemon 版本:取 projects.updatedAt 最新一行的 version。
+  // ⚠️ 不能用 MAX(version)——version 是 semver 字符串,SQLite TEXT MAX 走字典序,
+  //    "1.3.11" < "1.3.4"(第 4 位 '1'<'4'),新版本号会被算成"更小",永远取到旧的 1.3.4。
   const projVersions = new Map<string, string>();
-  for (const r of db.prepare("SELECT gitUser, MAX(version) AS version FROM projects GROUP BY gitUser").all() as Array<{ gitUser: string; version: string | null }>) {
+  const verRows = db.prepare(`
+    SELECT p.gitUser, p.version
+    FROM projects p
+    INNER JOIN (
+      SELECT gitUser, MAX(updatedAt) AS mx
+      FROM projects
+      WHERE version IS NOT NULL AND version <> ''
+      GROUP BY gitUser
+    ) m ON m.gitUser = p.gitUser AND p.updatedAt = m.mx
+    WHERE p.version IS NOT NULL AND p.version <> ''
+  `).all() as Array<{ gitUser: string; version: string }>;
+  for (const r of verRows) {
     if (r.version) projVersions.set(r.gitUser, r.version);
   }
   // 全量数据范围(不受 from/to/members 过滤,重置按钮用)
