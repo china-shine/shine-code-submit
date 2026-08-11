@@ -135,7 +135,7 @@ npx shine-worklog install
 
 ### 方式二：`/plugin marketplace add`（从 GitHub）
 
-源码直跑，需要 Bun 运行时——**没装也行**：首次任意 hook 事件时 `launcher.cjs` 会自动装（`npm i -g bun`，失败回退官方脚本，约 10-30s；安装进度仅 SessionStart 回显到 stderr，且 SessionStart 已配 200s 超时兜底，进度见 `~/.local/share/shine-worklog/log/bun-install.log`）。想首次更快可先手装 `npm install -g bun`，或官方脚本——Windows `powershell -c "irm bun.sh/install.ps1 | iex"`，macOS/Linux `curl -fsSL https://bun.sh/install | bash`。
+源码直跑，需要 Bun 运行时——**没装也行**：首次任意 hook 事件时 `launcher.cjs` 会自动装（`npm i -g bun`，失败回退官方脚本，约 10-30s；安装进度仅 SessionStart 回显到 stderr，且 SessionStart 已配 200s 超时兜底，进度见 `<DATA_DIR>/log/bun-install.log`（Win：`%LOCALAPPDATA%/shine-worklog/`，mac/linux：`~/.local/share/shine-worklog/`））。想首次更快可先手装 `npm install -g bun`，或官方脚本——Windows `powershell -c "irm bun.sh/install.ps1 | iex"`，macOS/Linux `curl -fsSL https://bun.sh/install | bash`。
 
 **从 GitHub：**
 
@@ -251,6 +251,7 @@ token 口径仍逐字段对齐 ccusage（静止 session 全等）。详见 `src/
 hooks/           hooks.json（plugin hook 注册，command 调 node launcher.cjs）
 bin/             launcher.cjs（hook 分发器）；<plat>-<arch>/ 本机编译产物（gitignored，不入库）
 src/             shared/ daemon/ hook/ cli/ install/（多端共用源码）
+skills/          禅道工时 skill（/report /prepare /daily /weekly /lastweek /amend /mappings /mark /setup，各含 SKILL.md + scripts）
 ui/              查看页（React/TSX，由 daemon 内嵌 HTTP 服务）
 dist/            install.cjs（npm 发布产物，gitignored）
 scripts/         build.ts、build-ui.ts、build-install.ts、publish.sh、fix-tarball-mode.py、verify-transcript-parity.ts、parity-vs-ccusage.ts（transcript 对齐校验）

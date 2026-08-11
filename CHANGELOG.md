@@ -2,6 +2,17 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.12 — 2026-08-11
+
+README 与代码对齐 + launcher 日志路径统一到 DATA_DIR。
+
+### 修复
+- **launcher bun-install.log 路径统一到 DATA_DIR**:`bin/launcher.cjs` 的 `logFile()` 原硬编码 `~/.local/share/shine-worklog/log/`,Windows 上与数据目录(`%LOCALAPPDATA%/shine-worklog/`)分家;改为对齐 `src/shared/paths.ts` 的 DATA_DIR(Windows 用 `%LOCALAPPDATA%`)。
+
+### 文档
+- **README 目录树补 `skills/`**:原目录树漏列 `skills/` 目录(9 个 skill:`/report /prepare /daily /weekly /lastweek /amend /mappings /mark /setup`),补上。
+- **README bun-install.log 路径泛化**:配合 launcher 改动,路径描述从写死的 `~/.local/share/shine-worklog/log/` 改为 `<DATA_DIR>/log/`(Win/mac/linux 分别注明)。
+
 ## 1.3.11 — 2026-08-11
 
 修复新项目第一次 note 报错 + note 输出简洁。

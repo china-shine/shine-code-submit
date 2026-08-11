@@ -43,7 +43,11 @@ function findBun() {
 
 /** 日志文件路径（创建目录）。安装过程逐行写这里，可 `tail -f` 看实时进度。 */
 function logFile() {
-  const dir = join(homedir(), ".local", "share", "shine-worklog", "log");
+  // 对齐 src/shared/paths.ts 的 DATA_DIR：Win=%LOCALAPPDATA%/shine-worklog，mac/linux=~/.local/share/shine-worklog
+  const base = process.platform === "win32"
+    ? join(process.env.LOCALAPPDATA || homedir(), "shine-worklog")
+    : join(homedir(), ".local", "share", "shine-worklog");
+  const dir = join(base, "log");
   try { mkdirSync(dir, { recursive: true }); } catch {}
   return join(dir, "bun-install.log");
 }
