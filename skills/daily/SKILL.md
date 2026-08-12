@@ -15,8 +15,14 @@ description: 生成今天的工时日报(从禅道提交记录汇总),输出 HTM
    ```
    bun "<Base directory>/../report/scripts/zentao.ts" daily
    ```
-   stdout 是 JSON:`{ ok, file, title, empty, text, pendingTasks, dashboardUrl }`。
-2. **先规范化表格 work,再生成 AI 日总结**(若 `empty: true` 跳过本步,直接第4步):
+   stdout 是 JSON:`{ ok, file, title, empty, text, pendingTasks, dashboardUrl }`。若 `empty: true` 跳过确认与排版,直接第5步(提示空)。
+
+2. **确认工时是否正确**:`text` 字段已含每个任务当天的工时明细与工作内容。
+   - **把 `text` 完整放进代码块展示**——让用户看到每个任务的具体工时与内容,底部自然显示合计
+   - AskUserQuestion:确认无误 → 进第3步 / 重试(refresh + 重新跑第1步) / 取消
+   - **不要跳过确认**——禅道网络波动可能导致 efforts 缺失
+
+3. **先规范化表格 work,再生成 AI 日总结**:
    
    **先统一排版表格 work**:Read 该 HTML 文件——脚本只放了禅道**原始 work**(每条 effort 用 `<br>` 分隔,未排版,格式不一)。**只改排版、不改内容**——禅道原文的文字/数字/符号/技术值全部原样保留,AI 只统一标点与空格,用 Edit 替换:
    - **内容不动(总原则)**:禅道原文的每一个字、数字、符号、代码(`\n` `Top K` `1024` 等)全部原样,不转换不替换不删除不增加。只动标点(半角→全角)和空格(中英文间加空格)。
@@ -43,8 +49,8 @@ description: 生成今天的工时日报(从禅道提交记录汇总),输出 HTM
          <h3>明日计划</h3><ul><li>……</li></ul>
        </section>
    ```
-3. 把 `text`(精简纯文本摘要)**放进代码块**展示给用户,并告知 **HTML 文件路径**(stdout 的 `file` 字段;Windows 可 `start <file>` 直接打开)+ **dashboard 链接**(stdout 的 `dashboardUrl` 字段,打开后点左侧「日报」模块查看;`dashboardUrl` 为 `null` 说明 daemon 未运行,此条略过、只给文件路径),说明底部含 AI 日总结。
-4. 询问是否要调整文案/格式;若 `empty: true`(该范围内没有禅道提交记录),提示用户先 `/shine-worklog:report` 提交工时后重跑(覆盖同名文件)。
+4. 把 `text`(精简纯文本摘要)**放进代码块**展示给用户,并告知 **HTML 文件路径**(stdout 的 `file` 字段;Windows 可 `start <file>` 直接打开)+ **dashboard 链接**(stdout 的 `dashboardUrl` 字段,打开后点左侧「日报」模块查看;`dashboardUrl` 为 `null` 说明 daemon 未运行,此条略过、只给文件路径),说明底部含 AI 日总结。
+5. 询问是否要调整文案/格式;若 `empty: true`(该范围内没有禅道提交记录),提示用户先 `/shine-worklog:report` 提交工时后重跑(覆盖同名文件)。
 
 ## 内容
 

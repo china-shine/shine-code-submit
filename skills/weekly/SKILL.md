@@ -15,8 +15,18 @@ description: 生成本自然周(周一起)的工时周报(从禅道提交记录�
    ```
    bun "<Base directory>/../report/scripts/zentao.ts" weekly
    ```
-   stdout 是 JSON:`{ ok, file, title, empty, text, pendingTasks, dashboardUrl }`。
-2. **先规范化表格 work,再生成 AI 周总结**(若 `empty: true` 跳过本步,直接第4步):
+   stdout 是 JSON:`{ ok, file, title, empty, text, pendingTasks, dashboardUrl }`。若 `empty: true` 跳过确认与排版,直接第5步(提示空)。
+
+2. **确认工时是否正确**:`text` 字段已含每个任务每天的工时明细与工作内容。
+   - **把 `text` 完整放进代码块展示**——让用户看到每个任务的具体工时与内容,底部自然显示本周合计
+   - 用 AskUserQuestion 让用户确认:
+     - **确认无误** → 进第3步(AI 排版 + 总结)
+     - **重试**(数据看起来不全/少了任务/工时不对)→ 执行 `bun "<Base directory>/../report/scripts/zentao.ts" refresh` 刷新禅道缓存,然后重新跑第1步(weekly)
+     - **取消** → 停止,告知用户可稍后重跑
+   
+   关键:**不要跳过确认**——禅道网络波动可能导致某任务 efforts 拉取失败(AI 不知道少了什么)。用户看完整明细就能发现「少了 dify 的 6h」这类问题,比重跑 AI 排版后才发现更高效。
+
+3. **先规范化表格 work,再生成 AI 周总结**(若上一步取消,跳过):
    
    **先统一排版表格 work**:Read 该 HTML 文件——脚本只放了禅道**原始 work**(每条 effort 用 `<br>` 分隔,未排版,格式不一)。**只改排版、不改内容**——禅道原文的文字/数字/符号/技术值全部原样保留,AI 只统一标点与空格,用 Edit 替换:
    - **内容不动(总原则)**:禅道原文的每一个字、数字、符号、代码(`\n` `Top K` `1024` 等)全部原样,不转换不替换不删除不增加。只动标点(半角→全角)和空格(中英文间加空格)。
@@ -44,8 +54,8 @@ description: 生成本自然周(周一起)的工时周报(从禅道提交记录�
          <h3>下周计划</h3><ul><li>……(据 pendingTasks)……</li></ul>
        </section>
    ```
-3. 把 `text`(精简纯文本摘要)**放进代码块**展示给用户,并告知 **HTML 文件路径**(stdout 的 `file` 字段;Windows 可 `start <file>` 直接打开)+ **dashboard 链接**(stdout 的 `dashboardUrl` 字段,打开后点左侧「周报」模块查看;`dashboardUrl` 为 `null` 说明 daemon 未运行,此条略过、只给文件路径),说明底部含 AI 周总结。
-4. 询问是否要调整文案/格式;若 `empty: true`(本周没有禅道提交记录),提示本周还没提交工时(先 `/shine-worklog:report`)后重跑。
+4. 把 `text`(精简纯文本摘要)**放进代码块**展示给用户,并告知 **HTML 文件路径**(stdout 的 `file` 字段;Windows 可 `start <file>` 直接打开)+ **dashboard 链接**(stdout 的 `dashboardUrl` 字段,打开后点左侧「周报」模块查看;`dashboardUrl` 为 `null` 说明 daemon 未运行,此条略过、只给文件路径),说明底部含 AI 周总结。
+5. 询问是否要调整文案/格式;若 `empty: true`(本周没有禅道提交记录),提示本周还没提交工时(先 `/shine-worklog:report`)后重跑。
 
 ## 内容
 
