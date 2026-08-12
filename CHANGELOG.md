@@ -2,6 +2,10 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.17 — 2026-08-12
+
+回退 1.3.16（1.3.16 autoUpdate 升级时误删当前会话锁定的旧版本目录,导致 hook launcher.cjs 找不到 → Stop hook error）。1.3.17 回到 1.3.15 内容（稳定,无 regression）。daemon 自动重启 fix（startDaemonWithBun 用 startedAt vs installedAt 判断进程新旧）稍后基于 1.3.17 重做,确保不删当前会话锁定的旧目录。
+
 ## 1.3.15 — 2026-08-12
 
 日报/周报生成流程打磨:报告脚本 stdout 直出 dashboard 链接、表格 work 排版交给 AI。
