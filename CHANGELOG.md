@@ -2,6 +2,14 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.25 — 2026-08-12
+
+daemon 自动重启 + SessionStart 清理保留 5 个版本（1.3.16 regression 彻底修复）。
+
+### 修复
+- **daemon 进程自动重启**:autoUpdate 升级 cache 后 daemon 旧进程自动重启(跑新代码)。startDaemonWithBun 用 `pid.startedAt vs .install-version.installedAt` 判断进程新旧(替代恒相等的 version 比较)。1.3.16 已撤销的 fix 基于 1.3.17 重做 + 7 轮本地测试通过(daemon 每次重启 pid 变 + token 持久)。
+- **SessionStart 清理保留 5 个版本**:清理旧版本 cache 目录时保留最新 5 个(semver 排序),删更早的;少于 5 个不删。避免多会话升级时旧会话锁定的版本被删致 hook MODULE_NOT_FOUND(1.3.16 regression 根因)。业界 Squirrel/Electron 同款思路(保留 N 个旧版本)。
+
 ## 1.3.20 — 2026-08-12
 
 修复 autoUpdate 升级 cache 后 daemon 进程不自动重启（1.3.16 已撤销的 fix 重做,基于 1.3.17）。

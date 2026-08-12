@@ -95,16 +95,22 @@ async function main(): Promise<void> {
   //    · 升级/首次时链接前带「✨ 已升级 vX / ✨ vX」（upgradeNotice，凭 NOTICE_FILE 版本差异，同版本不带）。
   //    · 读不到 token（daemon 未就绪）则静默跳过。
   if (event.type === "SessionStart") {
-    // 清理非当前版本的旧 cache 目录:install/autoUpdate 升级时不再立即删(会话中删旧目录会让当前
-    // Claude Code 会话的 hook 因旧目录消失而断 "Plugin directory does not exist");改到这里——
-    // Claude Code 启动时新会话已锁定当前版本目录(installed_plugins 已指向最新),删 sibling 旧版本安全。
+    // 清理旧版本 cache 目录:保留最新 5 个版本(按 semver 排序),删更早的。少于 5 个则全保留。
+    // 保留 5 个避免"多会话升级"问题——旧会话锁定的版本(通常在最近几个内)不被删,Stop hook 不致 MODULE_NOT_FOUND。
     try {
       const root = process.env.CLAUDE_PLUGIN_ROOT;
       if (root) {
-        const verDir = basename(root);
         const parent = dirname(root); // .../plugins/cache/<marketplace>/<plugin>
-        for (const name of readdirSync(parent)) {
-          if (name === verDir || !/^\d+\.\d+\.\d+/.test(name)) continue; // 跳过当前版本 + 非 semver 目录
+        const versions = readdirSync(parent)
+          .filter((n) => /^\d+\.\d+\.\d+$/.test(n))
+          .sort((a, b) => {
+            const [aM = 0, am = 0, ap = 0] = a.split(".").map(Number);
+            const [bM = 0, bm = 0, bp = 0] = b.split(".").map(Number);
+            return bM - aM || bm - am || bp - ap; // 降序(新→旧)
+          });
+        const keep = new Set(versions.slice(0, 5)); // 保留最新 5
+        for (const name of versions) {
+          if (keep.has(name)) continue;
           const p = join(parent, name);
           try { if (statSync(p).isDirectory()) rmSync(p, { recursive: true, force: true }); } catch { /* Windows 占用/权限,留下次 */ }
         }
