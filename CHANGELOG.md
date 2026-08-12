@@ -2,6 +2,13 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.16 — 2026-08-12
+
+修复 autoUpdate 升级 cache 后 daemon 进程不自动重启的问题。
+
+### 修复
+- **daemon 进程重启判断**:startDaemonWithBun(install)原用 `probe.version === SERVICE_VERSION` 判断是否跳过启动,但 version 都读新 package.json(cache 换目录后 daemon health 也报新),恒相等 → daemon 旧进程不重启(跑旧代码)。改为 `version 同 && pid.startedAt >= cache.installedAt`(进程启动时间 vs cache 部署时间)双条件——daemon 启动于 cache 部署前(进程旧)则 stopDaemon + spawn 重启。新增 deploy.readInstallVersionMeta 读 .install-version 元数据。
+
 ## 1.3.15 — 2026-08-12
 
 日报/周报生成流程打磨:报告脚本 stdout 直出 dashboard 链接、表格 work 排版交给 AI。
