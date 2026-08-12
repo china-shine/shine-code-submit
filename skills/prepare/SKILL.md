@@ -1,9 +1,9 @@
 ---
 name: prepare
-description: 提前为今日会话生成 work+task 写入 summary,让 /report 秒级提交。把 /report 最耗时的 AI 填空(语义匹配任务+拆文案)前置到任意时机完成,填报时直接执行。Use when 用户要求准备工时、提前算工时、加速 /report、提前生成工时草稿,或运行 /prepare。
+description: 提前为今日会话生成工作内容+任务写入工时记录,让 /report 秒级提交。把 /report 最耗时的 AI 填空(语义匹配任务+拆文案)前置到任意时机完成,填报时直接执行。当用户要求准备工时、提前算工时、加速 /report、提前生成工时草稿,或运行 /prepare 时使用。
 ---
 
-# ZenPilot 提前准备工时
+# shine-worklog 提前准备工时
 
 把当天会话的 `work`(工作内容)+ `task`(禅道任务归属)**提前**算好写入 summary,这样 `/report` 时全 `resolved`、秒级提交,不用在填报时干等 AI 推理。
 

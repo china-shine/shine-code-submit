@@ -1,9 +1,9 @@
 ---
 name: setup
-description: 配置 ZenPilot 的禅道连接信息:服务器地址、账号、密码,验证连通性并让用户勾选常用项目。Use when 用户要求配置禅道、初始化 ZenPilot、修改禅道账号或服务器、设置常用项目,或运行 /setup。
+description: 配置 shine-worklog 的禅道连接信息:服务器地址、账号、密码,验证连通性并让用户勾选常用项目。当用户要求配置禅道、初始化 shine-worklog、修改禅道账号或服务器、设置常用项目,或运行 /setup 时使用。
 ---
 
-# ZenPilot 禅道配置
+# shine-worklog 禅道配置
 
 配置写入 `~/.zenpilot/config.json`。脚本在 report skill:`<Base directory>/../report/scripts/zentao.ts`。**用绝对路径在当前项目目录下调用、不要 cd**(脚本靠 `process.cwd()` 识别项目)。
 

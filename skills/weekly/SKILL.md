@@ -1,9 +1,9 @@
 ---
 name: weekly
-description: 生成本自然周(周一起)的工时周报(从禅道提交记录 efforts 汇总),输出 HTML 到 reports/,含 AI 周总结。Use when 用户要求生成周报、本周工时汇总、写周报,或运行 /weekly。
+description: 生成本自然周(周一起)的工时周报(从禅道提交记录汇总),输出 HTML 到 reports/,含 AI 周总结。当用户要求生成周报、本周工时汇总、写周报,或运行 /weekly 时使用。
 ---
 
-# ZenPilot 周报
+# shine-worklog 周报
 
 生成**本自然周(周一至今天)**的工时周报,数据来自禅道的提交记录(`/tasks/{id}/estimate` 的 efforts,非本地会话)。输出为**自包含 HTML**,写入 `DATA_DIR/reports/周报-YYYY-MM-DD~YYYY-MM-DD.html`(本周重跑覆盖,不堆积;**dashboard 周报模块可查看**),并在底部附 **AI 周总结**。
 

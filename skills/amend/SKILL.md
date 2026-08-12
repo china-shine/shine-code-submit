@@ -1,9 +1,9 @@
 ---
 name: amend
-description: 修正最后一次禅道工时提交:查看最后一次提交内容、补报差额工时;减工时或改文案时引导到禅道页面并帮用户定位记录。Use when 用户说 修正/修改最后一次提交、上次报错了、报多了/报少了、补报工时,或运行 /amend。
+description: 修正最后一次禅道工时提交:查看最后一次提交内容、补报差额工时;减工时或改文案时引导到禅道页面并帮用户定位记录。当用户说 修正/修改最后一次提交、上次报错了、报多了/报少了、补报工时,或运行 /amend 时使用。
 ---
 
-# ZenPilot 修正最后一次提交
+# shine-worklog 修正最后一次提交
 
 脚本在 report skill:`<Base directory>/../report/scripts/zentao.ts`。**用绝对路径在当前项目目录下调用、不要 cd**——amend 改的 plan/submitted 按项目隔离在 `~/.zenpilot/projects/<编码项目路径>/`。
 

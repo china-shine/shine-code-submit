@@ -53,7 +53,7 @@ async function main(): Promise<void> {
     process.stderr.write(`[shine-worklog-hook] forward failed: ${safeMsg(err)}\n`);
   }
 
-  // 2.5 Stop 事件：fork ZenPilot collect（合并进来的禅道工时填报 skill），把同一份 stdin 转发给子进程。
+  // 2.5 Stop 事件：fork 禅道工时填报 collect，把同一份 stdin 转发给子进程。
   //     Claude Code 的 Stop 只把 stdin 喂给一个进程，故由本 hook 读一次后转发（不能在 hooks.json 挂两条 command）。
   //     detached + unref，不阻塞；失败一律吞掉，绝不影响 hook 退出码。
   // Stop | SubagentStop:不 block(Stop block 在 Claude Code 会显示 "Stop hook error",见 issue #34600,
@@ -138,7 +138,7 @@ async function main(): Promise<void> {
 }
 
 /** 采集：argv[1] 或 stdin.hook_event_name 作为 type；cwd=process.cwd()；sessionId 取 stdin.session_id。
- *  返回事件 + 原始 stdin 文本（后者用于 Stop 时 fork ZenPilot collect 转发）。 */
+ *  返回事件 + 原始 stdin 文本（后者用于 Stop 时 fork 禅道工时填报 collect 转发）。 */
 async function collect(): Promise<{ event: HookEvent; stdinRaw: string } | null> {
   // 扫描 argv 找有效事件名：兼容「直接调 exe (argv[1])」与「bun run script.ts X (argv[2])」两种形式
   const typeArg = process.argv.slice(1).find((a) => VALID_TYPES.includes(a as HookEventType)) as
@@ -293,7 +293,7 @@ function upgradeNotice(): string {
   }
 }
 
-// ---------- ZenPilot（合并进来的禅道工时填报 skill）Stop hook fork ----------
+// ---------- 禅道工时填报 Stop hook fork ----------
 
 /** 解析 skills/report/scripts/zentao.ts 绝对路径。CLAUDE_PLUGIN_ROOT 优先，回退相对 main.ts。 */
 function resolveZenCollectScript(): string | null {

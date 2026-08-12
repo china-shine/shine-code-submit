@@ -1,5 +1,5 @@
 /** 会话采集 + transcript 解析。
- *  cmdCollect:读 shine-worklog daemon /api/sessions 映射成 ZenPilot session 写盘(hook/full 双模式)。
+ *  cmdCollect:读 shine-worklog daemon /api/sessions 映射成 shine-worklog session 写盘(hook/full 双模式)。
  *  extractTranscriptSignals:为 prepare 提取生成 work 所需的精选 transcript 信号。 */
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
@@ -42,7 +42,7 @@ async function fetchDaemonSessions(
   return (await res.json()) as { sessions: any[]; total: number };
 }
 
-/** daemon ProjectSession → ZenPilot session(字段映射见合并方案 2.1)。 */
+/** daemon ProjectSession → shine-worklog session(字段映射见合并方案 2.1)。 */
 export function toZenSession(s: any, branch: string | null): any {
   const activeMs = num(s.activeMs);
   const lastActive = num(s.lastActive);
@@ -180,7 +180,7 @@ async function readStdinTimed(ms = 2000): Promise<string> {
 export async function cmdCollect(): Promise<any> {
   // 合并后:collect 改读 shine-worklog daemon 的 /api/sessions(不再挖 transcript)。
   // hook 模式(Stop hook 触发,stdin 携带 payload)与 full 模式(/report 兜底手动跑)统一:
-  //   读 daemon token → GET /api/sessions?cwd=本项目&since=当日0点 → 映射成 ZenPilot session → 写 sessions.json。
+  //   读 daemon token → GET /api/sessions?cwd=本项目&since=当日0点 → 映射成 shine-worklog session → 写 sessions.json。
   // daemon 不可达时:hook 静默跳过(不写、不崩、不影响 hook);full 给错误提示。
   const isHook = process.stdin.isTTY !== true;
   let hookSessionId: string | null = null;

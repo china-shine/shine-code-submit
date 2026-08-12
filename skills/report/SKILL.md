@@ -1,9 +1,9 @@
 ---
 name: report
-description: 汇总当天 Claude Code 会话统计(工时/token/代码量),智能判断每段工作归属的禅道项目与任务,经用户确认后调用禅道 API 填报工时。Use when 用户要求填报工时、上报工时、报工、提交禅道工时,或运行 /report。
+description: 汇总当天 Claude Code 会话统计(工时/token/代码量),智能判断每段工作归属的禅道项目与任务,经用户确认后调用禅道 API 填报工时。当用户要求填报工时、上报工时、报工、提交禅道工时,或运行 /report 时使用。
 ---
 
-# ZenPilot 工时填报
+# shine-worklog 工时填报
 
 把当天的编码会话数据归属到禅道任务并填报工时。
 

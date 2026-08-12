@@ -1,9 +1,9 @@
 ---
 name: lastweek
-description: 生成上周(周一~周日)的工时周报(从禅道提交记录 efforts 汇总),输出 HTML 到 reports/,含 AI 周总结。Use when 用户要求生成上周周报、上周工时总结、回顾上周,或运行 /lastweek。
+description: 生成上周(周一~周日)的工时周报(从禅道提交记录汇总),输出 HTML 到 reports/,含 AI 周总结。当用户要求生成上周周报、上周工时总结、回顾上周,或运行 /lastweek 时使用。
 ---
 
-# ZenPilot 上周周报
+# shine-worklog 上周周报
 
 生成**上周(周一至周日)**的工时周报,数据来自禅道的提交记录(`/tasks/{id}/estimate` 的 efforts,非本地会话)。脚本自动算上周一~上周日区间,无需手填日期。输出为**自包含 HTML**,写入 `DATA_DIR/reports/周报-YYYY-MM-DD~YYYY-MM-DD-<姓名>.html`(上周重跑覆盖,不堆积;**dashboard 周报模块可查看**),并在底部附 **AI 周总结**。
 

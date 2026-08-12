@@ -27,7 +27,7 @@ export class Client {
   async _request(method: string, p: string, body: unknown = null, auth = true): Promise<any> {
     const headers: Record<string, string> = {
       "Content-Type": "application/json",
-      "User-Agent": "ZenPilot-Bun/0.1",
+      "User-Agent": "shine-worklog-Bun/0.1",
     };
     if (auth) headers["Token"] = this.token;
     const init: any = { method, headers, signal: AbortSignal.timeout(30000) };

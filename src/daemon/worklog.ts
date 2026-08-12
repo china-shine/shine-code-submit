@@ -1,7 +1,7 @@
 // 禅道工时读取器:遍历 DATA_DIR/zenpilot/projects/*/plan.json,只取 status=resolved 的 items,
 // 扁平化成 WorklogEntry[] 供 buildReport 上报。无状态、不依赖 Store,风格对齐 transcript.ts/git.ts/lines.ts。
 //
-// 数据源:plan.json 是 ZenPilot(/shine-worklog:report skill)生成的「提交计划」,每个 item 含
+// 数据源:plan.json 是 shine-worklog report skill 生成的「提交计划」,每个 item 含
 // task/taskName/project/projectName/work/hours/date/status;status=resolved 表示已提交禅道。
 // plan.json 单文件只存当天(每天 plan 覆盖),故 collectWorklogs 每次【全量】读所有项目 plan.json
 // (忽略 buildReport 的 since 增量水位),靠 tokenserver 端 PK upsert 累积保留历史。

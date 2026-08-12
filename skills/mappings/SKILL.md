@@ -1,9 +1,9 @@
 ---
 name: mappings
-description: 查看与维护 ZenPilot 的仓库→禅道项目映射缓存:列出、新增、修改、删除。Use when 用户要求查看映射、修改映射、删除映射、纠正某个仓库的工时归属项目,或运行 /mappings。
+description: 查看与维护仓库→禅道项目映射缓存:列出、新增、修改、删除。当用户要求查看映射、修改映射、删除映射、纠正某个仓库的工时归属项目,或运行 /mappings 时使用。
 ---
 
-# ZenPilot 映射维护
+# shine-worklog 映射维护
 
 仓库→项目映射决定工时填报时会话候选任务的收窄范围。脚本在 report skill:`<Base directory>/../report/scripts/zentao.ts`。**用绝对路径在当前项目目录下调用、不要 cd**。映射存于 `~/.zenpilot/mappings.json`(全局)。
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-/** 禅道 REST API v1 客户端(ZenPilot 工时填报 skill 使用)— Bun + TypeScript 版。
+/** 禅道 REST API v1 客户端(shine-worklog 工时填报 skill 使用)— Bun + TypeScript 版。
  *
  * 命令(与原 zentao.py 一致,输出 JSON):
  *   config [--url U --account A --password P --projects 1,2] [--show]

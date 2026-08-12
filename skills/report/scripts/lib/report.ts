@@ -365,7 +365,7 @@ export function renderReportHtml(d: ReportData): string {
 ${body}
     </div>
     <!--AI_SUMMARY-->
-    <div class="foot">由 ZenPilot 自动生成 · ${esc(dateText)}</div>
+    <div class="foot">由 shine-worklog 自动生成 · ${esc(dateText)}</div>
   </div>
 </body>
 </html>`;
