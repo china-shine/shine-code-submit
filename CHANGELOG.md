@@ -2,6 +2,19 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.15 — 2026-08-12
+
+日报/周报生成流程打磨:报告脚本 stdout 直出 dashboard 链接、表格 work 排版交给 AI。
+
+### 新增
+- **报告脚本 stdout 直出 dashboard 链接**:weekly/daily/lastweek 输出增加 `dashboardUrl` 字段(读 daemon.pid 拼链接,daemon 未运行返回 null)。生成报告 = 单条命令拿全 HTML 路径 + dashboard 链接 + 待办任务,根除 SKILL.md 误用 zentao.ts ui 的「未知命令」报错。
+- **表格 work 排版交给 AI**:report.ts 去掉 renumberWorks 渲染(脚本只放禅道原始 effort,worksHtml 去 `\r`),daily/weekly/lastweek SKILL 写 AI 智能排版要求——不管原文格式,AI 排成统一整洁(简单 work 合并、复杂【现象】【原因】【措施】按结构分块、全角标点 + 中英文空格、标识在末尾、内容保留)。
+
+### 变更
+- **周报下周计划**:据 pendingTasks 列下周要推进的任务,改为直接说下周做什么(任务名 + 具体动作),去掉 consumed/百分比/剩余 数字与进度状态词。
+- **命令描述中文化**:9 个 slash 命令 description 去可避免英文(work→工作内容、task→任务、summary→工时记录、efforts 去冗余)、`Use when` 统一改成中文「当用户…时使用」。
+- **残留 ZenPilot 改名 shine-worklog**:8 个 SKILL 标题、周报/日报 HTML 页脚、HTTP User-Agent、代码注释(ZENPILOT_HOME 数据目录与迁移/历史文档保留)。
+
 ## 1.3.14 — 2026-08-11
 
 dashboard 顶部加手动「检查更新」按钮。
