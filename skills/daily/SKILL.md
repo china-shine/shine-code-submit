@@ -15,7 +15,7 @@ description: 生成今天的工时日报(从禅道提交记录 efforts 汇总),�
    ```
    bun "<Base directory>/../report/scripts/zentao.ts" daily
    ```
-   stdout 是 JSON:`{ ok, file, title, empty, text }`。
+   stdout 是 JSON:`{ ok, file, title, empty, text, pendingTasks, dashboardUrl }`。
 2. **生成 AI 日总结**(若 `empty: true` 跳过本步):**先分析再提炼,不要复述表格已有的工作内容**。只写两块:
    - **今日重心**:一句话判断今天的主线/节点
    - **明日计划**:只给具体工作方向(联调/验证/收尾),不要空话
@@ -31,7 +31,7 @@ description: 生成今天的工时日报(从禅道提交记录 efforts 汇总),�
          <h3>明日计划</h3><ul><li>……</li></ul>
        </section>
    ```
-3. 把 `text`(精简纯文本摘要)**放进代码块**展示给用户,并告知 **HTML 文件路径** + **dashboard 链接**(跑 `bun "<Base directory>/../report/scripts/zentao.ts" ui` 取带 token 链接,打开后点左侧「日报」模块查看;Windows 也可 `start <file>` 直接打开 HTML),说明底部含 AI 日总结。
+3. 把 `text`(精简纯文本摘要)**放进代码块**展示给用户,并告知 **HTML 文件路径**(stdout 的 `file` 字段;Windows 可 `start <file>` 直接打开)+ **dashboard 链接**(stdout 的 `dashboardUrl` 字段,打开后点左侧「日报」模块查看;`dashboardUrl` 为 `null` 说明 daemon 未运行,此条略过、只给文件路径),说明底部含 AI 日总结。
 4. 询问是否要调整文案/格式;若 `empty: true`(该范围内没有禅道提交记录),提示用户先 `/shine-worklog:report` 提交工时后重跑(覆盖同名文件)。
 
 ## 内容

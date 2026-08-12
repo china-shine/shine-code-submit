@@ -15,13 +15,13 @@ description: 生成本自然周(周一起)的工时周报(从禅道提交记录 
    ```
    bun "<Base directory>/../report/scripts/zentao.ts" weekly
    ```
-   stdout 是 JSON:`{ ok, file, title, empty, text }`。
+   stdout 是 JSON:`{ ok, file, title, empty, text, pendingTasks, dashboardUrl }`。
 2. **生成 AI 周总结**(若 `empty: true` 跳过本步):**先分析再提炼,不要复述表格已有的工作内容**。写三块:
    - **本周重心**:一句话判断主线/阶段(如"工具链建设为主""某模块收尾"),可带关键占比
    - **重点产出**:归纳本周核心成果(≤5 条,每条一句话,不带括号技术细节)
-   - **下周计划**:**据 stdout JSON 的 `pendingTasks`(禅道所有未完成任务,数据驱动)**列下周要推进的任务——每条带任务名 + 剩余工时 `left` + 完成度 `consumed/estimate`,据完成度判断优先级;**严禁主观编造,只列 pendingTasks 里的真实未完成任务**(如「#78363 dify 环境 剩余 92.5h、完成 7.5/100 → 收尾交付」)
+   - **下周计划**:**据 stdout JSON 的 `pendingTasks`(禅道所有未完成任务,数据驱动)**列下周要推进的任务——每条直接说下周做什么(任务名 + 下周具体动作,如「继续迭代收尾」「服务器部署联调」「启动设计整理」「推进封装交付」);不要写 consumed/百分比/剩余 等数字,也不要「已过半/刚起步/工时最大块」等进度状态词;**严禁主观编造,只列 pendingTasks 里的真实未完成任务**(如「#78363 dify 环境 —— 服务器部署联调」)
    
-   关键:每条带**判断 / 数字**,不要把表格内容换个说法重述。
+   关键:每条直接说**下周做什么**(具体动作),不罗列数字、不写进度状态、不复述表格内容。
    
    把总结写入 HTML:先 Read 该 HTML 文件,再用 Edit 将其中的 `<!--AI_SUMMARY-->` 占位替换为(区块样式已内置):
    ```
@@ -32,7 +32,7 @@ description: 生成本自然周(周一起)的工时周报(从禅道提交记录 
          <h3>下周计划</h3><ul><li>……(据 pendingTasks)……</li></ul>
        </section>
    ```
-3. 把 `text`(精简纯文本摘要)**放进代码块**展示给用户,并告知 **HTML 文件路径** + **dashboard 链接**(跑 `bun "<Base directory>/../report/scripts/zentao.ts" ui` 取带 token 链接,打开后点左侧「周报」模块查看;Windows 也可 `start <file>` 直接打开 HTML),说明底部含 AI 周总结。
+3. 把 `text`(精简纯文本摘要)**放进代码块**展示给用户,并告知 **HTML 文件路径**(stdout 的 `file` 字段;Windows 可 `start <file>` 直接打开)+ **dashboard 链接**(stdout 的 `dashboardUrl` 字段,打开后点左侧「周报」模块查看;`dashboardUrl` 为 `null` 说明 daemon 未运行,此条略过、只给文件路径),说明底部含 AI 周总结。
 4. 询问是否要调整文案/格式;若 `empty: true`(本周没有禅道提交记录),提示本周还没提交工时(先 `/shine-worklog:report`)后重跑。
 
 ## 内容

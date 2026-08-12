@@ -2,7 +2,7 @@
  *  纯渲染层:gatherReport 装配数据 → renderReportHtml/Text 渲染 → writeReport 落盘。 */
 import { readdirSync } from "node:fs";
 import * as path from "node:path";
-import { esc, writeText, loadJSON, isObj, pad2, DATA_DIR, ZENPILOT_HOME, loadMarkSetting, isAiWork } from "./shared";
+import { esc, writeText, loadJSON, isObj, pad2, DATA_DIR, ZENPILOT_HOME, loadMarkSetting, isAiWork, dashboardUrl } from "./shared";
 import { getCache, type Client } from "./client";
 
 export function weekStart(): string {
@@ -417,5 +417,5 @@ export async function writeReport(client: Client, cfg: Record<string, any>, from
   const dir = path.join(DATA_DIR, "reports");
   const file = path.join(dir, reportFilename(from, to, data.realname, kind));
   writeText(file, html);
-  return { ok: true, file, title: data.title, empty: data.dates.length === 0, text: renderReportText(data), pendingTasks: data.pendingTasks };
+  return { ok: true, file, title: data.title, empty: data.dates.length === 0, text: renderReportText(data), pendingTasks: data.pendingTasks, dashboardUrl: dashboardUrl() };
 }

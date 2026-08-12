@@ -2,7 +2,7 @@
  *  原 zentao.ts 1-203 行整段搬入(fat-shared 路线,全部 export),供 client/transcript/report/zentao 四模块复用。
  *  零 npm 依赖:仅 node:fs/node:os/node:path + Bun 全局。 */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { homedir, networkInterfaces } from "node:os";
 import * as path from "node:path";
 
 export const COMMIT_COOLDOWN_MINUTES = 30;
@@ -220,6 +220,53 @@ export function gitBranchFallback(cwd: string | null): string | null {
     const r = Bun.spawnSync(["git", "-C", cwd, "rev-parse", "--abbrev-ref", "HEAD"]);
     const out = (r.stdout?.toString() ?? "").trim();
     return out && out !== "HEAD" ? out : null;
+  } catch {
+    return null;
+  }
+}
+
+// ---------- dashboard 链接(报告 stdout 展示用)----------
+// 与 src/shared/config.ts(PORT/getPrimaryIpv4/PUBLIC_BASE_URL)+ src/shared/pidfile.ts(readPidFile)同口径,
+// 内联复刻(zentao.ts 零 npm 依赖、不跨目录 import src/shared);改网卡规则或端口时两边同步。
+export const PORT = 36666;
+
+/** 第一个非回环、非虚拟网卡的 IPv4(复刻 src/shared/config.ts:25-50);全为虚拟网卡退第一个非回环;都没有则 localhost。 */
+function getPrimaryIpv4(): string {
+  const VIRTUAL = ["vethernet", "vmware", "virtualbox", "docker", "veth", "br-", "virbr", "vnet", "utun", "meta", "clash", "mihomo"]; // +代理 TUN 虚拟网卡(Clash/Mihomo TUN)
+  const isVirtual = (name: string): boolean => {
+    const n = name.toLowerCase();
+    return VIRTUAL.some((k) => n.includes(k));
+  };
+  try {
+    const nets = networkInterfaces();
+    // 第一轮：跳过回环 + 虚拟网卡，取真实局域网 IP
+    for (const name of Object.keys(nets)) {
+      if (isVirtual(name)) continue;
+      for (const net of nets[name] ?? []) {
+        if (net.family === "IPv4" && !net.internal && !net.address.startsWith("198.18.")) return net.address; // 跳过 198.18.0.0/15(基准测试段,Clash TUN 占用)
+      }
+    }
+    // 第二轮：全是虚拟网卡时，退回第一个非回环 IPv4
+    for (const name of Object.keys(nets)) {
+      for (const net of nets[name] ?? []) {
+        if (net.family === "IPv4" && !net.internal && !net.address.startsWith("198.18.")) return net.address;
+      }
+    }
+  } catch {
+    /* fallthrough to localhost */
+  }
+  return "localhost";
+}
+
+export const PUBLIC_BASE_URL = `http://${getPrimaryIpv4()}:${PORT}`; // 局域网可访问的链接(网卡 IP),与 cli ui 同口径
+
+/** 读 DATA_DIR/daemon.pid 拿 token 拼 dashboard 链接;daemon 未运行/pid 缺失/无 token → null(报告降级为只给文件路径)。 */
+export function dashboardUrl(): string | null {
+  try {
+    const pid = JSON.parse(readFileSync(path.join(DATA_DIR, "daemon.pid"), "utf8"));
+    const token = (pid as any)?.token;
+    if (typeof token !== "string" || !token) return null;
+    return `${PUBLIC_BASE_URL}/ui?t=${token}`;
   } catch {
     return null;
   }
