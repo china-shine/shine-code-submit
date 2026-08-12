@@ -2,7 +2,7 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## 1.3.25 — 2026-08-12
+## 1.3.26 — 2026-08-12
 
 daemon 自动重启 + SessionStart 清理保留 5 个版本（1.3.16 regression 彻底修复）。
 
