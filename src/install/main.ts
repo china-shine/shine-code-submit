@@ -9,7 +9,7 @@ import { existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { spawn } from "node:child_process";
 import { ensureBun } from "./bun";
-import { cacheDir, deployPlugin } from "./deploy";
+import { cacheDir, deployPlugin, readInstallVersionMeta } from "./deploy";
 import { migrateLayout, cleanupOldPlugin } from "./migrate";
 import { enablePlugin, registerMarketplace, registerPlugin, unregisterAll } from "./register";
 import { PUBLIC_BASE_URL, SERVICE_VERSION } from "../shared/config";
@@ -111,12 +111,18 @@ async function runStatus(): Promise<void> {
  *  调用方(runInstall)据此决定是否清理旧 version——只有当前版本确认能跑才删旧。 */
 async function startDaemonWithBun(bunPath: string, cachePath: string): Promise<boolean> {
   const probe = await probeDaemon();
-  if (probe.alive && probe.version === SERVICE_VERSION) {
-    info(`[shine-worklog] daemon 已是最新 v${SERVICE_VERSION},跳过启动`);
-    return true;
-  }
   if (probe.alive) {
-    info(`[shine-worklog] daemon 旧版 v${probe.version} 运行中,重启到 v${SERVICE_VERSION}...`);
+    // 判断 daemon 进程是否当前 cache 版本:version 同 + 进程启动于 cache 部署之后(startedAt >= installedAt)。
+    // 不能只比 version——cache 换目录后 daemon health 也读新 package.json,version 恒相等,看不出进程旧。
+    const pid = readPidFile();
+    const meta = readInstallVersionMeta(cachePath);
+    const startedAt = pid?.startedAt ?? 0;
+    const installedAt = meta?.installedAt ?? 0;
+    if (probe.version === SERVICE_VERSION && startedAt >= installedAt) {
+      info(`[shine-worklog] daemon 已是最新 v${SERVICE_VERSION} 且进程新,跳过启动`);
+      return true;
+    }
+    info(`[shine-worklog] daemon 旧进程(version=${probe.version} started=${startedAt} < installed=${installedAt}),重启到 v${SERVICE_VERSION}...`);
     await stopDaemon();
   } else {
     info("[shine-worklog] 启动 daemon...");

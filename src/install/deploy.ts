@@ -140,3 +140,17 @@ function sameVersionDeployed(target: string): boolean {
     return false;
   }
 }
+
+/** 读 .install-version 元数据(version + installedAt),供 startDaemonWithBun 判断 daemon 进程是否启动于本次部署之后(进程新旧,替代恒相等的 version 比较)。 */
+export function readInstallVersionMeta(cachePath: string): { version: string; installedAt: number } | null {
+  try {
+    const meta = JSON.parse(readFileSync(join(cachePath, ".install-version"), "utf8")) as {
+      version?: string;
+      installedAt?: number;
+    };
+    if (typeof meta.version !== "string" || typeof meta.installedAt !== "number") return null;
+    return { version: meta.version, installedAt: meta.installedAt };
+  } catch {
+    return null;
+  }
+}

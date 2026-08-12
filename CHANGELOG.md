@@ -2,6 +2,13 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.20 — 2026-08-12
+
+修复 autoUpdate 升级 cache 后 daemon 进程不自动重启（1.3.16 已撤销的 fix 重做,基于 1.3.17）。
+
+### 修复
+- **daemon 进程重启判断**:startDaemonWithBun(install)原用 `probe.version === SERVICE_VERSION` 判断是否跳过启动,但 version 都读新 package.json(cache 换目录后 daemon health 也报新),恒相等 → daemon 旧进程不重启(跑旧代码)。改为 `version 同 && pid.startedAt >= cache.installedAt`(进程启动时间 vs cache 部署时间)双条件——daemon 启动于 cache 部署前(进程旧)则 stopDaemon + spawn 重启。新增 deploy.readInstallVersionMeta 读 .install-version 元数据。本地 3 轮测试通过(1.3.17→1.3.18→1.3.19→1.3.20,daemon 每次重启 pid 变 + token 持久)。
+
 ## 1.3.17 — 2026-08-12
 
 回退 1.3.16（1.3.16 autoUpdate 升级时误删当前会话锁定的旧版本目录,导致 hook launcher.cjs 找不到 → Stop hook error）。1.3.17 回到 1.3.15 内容（稳定,无 regression）。daemon 自动重启 fix（startDaemonWithBun 用 startedAt vs installedAt 判断进程新旧）稍后基于 1.3.17 重做,确保不删当前会话锁定的旧目录。
