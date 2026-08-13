@@ -2,6 +2,18 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.35 — 2026-08-13
+
+去掉开发时记 note,改成 /report 提交时自动读 transcript 汇总;修复工时增量多报;数据源选项。
+
+### 变更
+- **去掉开发时记 note**:删 UserPromptSubmit 每轮提示词 + SessionStart 注入 CLAUDE.md 规则 + CLAUDE.md「工时顺手记」规则,开发时零负担。/report 提交时对无 summary 的会话自动读 transcript 归纳 work+task(复用 prepare 的 extractTranscriptSignals),汇总前提示「正在汇总日志」。
+- **数据源 3 选项**:report/daily/weekly/lastweek 加「本地缓存(秒级)/ 禅道实时(准)/ 先刷新缓存」,AskUserQuestion 固定顺序选。
+
+### 修复
+- **膨胀合并防重水位 bug**:merged.minutes 继承 mainTask note 水位(非 session total),致下次增量算多(多报 3h)。改 merged.minutes=total。
+- **amend 补说明**:禅道 REST API 不支持删改工时(无 /efforts 端点,实测 DELETE/PUT 空返回),减工时/改文案只能 Web 页面手动。
+
 ## 1.3.34 — 2026-08-13
 
 修复 AI 代码占比假性偏低:分子补 aiDeleted 与分母对称 + 中文文件名路径转义漏算。
