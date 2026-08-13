@@ -70,10 +70,6 @@ function BreakdownBody({ startDate, endDate, members, member }: { startDate: str
         <StatCell label="commit" value={fmtFull(total.commits)} icon={<Database className="w-4 h-4" />} tint="bg-slate-100 dark:bg-slate-800 text-slate-500" />
       </div>
 
-      <div className="text-muted-foreground text-xs">
-        占比 = AI 行 / 代码变化行。分母 Σ(added+deleted) = commit 新增+删除行;分子 Σ(aiAdded+aiDeleted) = AI 新增+删除行(与分母对称,AI 删的代码也计入,不再只进分母稀释占比)。仅统计 aiAdded&gt;0(有 transcript 覆盖)的 commit;无覆盖的(早期版本前 / 别机器)不进分母。
-      </div>
-
       {/* 按项目 */}
       <Section title="按项目" icon={<FolderGit2 className="w-4 h-4" />} hint={`${data.byCwd.length} 个项目`}>
         <table className="w-full table-fixed">
