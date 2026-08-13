@@ -14,10 +14,12 @@ description: 生成本自然周(周一起)的工时周报(从禅道提交记录�
 1. **选数据源 + 运行**:先用 AskUserQuestion 问数据源:
    - **本地缓存(推荐)**——读 `efforts/` 快照,秒级(`--source cache`)
    - **禅道实时**——联网拉最新,准(`--source zentao`,怀疑缓存滞后/缺任务时用)
+   - **先刷新缓存**——先 `refresh`(拉全部 + 进度 [1/4]...[4/4])再 `weekly --source cache`(读刷新后缓存,适合 cache 明显过期)
    选定后运行:
    ```
    bun "<Base directory>/../report/scripts/zentao.ts" weekly --source <cache|zentao>
    ```
+   (选"先刷新"则先跑 `bun "<Base directory>/../report/scripts/zentao.ts" refresh`,再 weekly --source cache)
    stdout 是 JSON:`{ ok, file, title, empty, text, pendingTasks, dashboardUrl }`。若 `empty: true` 跳过确认与排版,直接第5步(提示空)。
 
    > cache 源只含未完成(doing/wait)任务的工时(refresh 快照);已完成任务可能漏。禅道源准但联网慢(每任务一次 GET)。

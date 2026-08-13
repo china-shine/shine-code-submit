@@ -82,7 +82,7 @@ function candidatesFor(repo: string, mappings: any, tasks: any[], projectNames: 
     .map((t: any) => ({ id: t.id, name: t.name, project: t.project, projectName: projectNames[t.project] ?? null }));
 }
 
-export async function cmdPlan(client?: Client, cfg?: Record<string, any>): Promise<any> {
+export async function cmdPlan(client?: Client, cfg?: Record<string, any>, source: "cache" | "zentao" = "cache"): Promise<any> {
   const data = loadJSON<any>(SESSIONS_PATH, null);
   if (data === null) die(`会话数据不存在: ${SESSIONS_PATH}`);
   const date = data.date;
@@ -104,7 +104,8 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>): Promi
     }
   }
   // client 缺省(prepare 路径)走纯本地缓存不联网;调用方(cmdPrepare)须预检 cache 存在
-  const cache = client ? await getCache(client, cfg!) : getCacheLocal();
+  // source=zentao 时强制刷新 cache(联网拉最新 task/项目,准);source=cache 读本地(快,默认)
+  const cache = client ? await getCache(client, cfg!, source === "zentao") : getCacheLocal();
   if (!cache || !Array.isArray(cache.projects) || !Array.isArray(cache.tasks)) {
     die(`禅道任务缓存缺失或不完整: ${CACHE_PATH},请先运行 refresh 命令拉取`);
   }
@@ -247,6 +248,7 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>): Promi
           const merged: any = {
             ...mainTask,
             hours: totalHours,
+            minutes: total, // 防重水位 = 整 session activeMinutes(非 mainTask 的 note 水位,否则下次增量算多)
             work: segItems.map((it: any) => it.work).filter(Boolean).join("\n") || null,
             reason: "开发时 summary 记录(多 note 合并,避免拆段工时膨胀)",
             confidence: allUnmatched ? 0 : 100,
@@ -821,7 +823,7 @@ async function main(): Promise<void> {
     const statuses = a["all-status"] ? null : new Set(["doing", "wait"]);
     out = await client.myTasks(pids, statuses);
   } else if (cmd === "plan") {
-    out = await cmdPlan(client, cfg);
+    out = await cmdPlan(client, cfg, a.source === "zentao" ? "zentao" : "cache");
   } else if (cmd === "refresh") {
     const c = await getCache(client, cfg, true);
     out = {

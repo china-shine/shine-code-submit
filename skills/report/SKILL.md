@@ -58,11 +58,18 @@ bun "<Base directory>/scripts/zentao.ts" note --work "一句话:这段工作的�
 
 `plan` 会优先读 summary:**有 summary 且 task>0 的会话直接 `resolved`(置信度 100,跳过 AI 语义匹配 + 文案生成)**,工时仍取 daemon 的 session 活跃时长。**task=-1 的 note 标 `unmatched`**(有 work、带候选任务),留到 /report 匹配。开发时记了归属,「AI 填空」基本为空;没记归属的(task=-1)集中一次匹配。
 
-### 1. plan(读缓存:summary + 工时 + 防重 + cooldown 预判)
+### 1. 选数据源 + plan(读缓存:summary + 工时 + 防重 + cooldown 预判)
 
+先用 AskUserQuestion 问数据源(task/项目从哪取):
+- **本地缓存(推荐)**——读 cache,秒级(`plan`,默认)
+- **禅道实时**——plan 内联网刷新 cache,准(`plan --source zentao`,怀疑缓存滞后/新任务没进缓存时用)
+- **先刷新缓存**——先 `refresh`(拉全部 + 进度 [1/4]...[4/4])再 `plan`(读刷新后 cache,适合 cache 明显过期)
+
+选定后运行:
 ```
-bun "<Base directory>/scripts/zentao.ts" plan
+bun "<Base directory>/scripts/zentao.ts" plan [--source zentao]
 ```
+(选"先刷新"则先跑 `bun "<Base directory>/scripts/zentao.ts" refresh`,再 plan)
 
 一步读 `sessions.json`(Stop hook 每轮自动从 transcript 挖掘写入,**不需主动 collect**)+ summary + submitted,输出 `plan.json` + 返回 `cooldown`。按返回分三个分支:
 
