@@ -3,14 +3,14 @@
 //   2. 原子落盘 spool（tmp+rename）—— 唯一必成功环节
 //   3. 热转发 POST；连接失败才走故障路径（ensureDaemon：探测→认自己人→拉起→轮询 ready）→ 重读 token → 重试
 //   全程失败静默，退出码恒为 0（绝不影响 Claude Code）。
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync, rmSync } from "node:fs";
-import { ensureDirs, DATA_DIR, NOTICE_FILE } from "../shared/paths";
+import { existsSync, readdirSync, statSync, rmSync } from "node:fs";
+import { ensureDirs } from "../shared/paths";
 import { readToken } from "../shared/pidfile";
 import { writeSpoolFile } from "../shared/spool";
 import { BASE_URL, PUBLIC_BASE_URL, HOOK_POST_TIMEOUT_MS, SERVICE_VERSION } from "../shared/config";
-import { ensureDaemon, openBrowser, spawnDaemon, stopDaemon } from "../shared/daemonctl";
+import { ensureDaemon, spawnDaemon, stopDaemon } from "../shared/daemonctl";
 import { spawn } from "node:child_process";
-import { dirname, join, basename } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { HookEvent, HookEventType } from "../shared/types";
 
@@ -64,24 +64,12 @@ async function main(): Promise<void> {
     } catch {
       /* ignore */
     }
-    // 升级提示:daemon 已被 autoUpdate 升到新版,但当前会话 hook 仍跑旧版(Claude Code 会话锁定版本,
-    // 不能热切)→ 提示用户重启 Claude Code 生效。每轮 Stop 提示直到重启(重启后 daemon 版本重新等于
-    // hook 版本,提示自然消失)。仅 daemon 严格新于 hook 才提示(避免反方向——hook 新 daemon 旧——误报)。
-    try {
-      const dv = await fetchHealthVersion();
-      if (dv && isNewer(dv, SERVICE_VERSION)) {
-        process.stdout.write(JSON.stringify({ systemMessage: `✨ shine-worklog 已升级到 v${dv}(当前会话仍跑 v${SERVICE_VERSION}),重启 Claude Code 后生效` }));
-      }
-    } catch {
-      /* ignore */
-    }
   }
 
   // 3. SessionStart 时给用户打印 UI 入口：stdout 输出 JSON，Claude Code 解析 systemMessage
   //    字段直接显示给用户（裸 stdout 只注入 assistant 当 context，用户不可见）。
   //    · 每次「打开/回到」Claude（source=startup 或 resume）都打链接——任何方式进入都能看到入口。
   //    · 不覆盖 clear/compact（会话中途的 /clear、/compact），避免中途刷屏。
-  //    · 升级/首次时链接前带「✨ 已升级 vX / ✨ vX」（upgradeNotice，凭 NOTICE_FILE 版本差异，同版本不带）。
   //    · 读不到 token（daemon 未就绪）则静默跳过。
   if (event.type === "SessionStart") {
     // 清理旧版本 cache 目录:保留最新 5 个版本(按 semver 排序),删更早的。少于 5 个则全保留。
@@ -118,9 +106,8 @@ async function main(): Promise<void> {
     if (source === "startup" || source === "resume") {
       const token = readToken();
       if (token) {
-        const note = upgradeNotice(); // 升级/首次→"✨ …\n"；同版本→""；顺带落 NOTICE_FILE
         const url = `${PUBLIC_BASE_URL}/ui?t=${token}`; // 网卡 IP：显示与打开浏览器用同一地址，局域网通用
-        out.systemMessage = `${note}Shine Dashboard: ${url}`;
+        out.systemMessage = `Shine Dashboard: ${url}`;
       }
     }
     if (Object.keys(out).length) process.stdout.write(JSON.stringify(out));
@@ -205,17 +192,6 @@ async function forward(event: HookEvent): Promise<void> {
   await postOnce(url, event, readToken() ?? token);
 }
 
-/** GET daemon /api/health 拿 version(升级检测:daemon 新于 hook 说明 autoUpdate 升级了,提示用户重启)。 */
-async function fetchHealthVersion(): Promise<string | null> {
-  try {
-    const r = await fetch(`${BASE_URL}/api/health`, { signal: AbortSignal.timeout(2000) });
-    const j = (await r.json().catch(() => ({}))) as { version?: string };
-    return j.version ?? null;
-  } catch {
-    return null;
-  }
-}
-
 /** semver:a 是否严格新于 b(x.y.z 逐段数值比较,非字符串字典序)。 */
 function isNewer(a: string, b: string): boolean {
   const pa = a.split('.').map(Number);
@@ -251,37 +227,6 @@ function safeMsg(v: unknown): string {
 }
 function truncate(s: string): string {
   return s.length > 500 ? `${s.slice(0, 500)}...` : s;
-}
-
-/**
- * 升级提示：对比 NOTICE_FILE 记录的上次版本与当前 SERVICE_VERSION。
- * - 同版本 → ""（不提示）。
- * - 首次（无记录/损坏）→ "✨ shine-worklog vX\n"（也显示一次 banner 露链接），并落当前版本。
- *   关键：没有这条的话，引入本功能的版本自身（如 1.1.3）无基线可比 → 永远静默，所有用户升上来都看不到提示。
- * - 版本变了（升级/降级）→ "✨ shine-worklog 已升级到 vX（原 v旧）\n"，并更新记录（下次同版本不再提示）。
- * 全程容错：任何读写失败均返回 ""，绝不影响 hook。
- */
-function upgradeNotice(): string {
-  try {
-    let last = "";
-    try {
-      last = (JSON.parse(readFileSync(NOTICE_FILE, "utf8")) as { version?: string }).version ?? "";
-    } catch {
-      /* 无文件/损坏：视为首次 */
-    }
-    if (last === SERVICE_VERSION) return "";
-    try {
-      mkdirSync(DATA_DIR, { recursive: true });
-      writeFileSync(NOTICE_FILE, JSON.stringify({ version: SERVICE_VERSION }));
-    } catch {
-      /* 写失败：本次仍提示，下次启动再尝试记录 */
-    }
-    return last
-      ? `✨ shine-worklog 已升级到 v${SERVICE_VERSION}（原 v${last}）\n`
-      : `✨ shine-worklog v${SERVICE_VERSION}\n`; // 首次也显示（露链接），不再静默
-  } catch {
-    return "";
-  }
 }
 
 // ---------- 禅道工时填报 Stop hook fork ----------
