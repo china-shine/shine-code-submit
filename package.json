@@ -35,7 +35,8 @@
     "ui",
     "package.json",
     "bun.lock",
-    "README.md"
+    "README.md",
+    "CLAUDE.md"
   ],
   "engines": {
     "node": ">=18"

@@ -751,9 +751,7 @@ async function main(): Promise<void> {
     return;
   }
   if (cmd === "note") {
-    const r: any = cmdNote(a);
-    // 简洁人类可读输出(不 JSON),减少对话杂乱;失败时 cmdNote 内 die 已输出 error 并退出
-    console.log(`✓ 工时已记录:${r?.work ?? "(无内容)"}`);
+    cmdNote(a); // 静默记录(不输出"✓ 已记录"减少对话杂乱);失败时 cmdNote 内 die 已输出 error 并退出
     return;
   }
   if (cmd === "prepare") {
