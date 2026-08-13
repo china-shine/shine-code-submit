@@ -30,12 +30,12 @@ Claude Code ──事件──▶ node launcher.cjs ──spawn──▶ hook(�
 
 ## Hook 事件覆盖
 
-Claude Code 共 9 个 hook 事件（[官方清单](https://docs.claude.com/en/docs/claude-code/hooks)）。本插件注册其中 7 个事件（**以只读观测为主**；SessionStart/UserPromptSubmit 额外注入 additionalContext 辅助禅道工时闭环）；所有 hook 退出码恒 0，绝不阻断或改写 Claude Code 主进程。
+Claude Code 共 9 个 hook 事件（[官方清单](https://docs.claude.com/en/docs/claude-code/hooks)）。本插件注册其中 7 个事件（**以只读观测为主**；SessionStart 早采集 session + 打印 Dashboard 链接，Stop 采集 session）；所有 hook 退出码恒 0，绝不阻断或改写 Claude Code 主进程。
 
 | 事件 | 注册 | 触发时机 + 额外职责 |
 | --- | :---: | --- |
-| `SessionStart` | ✅ | 会话开始/resume/clear/compact；兼做 daemon 首次拉起 + **注入 CLAUDE.md 工时规则**（additionalContext，教 AI 顺手记） |
-| `UserPromptSubmit` | ✅ | 用户提交提示词前；**每轮注入提示词**「本轮有代码改动,响应结束前记 note」（feedback，无 block）；task 不确定记 `-1` |
+| `SessionStart` | ✅ | 会话开始/resume/clear/compact；兼做 daemon 首次拉起 + 早采集 session（写 sessions.json）+ 打印 Dashboard 链接 |
+| `UserPromptSubmit` | ✅ | 用户提交提示词前（观测） |
 | `PostToolUse` | ✅ | 工具调用完成后（观测） |
 | `Stop` | ✅ | 主 agent 结束响应；**forkZenCollect**：detached 采集 session 到 sessions.json |
 | `SubagentStop` | ✅ | 子 agent（Task 工具）结束响应；同 Stop（forkZenCollect 采集） |
@@ -46,13 +46,12 @@ Claude Code 共 9 个 hook 事件（[官方清单](https://docs.claude.com/en/do
 
 > `SessionResume` 在部分资料里被列为独立事件；官方文档里 resume 是 `SessionStart` 的一个 `source` matcher，非独立事件。
 
-### 禅道工时闭环（skills：自动攒 + 秒级提交）
+### 禅道工时闭环（skills：提交时自动读日志汇总）
 
-工时从"开发中自动攒"到"`/report` 秒级提交"的闭环：
-- **SessionStart** 注入 CLAUDE.md「工时顺手记」规则 → AI 知道一轮对话完成时要 note，task 不确定记 `-1`（不跳过、不问）
-- **UserPromptSubmit** 每轮注入提示词「本轮有代码改动,响应结束前记 note」（feedback，无 block）
-- **`/prepare`**：手动批量读 transcript 生成 work+task（补漏）
-- **`/report`**：读 summary 缓存 → AI 综合成 ≤3 总结 → 提交禅道（读缓存→总结→提交，跳过最耗时的 AI 填空）。task=-1 的 note 标 `unmatched`，先停下集中匹配候选任务，匹配好后和 task>0 的**一次统一提交**
+工时从"开发时零打扰"到"`/report` 提交时自动汇总"的闭环：
+- **开发时零负担**：不注入提示词、不记 note，正常写代码即可
+- **`/report`**：提交时对有 summary 的会话直读秒级；对没有 work 记录的会话，**自动读 Claude transcript 日志提取信号**（最近 AI 汇报 + 改动文件 + 工具计数），AI 归纳成一句话 work + 归属任务，汇总前提示「正在汇总日志」。task 不确定时从候选任务选，匹配好后统一提交
+- **`/prepare`**：手动提前跑，把 transcript 汇总前置（可选，让 /report 秒级）
 - **`/daily` `/weekly` `/amend`**：日报 / 周报 / 修正最后一次提交
 - **`/mark`**：配置 **AI 提交标识**（开关 + 文案）——提交禅道工时在 work 末尾追加一行标识（默认「本次内容由AI填报」），`/daily` `/weekly` 据此对账统计「AI 代报 N h」；dashboard「设置 → AI 提交标识」区块配同一处（`settings.json` 的 `aiSubmitMark`）
 - **`/mappings`**：查看 / 维护仓库→禅道项目映射缓存（`mappings.json`，`/report` commit 时自动学习）
@@ -61,7 +60,7 @@ Claude Code 共 9 个 hook 事件（[官方清单](https://docs.claude.com/en/do
 #### 工时来源与记录缓存（summary）
 
 - **时长** = daemon 记的 session `activeMinutes`（gap-aware 估算实际编码活跃时长，**不是 AI 估**），换算成小时
-- **文案 work + 归属 task** = 开发时 `note` 记到 `summary-YYYY-MM-DD.json` 的一句话结论（按项目 + 日期；**文件名日期取 `sessions.json.date`**，跨午夜报当天会话不错位）；task 不确定时记 `-1`，/report 时集中匹配；未记 note 的会话才走 AI 语义匹配
+- **文案 work + 归属 task** = `/report` 提交时归纳：有 summary 的会话直读；无 summary 的会话读 Claude transcript 日志（`~/.claude/projects/<项目>/<session>.jsonl`）提取信号，AI 归纳成一句话 work + 归属 task 写入 `summary-YYYY-MM-DD.json`（按项目 + 日期；**文件名日期取 `sessions.json.date`**，跨午夜报当天会话不错位）
 - **note 工时水位**：每条 note 拍快照当时 session 的 `activeMinutes`（`notedActiveMinutes`）。同一会话多条 note 时，按水位**切时间段拆工时到各 task**（段长 = 当前水位 − 上一水位），实现「一个会话干多个任务、工时按段分」
 
 #### 按项目隔离（每次只报当前项目）
@@ -305,7 +304,7 @@ zenpilot/           禅道工时填报数据（原 ~/.zenpilot/，1.3.0 统一�
   projects/<编码cwd>/ 按项目隔离（编码 = cwd 非字母数字→"-"，对齐 ~/.claude/projects/ 编码）
     plan.json           当天提交计划（每次 plan 覆盖，只存当天；items 含 status/work/taskName/hours）
     sessions.json       当天从 daemon 采集的会话（每次 collect 覆盖，只存当天；算工时用；其 date 字段定 summary 文件名）
-    summary-YYYY-MM-DD.json  开发时 note 积累的 work+task 结论（按日期，文件名日期取 sessions.json.date 防跨午夜错位；每条带 notedActiveMinutes 水位，多 note 按水位拆工时到各 task）
+    summary-YYYY-MM-DD.json  /report 提交时归纳的 work+task 结论（有 summary 直读，无则读 transcript 归纳写入；按日期，文件名日期取 sessions.json.date 防跨午夜错位；每条带 notedActiveMinutes 水位，多 note 按水位拆工时到各 task）
     submitted.json      防重 + amend 索引（按 日期→会话→{tasks,hours,minutes 水位} 累积；minutes 是提交时 activeMinutes 水位，再报同会话只补增量）
 ```
 
