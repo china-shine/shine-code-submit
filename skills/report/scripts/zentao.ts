@@ -103,9 +103,11 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>, source
       if (!cur || (Number(r.minutes) || 0) > (Number(cur.minutes) || 0)) submittedBySession[sid] = r;
     }
   }
-  // client 缺省(prepare 路径)走纯本地缓存不联网;调用方(cmdPrepare)须预检 cache 存在
-  // source=zentao 时强制刷新 cache(联网拉最新 task/项目,准);source=cache 读本地(快,默认)
-  const cache = client ? await getCache(client, cfg!, source === "zentao") : getCacheLocal();
+  // source=cache(默认)走 getCacheLocal 纯本地读,永不联网;source=zentao 走 getCache(refresh=true) 联网拉最新。
+  // 不能用 getCache(client,cfg,false)——它有 TTL 过期检查,过期会联网,违背「本地缓存=不联网」的语义。
+  const cache = source === "zentao" && client
+    ? await getCache(client, cfg!, true)
+    : getCacheLocal();
   if (!cache || !Array.isArray(cache.projects) || !Array.isArray(cache.tasks)) {
     die(`禅道任务缓存缺失或不完整: ${CACHE_PATH},请先运行 refresh 命令拉取`);
   }

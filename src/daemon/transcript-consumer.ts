@@ -15,7 +15,7 @@ import {
 } from "./transcript";
 import { Logger } from "./logger";
 
-const TICK_MS = 2000;
+const TICK_MS = 5000;
 const FULL_SCAN_MS = 5 * 60_000;
 const MAX_FILES_PER_TICK = 100;
 const MAX_SESSIONS_PER_TICK = 50;
