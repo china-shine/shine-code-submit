@@ -2,7 +2,8 @@
  *  Client:三分错误处理(网络层 die / HTTP 非2xx throw 供重试 / 2xx→JSON)。
  *  getCache:本地缓存优先(TTL 过期自动刷新),首次或 refresh 才拉禅道。 */
 import * as path from "node:path";
-import { die, roundPy, todayISO, isObj, nowISOSeconds, loadJSON, writeJSON, DATA_DIR, CACHE_PATH } from "./shared";
+import { mkdirSync } from "node:fs";
+import { die, roundPy, todayISO, isObj, nowISOSeconds, loadJSON, writeJSON, DATA_DIR, CACHE_PATH, EFFORTS_DIR } from "./shared";
 
 export class Client {
   base: string;
@@ -157,16 +158,24 @@ export class Client {
   }
 
   async submitEffort(taskId: number, date: string, hours: number, work: string, left: number | null = null, dryRun = false): Promise<any> {
-    const task = await this.get(`/tasks/${taskId}`);
+    // left 由调用方(plan,读 cache 算好)传入时,从 cache 拿 task.name,省一次 GET /tasks/{id}(每条提交省 1 网络往返);
+    // left 缺失才 GET(拿 task.left 算剩余 + name)。fallback:cache 无该 task 仍 GET 保底(不丢准确性)。
+    let taskName: string | null = null;
     if (left === null || left === undefined) {
+      const task = await this.get(`/tasks/${taskId}`);
       left = Math.max(roundPy(Number(task.left ?? 0) - hours, 1), 0);
+      taskName = task.name ?? null;
+    } else {
+      const t = (loadJSON<any>(CACHE_PATH, null)?.tasks ?? []).find((x: any) => x.id === taskId);
+      taskName = t?.name ?? null;
+      if (taskName === null) taskName = (await this.get(`/tasks/${taskId}`)).name ?? null; // cache 无该 task,fallback GET
     }
     const payload: any = { date: [date], work: [work], consumed: [hours], left: [left] };
     const legacy: any = { id: [0], objectID: [taskId], dates: [date], work: [work], consumed: [hours], left: [left], objectType: ["task"] };
     if (dryRun) {
       return {
         dryRun: true,
-        task: { id: taskId, name: task.name ?? null },
+        task: { id: taskId, name: taskName },
         endpoint: `POST /tasks/${taskId}/estimate`,
         payload,
       };
@@ -179,7 +188,7 @@ export class Client {
     }
     return {
       submitted: true,
-      task: { id: taskId, name: task.name ?? null },
+      task: { id: taskId, name: taskName },
       consumed: resp.consumed ?? null,
       left: resp.left ?? null,
     };
@@ -204,25 +213,34 @@ async function getCache(client: Client, cfg: Record<string, any>, refresh = fals
     if (!expired) return existing;
     // TTL 过期:继续往下联网拉(自动刷新)
   }
-  // 1000 上限避开禅道默认 100 截断;filterActive=true 只留「我参与 + 还有剩余工时(left>0)」的项目,
-  // 剔除任务全完成/关闭的历史项目,减少噪音(语义对齐 projects 命令默认过滤)。
-  const projects = await client.myProjects(1000, true);
-  // 遍历每个项目(配了 projectIds 用配置,否则全部 involved)查「我的未关闭任务」(doing/wait),
-  // 再只留「我的任务有未关闭」的项目——剔除「我的任务全关、只剩别人在做」的项目。
-  const pids = cfg.projectIds && cfg.projectIds.length
-    ? cfg.projectIds
-    : projects.map((p: any) => p.id);
+  // 项目:involved 进行中 + left>0(活跃,剔除任务全完成的历史项目);配了 projectIds 只留 setup 选的「属于自己的」项目。
+  const allProjects = await client.myProjects(1000, true);
+  const projects = cfg.projectIds && cfg.projectIds.length
+    ? allProjects.filter((p: any) => cfg.projectIds.includes(p.id))
+    : allProjects;
+  const pids = projects.map((p: any) => p.id);
+  // 任务:只未完成(doing/wait),已 done/closed 的不拉(不会提交工时,减 cache 噪音)。
   const tasks = await client.myTasks(pids, new Set(["doing", "wait"]));
-  const taskProjIds = new Set(tasks.map((t: any) => t.project));
-  const activeProjects = projects.filter((p: any) => taskProjIds.has(p.id));
+  // 拉每个未完成任务的工时记录(effort:每天 consumed + work 总结),供 daily/weekly/防重读 cache 不联网。
+  const taskEfforts: Record<number, { date: string | null; consumed: number; work: string }[]> = {};
+  await Promise.all(tasks.map(async (t: any) => {
+    try { taskEfforts[t.id] = await client.myEfforts(t.id); } catch { /* 单个任务拉失败跳过,不阻塞整体 */ }
+  }));
+  const executions = await client.executions(pids);
+  // 主 cache(元数据,稳定小):不含 taskEfforts(增长大头,拆到 efforts/<taskId>.json)
   const cache = {
     fetchedAt: nowISOSeconds(),
-    projects: activeProjects,
+    projects,
     tasks,
-    executions: await client.executions(activeProjects.map((p: any) => p.id)),
+    executions,
     taskDetails: existing?.taskDetails ?? {},
   };
   writeJSON(CACHE_PATH, cache);
-  return cache;
+  // 工时记录按任务拆分存(每任务独立文件,增长隔离,避免 cache.json 越来越大)
+  mkdirSync(EFFORTS_DIR, { recursive: true });
+  for (const t of tasks) {
+    writeJSON(path.join(EFFORTS_DIR, `${t.id}.json`), { taskId: t.id, fetchedAt: cache.fetchedAt, efforts: taskEfforts[t.id] ?? [] });
+  }
+  return { ...cache, taskEfforts }; // 返回仍含 taskEfforts(内存,兼容 cmdPlan 等用 cache.tasks 的调用方)
 }
 export { getCache };

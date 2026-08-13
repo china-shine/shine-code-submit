@@ -314,6 +314,22 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>): Promi
   for (const [k, v] of Object.entries(projectNames)) mappings.projectNames[String(k)] = v;
   writeJSON(MAPPINGS_PATH, mappings);
 
+  // 算 left(剩余工时):从 cache task.left 按 task 累减 hours,填 item.left。
+  // commit 时 submitEffort 收到非 null left 即跳过 GET /tasks/{id}(省每条一次网络往返)。
+  // fallback:cache 无该 task 或 left 缺失 → item.left 留 undefined → submitEffort 仍 GET(保底,不丢准确性)。
+  const leftByTask: Record<number, number> = {}; // taskId → 当前剩余(同 task 多条累减)
+  for (const it of items) {
+    if (it.status !== "resolved" || it.task == null || it.hours == null) continue;
+    if (leftByTask[it.task] === undefined) {
+      const t = taskById[it.task];
+      const l = t ? Number(t.left) : NaN;
+      if (!Number.isFinite(l)) continue; // cache 无该 task / left 缺失 → 该 task 走 fallback GET
+      leftByTask[it.task] = l;
+    }
+    leftByTask[it.task] = Math.max(roundPy(leftByTask[it.task] - it.hours, 1), 0);
+    it.left = leftByTask[it.task];
+  }
+
   const plan = { date, draftSeq: 0, items };
   writeJSON(PLAN_PATH, plan);
   // cooldown 预判:返回给调用方(SKILL 据此决定是否 render/commit,避免 commit 失败再查)
@@ -458,6 +474,21 @@ async function cmdCommit(client: Client, opts: { dryRun?: boolean; amend?: boole
   if (!dryRun) {
     writeJSON(MAPPINGS_PATH, mappings);
     if (ok.length) {
+      // 回写 cache:更新已提交 task 的 left/consumed,保证下次 plan 读到准 left(单机闭环)。
+      // r.left = submitEffort 返回的禅道剩余(非 null 才覆盖);consumed 累加本次 hours。
+      const cache0 = loadJSON<any>(CACHE_PATH, null);
+      if (cache0 && Array.isArray(cache0.tasks)) {
+        const byId = new Map<number, any>();
+        for (const t of cache0.tasks) if (t && t.id != null) byId.set(t.id, t);
+        let changed = false;
+        for (const r of ok) {
+          const t = r.task?.id != null ? byId.get(r.task.id) : undefined;
+          if (!t) continue;
+          if (r.left != null) { t.left = r.left; changed = true; }
+          if (r.hours) { t.consumed = roundPy(Number(t.consumed ?? 0) + r.hours, 1); changed = true; }
+        }
+        if (changed) writeJSON(CACHE_PATH, cache0);
+      }
       const log = loadJSON<any>(SUBMITTED_PATH, {});
       if (!log[plan.date]) log[plan.date] = {};
       const day = log[plan.date];

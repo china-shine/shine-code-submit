@@ -12,7 +12,8 @@ export const LOCAL_APP_DIR = process.env.LOCALAPPDATA ?? path.join(homedir(), ".
 export const DATA_DIR = path.join(LOCAL_APP_DIR, "shine-worklog");
 export const ZENPILOT_HOME = path.join(DATA_DIR, "zenpilot"); // 统一数据目录：ZenPilot 数据进 daemon DATA_DIR/zenpilot
 export const CONFIG_PATH = path.join(ZENPILOT_HOME, "config.json");
-export const CACHE_PATH = path.join(ZENPILOT_HOME, "cache.json"); // 全局:禅道任务缓存
+export const CACHE_PATH = path.join(ZENPILOT_HOME, "cache.json"); // 全局:禅道任务缓存(元数据:projects/tasks/executions/taskDetails)
+export const EFFORTS_DIR = path.join(ZENPILOT_HOME, "efforts"); // 按任务拆分的工时记录缓存(efforts/<taskId>.json,增长大头单独存避免 cache.json 膨胀)
 export const MAPPINGS_PATH = path.join(ZENPILOT_HOME, "mappings.json"); // 全局:仓库→项目映射
 export const SETTINGS_PATH = path.join(DATA_DIR, "settings.json"); // 行为开关(如 zentaoCacheTtlMin、aiSubmitMark),DATA_DIR 下与 config.json(连接信息)分离
 

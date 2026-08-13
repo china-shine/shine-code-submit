@@ -300,6 +300,29 @@ export function startServer(deps: ServerDeps) {
   void updateTick(); // 启动即检测一次(覆盖"每次打开 Claude")
   setInterval(updateTick, 60_000);
 
+  // 禅道缓存后台定时刷新:把 cache.json 从"懒触发"(访问 plan/daily 才刷)变成"后台主动定时刷",
+  // 保证 commit 读 cache 的 task.left 不太旧(读缓存省 GET 的前提)。zentaoCacheTtlMin 控制间隔(默认 300min);
+  // 启动时不立即跑(避免和 report/update tick 抢启动期资源,懒 TTL 兜底)。
+  let lastCacheRefreshAt = 0;
+  const cacheTick = async (): Promise<void> => {
+    let intervalMin: number;
+    try {
+      intervalMin = readSettings().zentaoCacheTtlMin ?? 0;
+    } catch {
+      return;
+    }
+    if (!intervalMin || intervalMin <= 0) return;
+    if (Date.now() - lastCacheRefreshAt < intervalMin * 60_000) return;
+    lastCacheRefreshAt = Date.now();
+    try {
+      const r: any = await refreshZentaoCache();
+      if (r?.ok) log.info(`zentao cache refreshed: ${r.tasks ?? 0} tasks`);
+    } catch (e) {
+      log.info(`zentao cache refresh failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+  setInterval(cacheTick, 60_000);
+
   return Bun.serve({
     hostname: LISTEN_HOST,
     port: PORT,
