@@ -1,5 +1,6 @@
 // AI 占比「分母构成」:按钮 + 弹窗。按项目(cwd)拆分母。
-// 占比口径:只统计 aiAdded>0(有 transcript 覆盖)的 commit;无覆盖的不进分母,避免拉低占比。
+// 占比 = 分子 Σ(aiAdded+aiDeleted) / 分母 Σ(added+deleted),分子分母对称(AI 删除行也计入分子,与分母的 added+deleted 对应)。
+// 只统计 aiAdded>0(有 transcript 覆盖)的 commit;无覆盖的不进分母,避免拉低占比。
 import { useEffect, useState, type ReactNode } from "react";
 import { Modal } from "./Modal";
 import { fmtFull, fmtPct, displayProjectName } from "../../lib/derive";
@@ -70,7 +71,7 @@ function BreakdownBody({ startDate, endDate, members, member }: { startDate: str
       </div>
 
       <div className="text-muted-foreground text-xs">
-        仅统计有 transcript 覆盖(commit 的 aiAdded&gt;0)的记录;无覆盖的(早期版本前 / 别机器)不进分母,避免拉低占比——所以这里的 AI 占比反映真实可统计的 AI 代码比例。
+        占比 = AI 行 / 代码变化行。分母 Σ(added+deleted) = commit 新增+删除行;分子 Σ(aiAdded+aiDeleted) = AI 新增+删除行(与分母对称,AI 删的代码也计入,不再只进分母稀释占比)。仅统计 aiAdded&gt;0(有 transcript 覆盖)的 commit;无覆盖的(早期版本前 / 别机器)不进分母。
       </div>
 
       {/* 按项目 */}

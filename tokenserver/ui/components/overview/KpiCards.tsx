@@ -14,7 +14,7 @@ export function KpiCards({ stats, startDate, endDate, members }: { stats: StatsP
   const sessionSeries = ds.map((d) => d.sessions);
   const linesSeries = ds.map((d) => d.lines);
   const durSeries = ds.map((d) => d.dur);
-  // AI 代码占比(commit 粒度):isAI commit 行(分子) / 所有 commit 行(分母);cap 100%,分母 0 → N/A
+  // AI 代码占比(commit 粒度):分子 Σ(aiAdded+aiDeleted) / 分母 Σ(added+deleted),对称(AI 删除行也计入分子);cap 100%,分母 0 → N/A
   const churn = t.codeLines.added + t.codeLines.deleted;
   const aiChurn = t.aiCodeLines.added + t.aiCodeLines.deleted;
   const aiRatio = churn > 0 ? aiChurn / churn : NaN;
