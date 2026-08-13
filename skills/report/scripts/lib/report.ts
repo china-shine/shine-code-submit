@@ -2,7 +2,7 @@
  *  纯渲染层:gatherReport 装配数据 → renderReportHtml/Text 渲染 → writeReport 落盘。 */
 import { readdirSync } from "node:fs";
 import * as path from "node:path";
-import { esc, writeText, loadJSON, isObj, pad2, DATA_DIR, ZENPILOT_HOME, loadMarkSetting, isAiWork, dashboardUrl } from "./shared";
+import { esc, writeText, loadJSON, isObj, pad2, DATA_DIR, ZENPILOT_HOME, EFFORTS_DIR, loadMarkSetting, isAiWork, dashboardUrl } from "./shared";
 import { getCache, type Client } from "./client";
 
 export function weekStart(): string {
@@ -95,17 +95,31 @@ type ReportData = {
 };
 
 /** 装配日报/周报数据:从禅道 efforts 汇总日期范围内的提交记录(纯数据,不含渲染)。 */
-async function gatherReport(client: Client, cfg: Record<string, any>, from: string, to: string, kind?: "daily" | "weekly"): Promise<ReportData> {
+async function gatherReport(client: Client, cfg: Record<string, any>, from: string, to: string, kind?: "daily" | "weekly", source: "zentao" | "cache" = "zentao"): Promise<ReportData> {
   const cache = await getCache(client, cfg);
   const ids = new Set<number>(collectTaskIds(from, to));
   for (const t of cache.tasks) ids.add(t.id);
   const idList = [...ids];
 
-  const effMap = new Map<number, any[]>(
-    await Promise.all(idList.map(async (id): Promise<[number, any[]]> => {
-      try { return [id, await client.myEfforts(id)]; } catch { return [id, []]; }
-    })),
-  );
+  // 拉每个任务的 efforts。source=cache 读本地 efforts/ 目录(0 网络,refresh 快照,但只含未完成任务);
+  // source=zentao 实时拉 client.myEfforts(准,联网)。cache 源可能缺已完成(done)任务的工时。
+  let effMap: Map<number, any[]>;
+  if (source === "cache") {
+    effMap = new Map();
+    try {
+      for (const f of readdirSync(EFFORTS_DIR)) {
+        if (!f.endsWith(".json")) continue;
+        const e = loadJSON<any>(path.join(EFFORTS_DIR, f), null);
+        if (e && e.taskId != null) effMap.set(e.taskId, e.efforts ?? []);
+      }
+    } catch { /* efforts/ 不存在 → effMap 空 */ }
+  } else {
+    effMap = new Map<number, any[]>(
+      await Promise.all(idList.map(async (id): Promise<[number, any[]]> => {
+        try { return [id, await client.myEfforts(id)]; } catch { return [id, []]; }
+      })),
+    );
+  }
   const infoMap = new Map<number, any>(
     await Promise.all(idList.map(async (id): Promise<[number, any]> => {
       try { return [id, await taskNameInfo(client, cache, id)]; } catch { return [id, { taskName: `#${id}`, projectName: "" }]; }
@@ -405,8 +419,8 @@ export function reportFilename(from: string, to: string, realname: string, kind?
 }
 
 /** 生成日报/周报 HTML 并落盘到 DATA_DIR/reports/(daemon 可稳定访问,dashboard 日报/周报模块查看),返回文件路径与文本摘要。 */
-export async function writeReport(client: Client, cfg: Record<string, any>, from: string, to: string, kind?: "daily" | "weekly") {
-  const data = await gatherReport(client, cfg, from, to, kind);
+export async function writeReport(client: Client, cfg: Record<string, any>, from: string, to: string, kind?: "daily" | "weekly", source: "zentao" | "cache" = "zentao") {
+  const data = await gatherReport(client, cfg, from, to, kind, source);
   const html = renderReportHtml(data);
   const dir = path.join(DATA_DIR, "reports");
   const file = path.join(dir, reportFilename(from, to, data.realname, kind));

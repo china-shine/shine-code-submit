@@ -214,18 +214,22 @@ async function getCache(client: Client, cfg: Record<string, any>, refresh = fals
     // TTL 过期:继续往下联网拉(自动刷新)
   }
   // 项目:involved 进行中 + left>0(活跃,剔除任务全完成的历史项目);配了 projectIds 只留 setup 选的「属于自己的」项目。
+  console.error("  [1/4] 拉项目...");
   const allProjects = await client.myProjects(1000, true);
   const projects = cfg.projectIds && cfg.projectIds.length
     ? allProjects.filter((p: any) => cfg.projectIds.includes(p.id))
     : allProjects;
   const pids = projects.map((p: any) => p.id);
   // 任务:只未完成(doing/wait),已 done/closed 的不拉(不会提交工时,减 cache 噪音)。
+  console.error(`  [2/4] 拉未完成任务(${pids.length} 项目)...`);
   const tasks = await client.myTasks(pids, new Set(["doing", "wait"]));
   // 拉每个未完成任务的工时记录(effort:每天 consumed + work 总结),供 daily/weekly/防重读 cache 不联网。
+  console.error(`  [3/4] 拉工时记录(${tasks.length} 任务,并行)...`);
   const taskEfforts: Record<number, { date: string | null; consumed: number; work: string }[]> = {};
   await Promise.all(tasks.map(async (t: any) => {
     try { taskEfforts[t.id] = await client.myEfforts(t.id); } catch { /* 单个任务拉失败跳过,不阻塞整体 */ }
   }));
+  console.error("  [4/4] 拉执行 + 写本地缓存...");
   const executions = await client.executions(pids);
   // 主 cache(元数据,稳定小):不含 taskEfforts(增长大头,拆到 efforts/<taskId>.json)
   const cache = {
