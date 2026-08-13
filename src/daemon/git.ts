@@ -114,7 +114,11 @@ export async function getGitRemote(cwd: string): Promise<string | null> {
 function runGit(cwd: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
     const proc = Bun.spawn({
-      cmd: ["git", "-C", cwd, ...args],
+      // core.quotepath=false:git 默认(core.quotepath=true)对非 ASCII 路径做八进制转义+引号包裹
+      // (如 "b/tokenserver/\346\225\260...md"),parseLogPatch 解析的中文文件路径会变乱码、
+      // 与 aiLines 的 UTF-8 key 对不上 → 中文文件的 AI 行全部匹配失败、占比假性偏低。
+      // 强制 git 输出原始 UTF-8 路径(影响 getCommitsInRange 的 AI 占比匹配 + getCommits 展示)。
+      cmd: ["git", "-C", cwd, "-c", "core.quotepath=false", ...args],
       stdout: "pipe",
       stderr: "pipe",
       windowsHide: true,

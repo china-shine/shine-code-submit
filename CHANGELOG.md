@@ -4,11 +4,12 @@
 
 ## 1.3.33 — 2026-08-13
 
-修复 AI 代码占比假性偏低:分子补 aiDeleted,与分母对称。
+修复 AI 代码占比假性偏低:分子补 aiDeleted 与分母对称 + 中文文件名路径转义漏算。
 
 ### 修复
 - **AI 占比分子分母不对称**:tokenserver AI 代码占比分母=Σ(added+deleted),但分子只算 aiAdded(deleted 恒 0)→ AI 每删一行旧代码(重构)分母 +1 分子 +0,占比被稀释(全程 AI 写代码也只有 ~70%)。修复:分子改为 Σ(aiAdded+aiDeleted),daemon `aggregate.ts` 补 aiDeleted 行级匹配(`getProjectAILines` 早已把删除行存进集合,数据现成),tokenserver 全链路(建表/迁移/upsert/聚合 getStats+getMember+getDenominatorBreakdown)接 aiDeleted 到分子。前端早已按 added+deleted 对称写好,无需改动。
 - ⚠️ **历史数据需回填**:`git_changes` 旧记录 aiDeleted=0(增量上报不重发旧 commit),修复后新 commit 自动带 aiDeleted;旧数据需触发 daemon 全量重报(删 settings.lastReportAt 或 POST /api/report/upload?full=1)回填。
+- **中文文件名 AI 占比漏算**:git 默认 `core.quotepath=true` 对非 ASCII 路径做八进制转义+引号包裹(`"b/...\346\225\260...md"`),daemon `parseLogPatch` 解析的中文文件路径变乱码、与 aiLines 的 UTF-8 key 对不上 → 中文文件(数据说明.md / 设计文档.md / 测试报告.md 等)的 AI 行全部匹配失败、占比假性偏低。修复:`runGit` 加 `-c core.quotepath=false` 让 git 输出原始 UTF-8 路径。实测 e76f525: 97.4% → 100%(数据说明.md 2 行恢复匹配)。
 
 ## 1.3.32 — 2026-08-12
 
