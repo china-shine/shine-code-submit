@@ -124,15 +124,17 @@ export async function buildProjectDetail(cwd: string, ss: ScannedSession[], stor
     totalTokens: sumTokens(sessions.map((r) => r.tokenTotal)),
     totalLines: sumLines(sessions.map((r) => r.linesTotal)),
     gitCommits: commits.map((c) => {
-      let aiAdded = 0;
+      let aiAdded = 0, aiDeleted = 0;
       for (const f of c.files) {
         const set = aiLines.get(normRelPath(cwd, f.path));
         if (set) {
-          // aiAdded 只计 addedLines(与分母 added 同口径);不含 deletedLines,否则删除 AI 旧代码会让 aiAdded > added
+          // aiAdded 只计 addedLines、aiDeleted 只计 deletedLines(分别与分母 added/deleted 同口径);
+          // 对称统计:AI 删的行也计入分子,不再只进分母稀释占比
           for (const l of f.addedLines ?? []) if (set.has(l)) aiAdded++;
+          for (const l of f.deletedLines ?? []) if (set.has(l)) aiDeleted++;
         }
       }
-      return { hash: c.hash, ts: c.time, added: c.added, deleted: c.deleted, aiAdded };
+      return { hash: c.hash, ts: c.time, added: c.added, deleted: c.deleted, aiAdded, aiDeleted };
     }),
   };
 }

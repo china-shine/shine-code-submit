@@ -57,6 +57,7 @@ db.exec(`
     added INTEGER DEFAULT 0,
     deleted INTEGER DEFAULT 0,
     aiAdded INTEGER DEFAULT 0,
+    aiDeleted INTEGER DEFAULT 0,
     PRIMARY KEY (hash)
   );
   CREATE INDEX IF NOT EXISTS idx_gitchanges_ts ON git_changes(ts);
@@ -85,10 +86,11 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_worklogs_user_date ON worklogs(gitUser, date);
 `);
 
-// 旧库迁移:git_changes 加 aiAdded 列(行级 AI 占比分子:该 commit added 行中 AI 写的行数)
+// 旧库迁移:git_changes 加 aiAdded/aiDeleted 列(行级 AI 占比分子:该 commit added/deleted 行中 AI 写删的行数)
 {
   const gcCols = db.prepare("PRAGMA table_info(git_changes)").all() as Array<{ name: string }>;
   if (!gcCols.some((c) => c.name === "aiAdded")) db.exec("ALTER TABLE git_changes ADD COLUMN aiAdded INTEGER DEFAULT 0");
+  if (!gcCols.some((c) => c.name === "aiDeleted")) db.exec("ALTER TABLE git_changes ADD COLUMN aiDeleted INTEGER DEFAULT 0");
 }
 
 // 旧库迁移:sessions 加 added/deleted/modified 列(无迁移机制,PRAGMA 检查 + ADD COLUMN)
@@ -156,9 +158,9 @@ const upsertSession = db.query(`
   WHERE excluded.lastActive >= sessions.lastActive OR excluded.cwd IS NOT sessions.cwd
 `);
 const upsertGitChange = db.query(`
-  INSERT INTO git_changes (hash, gitUser, cwd, ts, added, deleted, aiAdded)
-  VALUES (?, ?, ?, ?, ?, ?, ?)
-  ON CONFLICT(hash) DO UPDATE SET aiAdded = MAX(git_changes.aiAdded, excluded.aiAdded)
+  INSERT INTO git_changes (hash, gitUser, cwd, ts, added, deleted, aiAdded, aiDeleted)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  ON CONFLICT(hash) DO UPDATE SET aiAdded = MAX(git_changes.aiAdded, excluded.aiAdded), aiDeleted = MAX(git_changes.aiDeleted, excluded.aiDeleted)
 `);
 // 禅道工时 upsert:PK(gitUser,date,sessionId,taskId)幂等累积;taskId null→0 兜底(NULL 在 SQLite 唯一约束里互异会导致重复插入)。
 // start/end/work 是 SQLite 保留字,INSERT 列表与 ON CONFLICT 引用都加双引号。
@@ -205,7 +207,7 @@ export function saveReport(raw: ReportResponse): void {
       }
       // 该项目该窗口所有 commit 的代码变化行(AI 占比分母);hash 幂等,全量重扫不重
       for (const c of p.gitCommits ?? []) {
-        upsertGitChange.run(c.hash, gitUser, p.cwd, c.ts, c.added, c.deleted, c.aiAdded ?? 0);
+        upsertGitChange.run(c.hash, gitUser, p.cwd, c.ts, c.added, c.deleted, c.aiAdded ?? 0, c.aiDeleted ?? 0);
       }
     }
     // 禅道工时(daemon 忽略 since 全量上报;PK 复合 upsert 累积,taskId null→0 兜底幂等)
@@ -307,6 +309,7 @@ interface GitChangeRow {
   added: number;
   deleted: number;
   aiAdded: number;
+  aiDeleted: number;
 }
 
 /** 读配置(DATA_DIR/config.json,用户手编辑):aiStatsHosts = AI 占比只统计的仓库 host 白名单(空/缺=不过滤=全部)。*/
@@ -326,7 +329,7 @@ function queryGitChanges(opts: FilterOpts): GitChangeRow[] {
   const hosts = readConfig().aiStatsHosts ?? [];
   const params: (number | string)[] = [];
   let sql =
-    "SELECT g.ts AS ts, g.gitUser AS gitUser, g.cwd AS cwd, g.added AS added, g.deleted AS deleted, g.aiAdded AS aiAdded FROM git_changes g";
+    "SELECT g.ts AS ts, g.gitUser AS gitUser, g.cwd AS cwd, g.added AS added, g.deleted AS deleted, g.aiAdded AS aiAdded, g.aiDeleted AS aiDeleted FROM git_changes g";
   if (hosts.length > 0) sql += " JOIN projects p ON p.gitUser = g.gitUser AND p.cwd = g.cwd";
   sql += " WHERE g.ts >= ? AND g.ts <= ?";
   params.push(opts.from, opts.to);
@@ -368,10 +371,10 @@ export function getDenominatorBreakdown(opts: FilterOpts & { member?: string }):
   }
   const base = `FROM git_changes g${joinClause} WHERE g.ts >= ? AND g.ts <= ?${memberClause} AND g.aiAdded > 0${hostClause}`;
   const byCwd = db
-    .prepare(`SELECT g.cwd AS cwd, SUM(g.added+g.deleted) AS denom, SUM(g.aiAdded) AS ai, COUNT(*) AS commits ${base} GROUP BY g.cwd ORDER BY denom DESC`)
+    .prepare(`SELECT g.cwd AS cwd, SUM(g.added+g.deleted) AS denom, SUM(g.aiAdded + g.aiDeleted) AS ai, COUNT(*) AS commits ${base} GROUP BY g.cwd ORDER BY denom DESC`)
     .all(...params) as Array<{ cwd: string; denom: number; ai: number; commits: number }>;
   const byAi = db
-    .prepare(`SELECT CASE WHEN g.aiAdded>0 THEN 'ai' ELSE 'no-ai' END AS bucket, SUM(g.added+g.deleted) AS denom, SUM(g.aiAdded) AS ai, COUNT(*) AS commits ${base} GROUP BY bucket`)
+    .prepare(`SELECT CASE WHEN g.aiAdded>0 THEN 'ai' ELSE 'no-ai' END AS bucket, SUM(g.added+g.deleted) AS denom, SUM(g.aiAdded + g.aiDeleted) AS ai, COUNT(*) AS commits ${base} GROUP BY bucket`)
     .all(...params) as Array<{ bucket: "ai" | "no-ai"; denom: number; ai: number; commits: number }>;
   const total = {
     denom: byCwd.reduce((s, r) => s + r.denom, 0),
@@ -508,7 +511,8 @@ export function getStats(opts: FilterOpts & { granularity: Granularity }): Stats
     tModified = 0,
     tGitAdded = 0,
     tGitDeleted = 0,
-    tGitAiAdded = 0;
+    tGitAiAdded = 0,
+    tGitAiDeleted = 0;
   let activeMin = Infinity,
     activeMax = -Infinity;
   const trendMap = new Map<string, DayBucket>();
@@ -594,6 +598,7 @@ export function getStats(opts: FilterOpts & { granularity: Granularity }): Stats
     tGitAdded += g.added;
     tGitDeleted += g.deleted;
     tGitAiAdded += g.aiAdded;
+    tGitAiDeleted += g.aiDeleted;
     // 按日桶累加分母(只累加到已有 session 的日桶,不新建 → 避免给 token/会话等 sparkline 插 0 谷)
     const gk = bucketOf(g.ts, "day");
     const gds = dailyMap.get(gk.key);
@@ -601,6 +606,7 @@ export function getStats(opts: FilterOpts & { granularity: Granularity }): Stats
       gds.gitAdded += g.added;
       gds.gitDeleted += g.deleted;
       gds.aiGitAdded += g.aiAdded;
+      gds.aiGitDeleted += g.aiDeleted;
     }
     let m = memberAcc.get(g.gitUser);
     if (!m) {
@@ -610,6 +616,7 @@ export function getStats(opts: FilterOpts & { granularity: Granularity }): Stats
     m.gitAdded += g.added;
     m.gitDeleted += g.deleted;
     m.gitAiAdded += g.aiAdded;
+    m.gitAiDeleted += g.aiDeleted;
   }
 
   const token: TokenUsage = { input: tInput, output: tOutput, cacheCreation: tCC, cacheRead: tCR };
@@ -662,7 +669,7 @@ export function getStats(opts: FilterOpts & { granularity: Granularity }): Stats
       rawTotal: tInput + tOutput + tCC + tCR,
       lines,
       codeLines: { added: tGitAdded, deleted: tGitDeleted },
-      aiCodeLines: { added: tGitAiAdded, deleted: 0 },
+      aiCodeLines: { added: tGitAiAdded, deleted: tGitAiDeleted },
       activeMs: tActive,
       sessions: rows.length,
       members: memberAcc.size,
@@ -740,7 +747,8 @@ export function getMember(gitUser: string, opts: { from: number; to: number; gra
     tModified = 0,
     tGitAdded = 0,
     tGitDeleted = 0,
-    tGitAiAdded = 0;
+    tGitAiAdded = 0,
+    tGitAiDeleted = 0;
   let lastActive = 0;
   const realCwds = new Set<string>();
   const trendMap = new Map<string, DayBucket>();
@@ -781,6 +789,7 @@ export function getMember(gitUser: string, opts: { from: number; to: number; gra
     tGitAdded += g.added;
     tGitDeleted += g.deleted;
     tGitAiAdded += g.aiAdded;
+    tGitAiDeleted += g.aiDeleted;
     // 按日桶累加分母(只累加到已有 session 的日桶,不新建 → 避免给 token sparkline 插 0 谷)
     const gk = bucketOf(g.ts, "day");
     const gds = dailyMap.get(gk.key);
@@ -788,6 +797,7 @@ export function getMember(gitUser: string, opts: { from: number; to: number; gra
       gds.gitAdded += g.added;
       gds.gitDeleted += g.deleted;
       gds.aiGitAdded += g.aiAdded;
+      gds.aiGitDeleted += g.aiDeleted;
     }
   }
   return {
@@ -798,7 +808,7 @@ export function getMember(gitUser: string, opts: { from: number; to: number; gra
       rawTotal: tInput + tOutput + tCC + tCR,
       lines: { added: tAdded, deleted: tDeleted, modified: tModified },
       codeLines: { added: tGitAdded, deleted: tGitDeleted },
-      aiCodeLines: { added: tGitAiAdded, deleted: 0 },
+      aiCodeLines: { added: tGitAiAdded, deleted: tGitAiDeleted },
       activeMs: tActive,
       sessions: rows.length,
       realProjects: realCwds.size,

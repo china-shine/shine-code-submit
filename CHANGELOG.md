@@ -2,6 +2,14 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.33 — 2026-08-13
+
+修复 AI 代码占比假性偏低:分子补 aiDeleted,与分母对称。
+
+### 修复
+- **AI 占比分子分母不对称**:tokenserver AI 代码占比分母=Σ(added+deleted),但分子只算 aiAdded(deleted 恒 0)→ AI 每删一行旧代码(重构)分母 +1 分子 +0,占比被稀释(全程 AI 写代码也只有 ~70%)。修复:分子改为 Σ(aiAdded+aiDeleted),daemon `aggregate.ts` 补 aiDeleted 行级匹配(`getProjectAILines` 早已把删除行存进集合,数据现成),tokenserver 全链路(建表/迁移/upsert/聚合 getStats+getMember+getDenominatorBreakdown)接 aiDeleted 到分子。前端早已按 added+deleted 对称写好,无需改动。
+- ⚠️ **历史数据需回填**:`git_changes` 旧记录 aiDeleted=0(增量上报不重发旧 commit),修复后新 commit 自动带 aiDeleted;旧数据需触发 daemon 全量重报(删 settings.lastReportAt 或 POST /api/report/upload?full=1)回填。
+
 ## 1.3.32 — 2026-08-12
 
 日报/周报增加工时确认步骤（1.3.31 本地测试通过，正式发布）。

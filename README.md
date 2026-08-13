@@ -332,12 +332,24 @@ daemon 默认每 10 分钟（`reportIntervalMin`）或手动（Dashboard「上�
 
 除 token 外，tokenserver 还聚合两类**随报表一起上来**的数据，完整口径见 [`tokenserver/数据说明.md`](./tokenserver/数据说明.md)。
 
-**AI 代码占比** = AI 代码行 / git commit 代码变化行（总览 KPI 卡，点「分母」按钮看按项目拆分）：
-- **分子 Σ aiAdded**：daemon 从 events 表 PostToolUse（Edit/Write/MultiEdit/NotebookEdit）的 `structuredPatch` 提取 AI 改动行，与 `git log -p --unified=0` 采的 commit added 行做**行级内容匹配**（认行不认 commit，手动 commit 的 AI 代码也能识别）；每个 commit 的 `aiAdded` 随报表 `gitCommits` 上报（`src/daemon/lines.ts` + `aggregate.ts`）。
-- **分母 Σ(added+deleted)**：commit 代码变化行，tokenserver 落 `git_changes` 表（hash 幂等 upsert，aiAdded 取 MAX）。
+**AI 代码占比** = AI 代码行 / git commit 代码变化行（总览 KPI 卡，点「分母」按钮看按项目拆分）。**分子分母对称**：
+
+- **分子 Σ(aiAdded + aiDeleted)**：commit 的 added/deleted 行中，内容能匹配上 AI 操作记录的行数（AI 写的 + AI 删的）。
+- **分母 Σ(added + deleted)**：commit 代码变化行（新增 + 删除），tokenserver 落 `git_changes` 表（hash 幂等 upsert，aiAdded/aiDeleted 取 MAX）。
+
+**怎么判定一行是「AI 写的」——行级内容匹配，不看作者、不看 commit message**：一行代码被判为 AI 写的，当且仅当它的完整内容（连缩进空格）曾出现在 AI 某次编辑工具操作的 diff 里。流程（`src/daemon/lines.ts` `getProjectAILines` + `aggregate.ts` `buildProjectDetail`）：
+
+1. **只认 4 个工具**：`Edit` / `Write` / `MultiEdit` / `NotebookEdit` 的 PostToolUse 事件算 AI 代码操作；Bash/Grep/Read 等**不算**——AI 跑 `prettier`/`build:ui`/`bun install` 产生的代码不计入分子。
+2. **建 AI 行集合**：扫该项目所有上述事件的 `tool_response.structuredPatch`，取 `+` 行（AI 新增内容）与 `-` 行（AI 删除内容），去前缀存进 `Map<文件路径, Set<行内容>>`（多次编辑的中间版本都累积；Write 新建文件 patch 空 → fallback `content` 全文）。
+3. **逐行匹配**：`git log -p --unified=0` 采的 commit added 行内容去集合 `set.has()` 查，命中计入 `aiAdded`；deleted 行同理计入 `aiDeleted`。
+
+判定特点：**认行不认 commit**（手动 commit 的 AI 代码也能识别，不靠 `Co-Authored-By` trailer）、**逐字精确**（缩进/空格变即不匹配，宁漏不错）、**累积匹配**（跨会话、跨多次编辑的版本都算）。每个 commit 的 aiAdded/aiDeleted 随报表 `gitCommits` 上报。
+
+> 所以即使全程用 AI，占比也难到 100%：AI 跑 Bash 间接生成的行（build 产物 / lock 文件 / 格式化）、被格式化改过内容的行，都不在 Edit/Write 记录里——计入分母却不算分子。分子（事件级累积）可能 > 分母（commit 净变化），前端 `fmtPct` cap 100%。
+
 - **只统计有 transcript 覆盖的 commit（`aiAdded>0`）**：早期版本前 / 别机器未装采集的 commit 无 AI 行记录，不进分母，避免拉低占比；占比卡副标直接显示分子/分母。
 - **host 白名单 `aiStatsHosts`**：tokenserver `data/config.json` 可配数组（如 `["8.130.168.121"]`），只统计 `gitRemote` 命中指定 host 的 commit（公司 git 仓库），排除 localhost / 个人 / 无 remote；空或未配 = 不过滤（向后兼容）。改后重启 tokenserver 生效。
-- **daemon 升级全量回填**：daemon 启动发现版本变化（`lastDaemonVersion`）会重置 `lastFullReportAt`，下次上报强制全量（since=0）重拉 gitCommits，历史 `aiAdded` 由 tokenserver upsert MAX 幂等补齐。
+- **daemon 升级全量回填**：daemon 启动发现版本变化（`lastDaemonVersion`）会重置 `lastFullReportAt`，下次上报强制全量（since=0）重拉 gitCommits，历史 `aiAdded`/`aiDeleted` 由 tokenserver upsert MAX 幂等补齐。
 
 **禅道工时台账**：daemon 每次上报**全量**读 `zenpilot/projects/*/plan.json` 的 `status=resolved` 条目（`src/daemon/worklog.ts`，忽略增量水位），随报表 `worklogs` 上报 → tokenserver 落 `worklogs` 表（`(gitUser,date,sessionId,taskId)` 复合 upsert 累积，跨项目/跨天长期保留）→ 成员详情「禅道工时」表（分页，任务名可点跳禅道）。
 

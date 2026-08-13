@@ -144,6 +144,7 @@ export interface GitCommitStat {
   added: number;
   deleted: number;
   aiAdded?: number; // 该 commit added 行中 AI 写的行数(行级匹配:transcript AI 行 ∩ git added 行);缺省 0
+  aiDeleted?: number; // 该 commit deleted 行中 AI 删的行数(行级匹配:transcript AI 行 ∩ git deleted 行);缺省 0。与 aiAdded 对称,让 AI 占比分子(aiAdded+aiDeleted)与分母(added+deleted)口径一致
 }
 
 /** 报告里单个项目(=cwd)的聚合行。 */
