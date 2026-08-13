@@ -2,6 +2,15 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.37 — 2026-08-13
+
+删除 hook 升级提示(Stop 每轮提示 + SessionStart 升级横幅),清理死代码。自动升级功能不变。
+
+### 变更
+- **删除 Stop 升级提示**:daemon 被 autoUpdate 升级后,不再每轮 Stop 在聊天页注入「✨ shine-worklog 已升级到 vX…重启 Claude Code 后生效」(原每轮提示直到重启)。自动升级引擎(`updater.ts`)与 `forward()` 的「hook 新于 daemon 重启 daemon」版本同步机制保留,仅去掉聊天提示。
+- **删除 SessionStart 升级横幅**:打开/回到会话时打印的 Dashboard 链接不再带「✨ 已升级 vX(原 v旧)」前缀(原凭 `NOTICE_FILE` 版本差异判断),现为纯 `Shine Dashboard: <url>`。
+- **清理死代码**:删 `upgradeNotice` / `fetchHealthVersion` 函数及连带未用 import(`readFileSync` / `writeFileSync` / `mkdirSync` / `DATA_DIR` / `NOTICE_FILE`)、pre-existing 死 import(`openBrowser` / `basename`)、`paths.ts` 的 `NOTICE_FILE` 常量。
+
 ## 1.3.36 — 2026-08-13
 
 修复「本地缓存」数据源选项联网 + daemon 降频。
