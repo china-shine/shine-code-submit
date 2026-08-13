@@ -2,6 +2,14 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.36 — 2026-08-13
+
+修复「本地缓存」数据源选项联网 + daemon 降频。
+
+### 修复
+- **本地缓存真正不联网**:report/daily 的 source=cache 改走 `getCacheLocal` 纯本地读(之前 `getCache` 有 TTL 过期检查会联网,违背「本地缓存=不联网」语义)。
+- **daemon tick 降频**:transcript-consumer `TICK_MS` 2000→5000,读 jsonl 频率降一半(工时延迟 5s 无感,省 CPU)。
+
 ## 1.3.35 — 2026-08-13
 
 去掉开发时记 note,改成 /report 提交时自动读 transcript 汇总;修复工时增量多报;数据源选项。
