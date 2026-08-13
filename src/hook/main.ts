@@ -58,7 +58,6 @@ async function main(): Promise<void> {
   //     detached + unref，不阻塞；失败一律吞掉，绝不影响 hook 退出码。
   // Stop | SubagentStop:不 block(Stop block 在 Claude Code 会显示 "Stop hook error",见 issue #34600,
   //   即使用 exit 0 + JSON decision:block 亦然——是 Claude Code 固定 UX,无法避免);仅 forkZenCollect 采集 session。
-  //   note 记录靠 UserPromptSubmit 每轮提示词提醒 AI 自觉(不强制,但无 error 显示)。
   if (event.type === "Stop" || event.type === "SubagentStop") {
     try {
       forkZenCollect(event.cwd, stdinRaw);
@@ -73,16 +72,6 @@ async function main(): Promise<void> {
       if (dv && isNewer(dv, SERVICE_VERSION)) {
         process.stdout.write(JSON.stringify({ systemMessage: `✨ shine-worklog 已升级到 v${dv}(当前会话仍跑 v${SERVICE_VERSION}),重启 Claude Code 后生效` }));
       }
-    } catch {
-      /* ignore */
-    }
-  }
-
-  // UserPromptSubmit:每轮注入提示词,告诉 AI「本轮有代码改动就在响应完成时记 note」。
-  // 纯提示词驱动(不 block、不读文件、无 30min 兜底);AI 据此在响应末尾自觉记(task 不确定记 -1)。
-  if (event.type === "UserPromptSubmit") {
-    try {
-      detectAndRemind();
     } catch {
       /* ignore */
     }
@@ -124,10 +113,6 @@ async function main(): Promise<void> {
       /* ignore */
     }
     const out: Record<string, unknown> = {};
-    // 规则注入(给 Claude):所有 SessionStart source 都注入插件根 CLAUDE.md,教 AI 顺手 note(clear/compact 后重载)。
-    // 注:plugin SessionStart 的 additionalContext 可能受官方 bug #16538 影响(未确认修复);不生效时 detectAndRemind 每轮注入的提示词会兜底。
-    const rule = readRule();
-    if (rule) out.hookSpecificOutput = { hookEventName: "SessionStart", additionalContext: rule };
     // Dashboard 链接(给用户):仅 startup/resume(避免 clear/compact 刷屏)
     const source = (event.payload as Record<string, unknown> | null | undefined)?.source;
     if (source === "startup" || source === "resume") {
@@ -342,42 +327,4 @@ function forkZenCollect(cwd: string, stdinRaw: string): void {
     /* ignore */
   }
   child.unref(); // 关键：不阻塞父进程退出
-}
-
-// ---------- 每轮提示 AI 完成后记 note（UserPromptSubmit 注入提示词）----------
-
-/** UserPromptSubmit:每轮 stdout 注入 additionalContext,提示 AI「本轮有代码改动就在响应完成时记 note」。
- *  纯提示词驱动(不 block、不读文件、无未记兜底);AI 据此在响应末尾自觉记(task 不确定记 -1)。失败静默。 */
-function detectAndRemind(): void {
-  // note 命令用 plugin 绝对路径(CLAUDE_PLUGIN_ROOT),不依赖 cwd——任何项目/目录都能直接跑。
-  const root = process.env.CLAUDE_PLUGIN_ROOT;
-  const zentao = root ? `${root}/skills/report/scripts/zentao.ts` : "skills/report/scripts/zentao.ts";
-  const msg =
-    `[shine-worklog] 本轮一旦有代码改动(新建/编辑/删除文件),响应结束前【必须】记工时 note,不得遗漏。完整命令(直接执行): bun "${zentao}" note --work "一句话:本轮核心成果" --task <禅道任务ID,不确定传 -1 或省略>。纯问答/无文件改动可不记。`;
-  process.stdout.write(
-    JSON.stringify({ hookSpecificOutput: { hookEventName: "UserPromptSubmit", additionalContext: msg } }),
-  );
-}
-
-/** 读插件根 CLAUDE.md（规则源），SessionStart 注入 additionalContext 教 AI 顺手 note（插件级：所有装插件项目生效）。
- *  注:plugin SessionStart additionalContext 可能受官方 bug #16538 影响(未确认修复);不生效时 detectAndRemind 每轮注入的提示词会兜底。
- *  CLAUDE_PLUGIN_ROOT 优先,回退相对 main.ts（src/hook → 插件根）。 */
-function readRule(): string | null {
-  const rel = "CLAUDE.md";
-  const root = process.env.CLAUDE_PLUGIN_ROOT;
-  const candidates: string[] = [];
-  if (root) candidates.push(join(root, rel));
-  try {
-    candidates.push(join(dirname(fileURLToPath(import.meta.url)), "..", "..", rel));
-  } catch {
-    /* ignore */
-  }
-  for (const p of candidates) {
-    try {
-      if (existsSync(p)) return readFileSync(p, "utf8").trim();
-    } catch {
-      /* ignore */
-    }
-  }
-  return null;
 }

@@ -15,11 +15,11 @@ description: 汇总当天 Claude Code 会话统计(工时/token/代码量),智�
 
 ## 流程
 
-**读缓存 → 总结 → 提交**:plan 一步读 summary(积累的 note 结论)+ 算增量工时 + 防重 + cooldown 预判;AI 把 note 结论归纳成 3-5 总结性 work;render 确认后 commit。流程顺序 **plan → AI 总结 work → render → 确认 → commit**。`plan.cooldown` 非空时告知用户等待(不 commit);全 already 时无需提交。
+**读缓存 → 自动汇总日志 → 提交**:plan 读 summary(已有的 work+task 记录)+ 算增量工时 + 防重 + cooldown 预判;有 needs_semantic/缺 work 的会话读 transcript 自动归纳 work+task;render 确认后 commit。流程顺序 **plan → 自动汇总日志 → render → 确认 → commit**。`plan.cooldown` 非空时告知用户等待(不 commit);全 already 时无需提交。
 
 ### 准备阶段(建议先跑 /prepare,让本流程秒级)
 
-`/shine-worklog:prepare` 提前把当天会话的 work+task 算好写入 summary(本 skill 的 plan 直读为 resolved)。**先跑 prepare,下面的 auto 就能跳过最耗时的 AI 填空、全 resolved 秒级提交**。开工/工作中/收工前任意时机跑一次即可;uncertain(多任务判不准)的会留到 /report 用 AskUserQuestion 问。
+`/shine-worklog:prepare` 提前把当天会话的 work+task 算好写入 summary(本 skill 的 plan 直读为 resolved)。**先跑 prepare,下面的 auto 就能跳过最耗时的日志汇总、全 resolved 秒级提交**。开工/工作中/收工前任意时机跑一次即可;uncertain(多任务判不准)的会留到 /report 用 AskUserQuestion 问。
 
 ### auto 一键(追求速度、work 不归纳)
 
@@ -34,29 +34,12 @@ bun "<Base directory>/scripts/zentao.ts" auto        # 默认直接提交;加 --
 auto 内部 collect → plan →(全 resolved)→ commit 一次跑完,**默认自动提交、不再逐条确认**(summary 自记归属可信,错可 amend)。按返回的 `action` 分支处理:
 
 - `committed` — 已提交:用 `result`(成功/跳过条数、每条任务) + `draft`(草稿文本)直接汇报,本次只 1 次工具调用。
-- `needs_review` — 有 `pending`(needs_semantic / **unmatched** 即 task=-1)或 `noWork`(resolved 缺 work):只对这些条目走下面的「AI 填空 / unmatched 匹配」,改 plan.json 后跑 `commit`(其余条目已就绪,无需重跑 auto)。**下次可先跑 `/shine-worklog:prepare` 把 AI 填空前置,本动作即变秒级**。
+- `needs_review` — 有 `pending`(needs_semantic / **unmatched** 即 task=-1)或 `noWork`(resolved 缺 work):只对这些条目走下面的「自动汇总日志」,改 plan.json 后跑 `commit`(其余条目已就绪,无需重跑 auto)。**下次可先跑 `/shine-worklog:prepare` 把日志汇总前置,本动作即变秒级**。
 - `cooldown` — 距上次提交 < 30 分钟:告知用户需等待 `waitMinutes` 分钟。
 - `nothing` — 全 already/skipped,无可提交:说明本次无需提交。
 - `abort` — collect 失败(通常 daemon 未启动):提示用户启 daemon 或走分步 collect 排查。
 
 > auto 只在「全 resolved」时自动提交;只要有一条 needs_semantic 或缺 work,就停在 `needs_review` 让 AI 处理——不会盲目提交归属未定的工时。
-
-### 开发时记 summary(省 AI 填空,强烈建议)
-
-> 更省事:直接跑 `/shine-worklog:prepare`,AI 一次性读 transcript 批量生成当天所有会话的 work+task 写 summary,无需手动一条条记。下面的手动 `note` 适合「边做边记」或补 prepare 漏掉的单条。
-
-**一轮对话完成时**(响应结束前)记一次 summary(不等 /report;一轮干多个模块可拆多条):
-
-```
-bun "<Base directory>/scripts/zentao.ts" note --work "一句话:这段工作的核心成果" --task <任务ID>
-```
-
-- `--work`:**一句话精炼结论**(这段的核心成果),不罗列功能点——/report 时 AI 会把多条结论归纳成 3-5 个总结提交,细节留 transcript(✗ `1.功能A\n2.功能B` 流水账;✓ `实现X功能,达成Y效果`)
-- `--task`:关联的禅道任务 ID;**不确定归属时传 `-1`(或省略,默认 -1),不跳过、不问用户**——这些留到 `/report` 集中匹配(见下「unmatched 匹配」)
-- `--session`:可选,未传自动取当天最新活跃会话
-- 写入 `~/.zenpilot/projects/<编码项目>/summary-YYYY-MM-DD.json`,taskName/project 从 cache.json 自动补(task=-1 时为 null,正常)
-
-`plan` 会优先读 summary:**有 summary 且 task>0 的会话直接 `resolved`(置信度 100,跳过 AI 语义匹配 + 文案生成)**,工时仍取 daemon 的 session 活跃时长。**task=-1 的 note 标 `unmatched`**(有 work、带候选任务),留到 /report 匹配。开发时记了归属,「AI 填空」基本为空;没记归属的(task=-1)集中一次匹配。
 
 ### 1. 选数据源 + plan(读缓存:summary + 工时 + 防重 + cooldown 预判)
 
@@ -75,26 +58,25 @@ bun "<Base directory>/scripts/zentao.ts" plan [--source zentao]
 
 - **`cooldown` 非空**(距上次提交<30min):告知用户"距上次提交需等 `waitMinutes` 分钟",**停止,不 render/commit**。
 - **全 `already`**(已提交且增量<15min):无需提交,render 空草稿说明本次无需。
-- **有 `resolved`**:进第 2 步(AI 总结 work)。`resolved` = 分支名含任务号 / 已提交增量补报 / summary 记录(work+task 已就绪);`needs_semantic`(无 summary,附 candidates)罕见,走下面的语义匹配。
+- **有 `resolved` 或 `needs_semantic`**:进第 2 步(自动汇总日志)。`resolved` = 分支名含任务号 / 已提交增量补报 / summary 记录(work+task 已就绪);`needs_semantic`(无 summary,附 candidates)走第 2 步读 transcript 自动归纳。
 
-> 防 `work=null`:已提交会话的增量补报,work 取"提交水位之后记的新 note";若为 null 说明这段没记 note(或水位时序),AI 据 note/上下文补一句总结写 plan.json。
+> 防 `work=null`:已提交会话的增量补报,work 优先取 summary 已有记录;若为 null,走第 2 步读 transcript 自动归纳写 plan.json。
 
-### 2. AI 填空(直接编辑 plan.json)
+### 2. 自动汇总日志(读 transcript 归纳 work+task)
 
-**unmatched(task=-1 的 note)优先匹配**:对每个 `unmatched` 条目(已有 `work`,只是 task 待定),用 AskUserQuestion 列出该条目的 `candidates` 让用户选任务(AI 据 work 语义高置信可自行定)。选定后编辑 `plan.json`(`task`→ID、补 `taskName`/`project`/`projectName`、`status`→`resolved`),并**同步改 `summary-*.json` 对应 note 的 `task` 字段**(从 -1 改选定 ID,持久化,下次不再 unmatched)。全 resolved 后统一 `commit`(task>0 + 匹配后的 task=-1 一次提交,无二次冷却)。
+对 `needs_semantic` / 缺 work 的会话,**先向用户输出一句「正在汇总日志...」**,然后自动读 transcript 归纳(不再依赖开发时记 note):
 
-1. **语义匹配**:对每个 `needs_semantic` 条目,比较 `summary` 与 `candidates` 任务名,选最可能的任务,写入 `task`、`confidence`(0-100)、`reason`(一句话),状态改为 `resolved`。置信度 ≥85 自行确定;<85 或无合理候选(匹配失败)时,用 AskUserQuestion 给出以下选项让用户选(按候选情况取舍,AskUserQuestion ≤4 个选项):
-   - **更新禅道缓存后重新匹配** — 候选明显不全/陈旧(仓库映射到的项目候选为空、或禅道新加了任务还没进缓存)时首选:执行 `refresh` 重拉任务/项目 → 重跑 `plan` 重新匹配(新任务会进缓存)
-   - **根据总结创建新任务** — 候选都不对、这是个新方向时:走下面的自动建任务流程(任务名/desc 由会话 summary 生成),拿到新任务 ID 填入条目(`task`/`taskName`/`project`/`projectName`),`reason` 标注「本次新建」
-   - **选某个候选** — 有合理候选(只是置信度低)时:逐个列出 candidates,top1 标 Recommended
-   - **跳过此会话** → `status: "skipped"`,填 `skipReason`
-2. **合并简化 work(激进归纳)**:每个 `resolved` 条目,把 `item.work`(plan 读出的 note 结论拼接)**激进合并简化**写入 `work`:
-   - 相似/相关功能**合并成一句话**(如"/report 提速 + 自动记 + dashboard"合一句"实现工时自动填报闭环")
-   - 目标条目数:日报 **≤3 条**、周报 **≤5 条**;每条**就一句话核心成果(动宾),不加括号补充技术细节**
-   - **严禁小括号列技术细节**(如 ✗ `(DATA_DIR+API+UI+样式+批量+预览)`,✓ 直接写"新增 dashboard 日报/周报模块")
-   - **严禁逐条罗列 note 内容**(流水账);归纳成几个大主题,细节留 transcript
+1. 跑 `bun "<Base directory>/scripts/zentao.ts" prepare` —— 读 transcript 提取精选信号(最近汇报文本 + 用户要求 + 改动文件 + 工具计数)
+2. 对每个 `pending` 条目,据 `transcript` 信号归纳 work + 选 task:
+   - **work**:据 recentAssistantTexts + prompts + filesChanged 生成一句话核心成果(动宾,不罗列功能点);`transcript` 为 null 时退化用 daemonSummary + filesChanged 推断
+   - **task**:从 candidates 选最匹配(置信度 ≥85 直定;<85 或候选模糊时用 AskUserQuestion 让用户选,≤4 选项,选项含「更新缓存后重新匹配 / 创建新任务 / 选候选 / 跳过」)
+   - 调 `note --session <id> --work <生成的work> --task <task>` 写 summary
+3. **合并简化 work(激进归纳)**:每个 resolved 条目,把 work 归纳成一句话核心成果:
+   - 相似/相关功能**合并成一句话**
+   - 目标:日报 **≤3 条**、周报 **≤5 条**;每条一句话核心成果(动宾),不加括号技术细节
+   - **严禁小括号列技术细节**、**严禁逐条罗列(流水账)**,细节留 transcript
 
-高置信度条目不打扰用户;所有归属问题必须在这一步问完。
+高置信度条目不打扰用户;不确定的归属问题在这一步用 AskUserQuestion 问完。
 
 ### 3. 草稿与确认
 
