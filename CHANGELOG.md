@@ -2,6 +2,14 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.38 — 2026-08-14
+
+修复 /report 流程「note 后直接 render 误报未完成归属」+ 草稿编号被重 plan 重置。
+
+### 修复
+- **render 自动本地重 plan**:`note` 只写 summary 不更新 plan.json,note 后没重跑 `plan` 直接 `render` 会误报「尚有会话未完成归属」并退出。现在 render 发现待归属(needs_semantic/unmatched)或缺 work 条目时,先纯本地重跑一次 plan(source=cache 不联网,note 已写齐的会话转 resolved),重跑后仍缺才报错(真 unmatched 依旧拦住)。
+- **draftSeq 同日跨 plan 保留**:`cmdPlan` 原写死 `draftSeq: 0`,同日多次 plan/render 会把草稿编号重置(render 内自动重 plan 放大了此问题,同一草稿反复 render 一直显示 #001)。改为同日保留、换日归零。SKILL.md needs_review 流程描述同步(note 后直接 render → 确认 → commit)。
+
 ## 1.3.37 — 2026-08-13
 
 删除 hook 升级提示(Stop 每轮提示 + SessionStart 升级横幅),清理死代码。自动升级功能不变。
