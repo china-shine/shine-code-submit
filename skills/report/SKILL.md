@@ -89,6 +89,7 @@ bun "<Base directory>/scripts/zentao.ts" render
 把 render 输出**原样**放进代码块展示给用户,随后立刻用 AskUserQuestion 请用户确认整批提交(提交 / 调整 / 取消)。**未经确认绝不 commit**。
 
 - 用户要求调整(改归属/改工时/改文案/按比例拆分/剔除)→ 改 plan.json 对应字段 → 重新 render → 再确认。拆分 = 复制条目,同 session 不同 task,工时按比例分
+- ⚠️ 改 work 文案**优先走 `note --session <id> --work <文案> --task <task>` 命令**(bash 传参不转义);若用内联脚本直改 plan.json,JS 单引号字符串里的 `\n` 会被解析成**真换行**——要字面 `\n` 必须写 `\\n`(render 显示莫名断行 = 文案被转义污染,重写即可,草稿未提交无污染)
 - 即使没有任何可提交条目(全部 already/skipped),也照常 render 展示草稿,并说明本次无需提交
 
 ### 4. 提交与汇报
