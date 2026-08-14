@@ -124,10 +124,29 @@ export function MemberDetailPage({
     lines: teamMembers > 0 ? Math.round(lineTotal(teamStats.lines) / teamMembers) : 0,
   };
 
-  const kpis: { title: string; value: string; sub?: string; icon: ReactNode; color: string; extra?: ReactNode; action?: ReactNode }[] = [
+  // Token 构成(输入/输出/缓存;缓存 = cacheCreation + cacheRead,口径同总览饼图),以彩色圆点行内嵌在「总 Token」KPI 卡 sub,不动页面布局
+  const comp = [
+    { name: "输入", value: t.token.input, color: C.input },
+    { name: "输出", value: t.token.output, color: C.output },
+    { name: "缓存", value: t.token.cacheCreation + t.token.cacheRead, color: C.cache },
+  ];
+  const compTotal = comp.reduce((s, d) => s + d.value, 0);
+  const compSub = (
+    <span className="flex flex-wrap items-center gap-x-2.5 gap-y-0.5">
+      {comp.map((d) => (
+        <span key={d.name} className="inline-flex items-center gap-1">
+          <span className="w-1.5 h-1.5 rounded-full inline-block shrink-0" style={{ background: d.color }} />
+          {d.name} {fmtK(d.value)}
+          <span className="opacity-70">{compTotal > 0 ? ((d.value / compTotal) * 100).toFixed(0) : 0}%</span>
+        </span>
+      ))}
+    </span>
+  );
+
+  const kpis: { title: string; value: string; sub?: ReactNode; icon: ReactNode; color: string; extra?: ReactNode; action?: ReactNode }[] = [
     { title: "对话次数", value: fmtFull(t.sessions), icon: <MessageSquare className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />, color: "bg-indigo-50 dark:bg-indigo-900/30" },
     { title: "对话总时长", value: fmtDuration(t.activeMs), icon: <Clock className="w-4 h-4 text-orange-600 dark:text-orange-400" />, color: "bg-orange-50 dark:bg-orange-900/30" },
-    { title: "总 Token", value: fmtK(token), icon: <Coins className="w-4 h-4 text-violet-600 dark:text-violet-400" />, color: "bg-violet-50 dark:bg-violet-900/30" },
+    { title: "总 Token", value: fmtK(token), sub: compSub, icon: <Coins className="w-4 h-4 text-violet-600 dark:text-violet-400" />, color: "bg-violet-50 dark:bg-violet-900/30" },
     { title: "代码变动行数", value: fmtFull(lines), sub: `+${fmtFull(t.lines.added)} -${fmtFull(t.lines.deleted)} M${fmtFull(t.lines.modified)}`, icon: <Code2 className="w-4 h-4 text-teal-600 dark:text-teal-400" />, color: "bg-teal-50 dark:bg-teal-900/30" },
     { title: "活跃项目", value: fmtFull(t.realProjects), icon: <Folder className="w-4 h-4 text-blue-600 dark:text-blue-400" />, color: "bg-blue-50 dark:bg-blue-900/30" },
     { title: "Token 效率", value: `${eff} 行/M`, icon: <TrendingUp className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />, color: "bg-emerald-50 dark:bg-emerald-900/30" },

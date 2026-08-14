@@ -1,5 +1,6 @@
 // 指标卡:title + value(mono) + sub + 图标块 + 可选 extra(sparkline)。
 // 从 TokenWeb App.tsx 搬(155-179),删 change/sparkline 强依赖,extra 由调用方传入 sparkline。
+// sub 放宽为 ReactNode:总 Token 卡用彩色圆点行展示构成(字符串照旧兼容)。
 import type { ReactNode } from "react";
 
 export function MetricCard({
@@ -13,7 +14,7 @@ export function MetricCard({
 }: {
   title: string;
   value: string;
-  sub?: string;
+  sub?: ReactNode;
   icon: ReactNode;
   color: string;
   extra?: ReactNode;
