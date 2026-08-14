@@ -68,6 +68,7 @@ export interface WorklogEntry {
   work: string | null;
   status: string;
   zentaoUrl: string | null;
+  subId?: string; // 提交流水号("<date>:<行号>"),PK 组成部分;旧 daemon 上报缺失→落库兜底 ''
 }
 
 export interface ReportResponse {

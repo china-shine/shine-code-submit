@@ -301,6 +301,7 @@ zenpilot/           禅道工时填报数据（原 ~/.zenpilot/，1.3.0 统一�
   config.json         禅道连接（url/account/password/projectIds，明文密码 chmod 600）
   mappings.json       仓库→项目映射（repoToProject 仓库名→禅道项目ID / branchToTask / projectNames；/report commit 时自动学习）
   cache.json          禅道任务/执行缓存（减少重复 API 调用）
+  submitted/          提交流水 submitted/<date>.jsonl（每条禅道提交成功逐笔 append，永不覆盖；daemon 上报 tokenserver 的数据源，行号=流水号）
   projects/<编码cwd>/ 按项目隔离（编码 = cwd 非字母数字→"-"，对齐 ~/.claude/projects/ 编码）
     plan.json           当天提交计划（每次 plan 覆盖，只存当天；items 含 status/work/taskName/hours）
     sessions.json       当天从 daemon 采集的会话（每次 collect 覆盖，只存当天；算工时用；其 date 字段定 summary 文件名）
@@ -350,7 +351,7 @@ daemon 默认每 10 分钟（`reportIntervalMin`）或手动（Dashboard「上�
 - **host 白名单 `aiStatsHosts`**：tokenserver `data/config.json` 可配数组（如 `["8.130.168.121"]`），只统计 `gitRemote` 命中指定 host 的 commit（公司 git 仓库），排除 localhost / 个人 / 无 remote；空或未配 = 不过滤（向后兼容）。改后重启 tokenserver 生效。
 - **daemon 升级全量回填**：daemon 启动发现版本变化（`lastDaemonVersion`）会重置 `lastFullReportAt`，下次上报强制全量（since=0）重拉 gitCommits，历史 `aiAdded`/`aiDeleted` 由 tokenserver upsert MAX 幂等补齐。
 
-**禅道工时台账**：daemon 每次上报**全量**读 `zenpilot/projects/*/plan.json` 的 `status=resolved` 条目（`src/daemon/worklog.ts`，忽略增量水位），随报表 `worklogs` 上报 → tokenserver 落 `worklogs` 表（`(gitUser,date,sessionId,taskId)` 复合 upsert 累积，跨项目/跨天长期保留）→ 成员详情「禅道工时」表（分页，任务名可点跳禅道）。
+**禅道工时台账**：`/report` 提交时每条禅道 API 成功后**逐笔追加**到 `zenpilot/submitted/<date>.jsonl`（append-only 按日分文件，含实际提交文案/AI 标识）→ daemon 每次上报**全量**读 `submitted/*.jsonl`（`src/daemon/worklog.ts`，行号即流水号 `subId=<date>:<行号>`，忽略增量水位）随报表 `worklogs` 上报 → tokenserver 落 `worklogs` 表（`(gitUser,date,sessionId,taskId,subId)` 复合 upsert 累积，同会话同任务多笔提交各占一行，逐笔镜像禅道记录）→ 成员详情「禅道工时」表（分页，任务名可点跳禅道）。
 
 ## Token 统计逻辑（与 [ccusage](https://github.com/ccusage/ccusage) 对齐）
 

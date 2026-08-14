@@ -67,6 +67,7 @@ db.exec(`
     date TEXT NOT NULL,
     sessionId TEXT NOT NULL,
     taskId INTEGER,
+    subId TEXT NOT NULL DEFAULT '',
     repo TEXT,
     branch TEXT,
     cwd TEXT,
@@ -81,7 +82,7 @@ db.exec(`
     status TEXT,
     zentaoUrl TEXT,
     updatedAt INTEGER DEFAULT 0,
-    PRIMARY KEY (gitUser, date, sessionId, taskId)
+    PRIMARY KEY (gitUser, date, sessionId, taskId, subId)
   );
   CREATE INDEX IF NOT EXISTS idx_worklogs_user_date ON worklogs(gitUser, date);
 `);
@@ -91,6 +92,45 @@ db.exec(`
   const gcCols = db.prepare("PRAGMA table_info(git_changes)").all() as Array<{ name: string }>;
   if (!gcCols.some((c) => c.name === "aiAdded")) db.exec("ALTER TABLE git_changes ADD COLUMN aiAdded INTEGER DEFAULT 0");
   if (!gcCols.some((c) => c.name === "aiDeleted")) db.exec("ALTER TABLE git_changes ADD COLUMN aiDeleted INTEGER DEFAULT 0");
+}
+
+// 旧库迁移:worklogs 加 subId 列(提交流水号)并纳入主键——旧 PK (gitUser,date,sessionId,taskId)
+// 同会话同任务多笔提交会顶替,镜像不了禅道逐笔记录。SQLite 改不了主键 → 重建表;
+// 旧行 subId='' 与旧上报路径(daemon 无 subId 字段)一致,PK 语义不变。
+{
+  const wlCols = db.prepare("PRAGMA table_info(worklogs)").all() as Array<{ name: string }>;
+  if (wlCols.length && !wlCols.some((c) => c.name === "subId")) {
+    // 单事务原子完成 rename→rebuild→copy→drop,中途崩溃不会留下「worklogs 不存在」的半迁移状态
+    db.transaction(() => {
+      db.exec("ALTER TABLE worklogs RENAME TO worklogs_old");
+      db.exec(`CREATE TABLE worklogs (
+        gitUser TEXT NOT NULL,
+        date TEXT NOT NULL,
+        sessionId TEXT NOT NULL,
+        taskId INTEGER,
+        subId TEXT NOT NULL DEFAULT '',
+        repo TEXT,
+        branch TEXT,
+        cwd TEXT,
+        "start" TEXT,
+        "end" TEXT,
+        minutes INTEGER DEFAULT 0,
+        hours REAL DEFAULT 0,
+        taskName TEXT,
+        projectId INTEGER,
+        projectName TEXT,
+        work TEXT,
+        status TEXT,
+        zentaoUrl TEXT,
+        updatedAt INTEGER DEFAULT 0,
+        PRIMARY KEY (gitUser, date, sessionId, taskId, subId)
+      )`);
+      db.exec(`INSERT INTO worklogs (gitUser, date, sessionId, taskId, subId, repo, branch, cwd, "start", "end", minutes, hours, taskName, projectId, projectName, work, status, zentaoUrl, updatedAt)
+        SELECT gitUser, date, sessionId, taskId, '', repo, branch, cwd, "start", "end", minutes, hours, taskName, projectId, projectName, work, status, zentaoUrl, updatedAt FROM worklogs_old`);
+      db.exec("DROP TABLE worklogs_old"); // 旧索引随表销毁,下方重建
+      db.exec("CREATE INDEX IF NOT EXISTS idx_worklogs_user_date ON worklogs(gitUser, date)");
+    })();
+  }
 }
 
 // 旧库迁移:sessions 加 added/deleted/modified 列(无迁移机制,PRAGMA 检查 + ADD COLUMN)
@@ -162,12 +202,13 @@ const upsertGitChange = db.query(`
   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   ON CONFLICT(hash) DO UPDATE SET aiAdded = MAX(git_changes.aiAdded, excluded.aiAdded), aiDeleted = MAX(git_changes.aiDeleted, excluded.aiDeleted)
 `);
-// 禅道工时 upsert:PK(gitUser,date,sessionId,taskId)幂等累积;taskId null→0 兜底(NULL 在 SQLite 唯一约束里互异会导致重复插入)。
+// 禅道工时 upsert:PK(gitUser,date,sessionId,taskId,subId)幂等累积;taskId null→0 兜底(NULL 在 SQLite 唯一约束里互异会导致重复插入)。
+// subId=提交流水号("<date>:<行号>"),同会话同任务多笔提交各占一行(镜像禅道逐笔);旧上报无 subId→'' 走旧语义。
 // start/end/work 是 SQLite 保留字,INSERT 列表与 ON CONFLICT 引用都加双引号。
 const upsertWorklog = db.query(`
-  INSERT INTO worklogs (gitUser, date, sessionId, taskId, repo, branch, cwd, "start", "end", minutes, hours, taskName, projectId, projectName, work, status, zentaoUrl, updatedAt)
-  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-  ON CONFLICT(gitUser, date, sessionId, taskId) DO UPDATE SET
+  INSERT INTO worklogs (gitUser, date, sessionId, taskId, subId, repo, branch, cwd, "start", "end", minutes, hours, taskName, projectId, projectName, work, status, zentaoUrl, updatedAt)
+  VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  ON CONFLICT(gitUser, date, sessionId, taskId, subId) DO UPDATE SET
     repo = excluded.repo,
     branch = excluded.branch,
     cwd = excluded.cwd,
@@ -213,7 +254,7 @@ export function saveReport(raw: ReportResponse): void {
     // 禅道工时(daemon 忽略 since 全量上报;PK 复合 upsert 累积,taskId null→0 兜底幂等)
     for (const w of raw.worklogs ?? []) {
       upsertWorklog.run(
-        gitUser, w.date, w.sessionId, w.taskId ?? 0,
+        gitUser, w.date, w.sessionId, w.taskId ?? 0, w.subId ?? "",
         w.repo ?? null, w.branch ?? null, w.cwd ?? null,
         w.start ?? null, w.end ?? null, w.minutes ?? 0, w.hours ?? 0,
         w.taskName ?? null, w.projectId ?? null, w.projectName ?? null,

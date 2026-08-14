@@ -15,6 +15,7 @@ export const CONFIG_PATH = path.join(ZENPILOT_HOME, "config.json");
 export const CACHE_PATH = path.join(ZENPILOT_HOME, "cache.json"); // 全局:禅道任务缓存(元数据:projects/tasks/executions/taskDetails)
 export const EFFORTS_DIR = path.join(ZENPILOT_HOME, "efforts"); // 按任务拆分的工时记录缓存(efforts/<taskId>.json,增长大头单独存避免 cache.json 膨胀)
 export const MAPPINGS_PATH = path.join(ZENPILOT_HOME, "mappings.json"); // 全局:仓库→项目映射
+export const SUBMITTED_LOG_DIR = path.join(ZENPILOT_HOME, "submitted"); // 全局:提交流水 submitted/<date>.jsonl(逐笔 append-only,daemon 上报 tokenserver 镜像禅道)
 export const SETTINGS_PATH = path.join(DATA_DIR, "settings.json"); // 行为开关(如 zentaoCacheTtlMin、aiSubmitMark),DATA_DIR 下与 config.json(连接信息)分离
 
 // 按项目隔离,镜像 Claude Code 的 ~/.claude/projects/<编码路径>/

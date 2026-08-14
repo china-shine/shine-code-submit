@@ -15,9 +15,9 @@
  *
  * 模块拆分:常量/helper → ./lib/shared;禅道客户端+缓存 → ./lib/client;
  *   会话采集+transcript → ./lib/transcript;日报/周报 → ./lib/report。本文件只留命令实现 + 入口分发。 */
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
-import { Args, die, loadJSON, writeJSON, roundPy, todayISO, nowISOSeconds, minutesSinceISO, hoursFromMinutes, fmtHours, isObj, loadConfig, loadMarkSetting, applyMark, requireStr, requireInt, summaryPathFor, CONFIG_PATH, CACHE_PATH, MAPPINGS_PATH, SETTINGS_PATH, SESSIONS_PATH, SUBMITTED_PATH, PLAN_PATH, PROJECT_DIR, PROJECT_CWD, COMMIT_COOLDOWN_MINUTES } from "./lib/shared";
+import { Args, die, loadJSON, writeJSON, roundPy, todayISO, nowISOSeconds, minutesSinceISO, hoursFromMinutes, fmtHours, isObj, loadConfig, loadMarkSetting, applyMark, requireStr, requireInt, summaryPathFor, CONFIG_PATH, CACHE_PATH, MAPPINGS_PATH, SETTINGS_PATH, SESSIONS_PATH, SUBMITTED_PATH, PLAN_PATH, PROJECT_DIR, PROJECT_CWD, SUBMITTED_LOG_DIR, COMMIT_COOLDOWN_MINUTES } from "./lib/shared";
 import { Client, getCache, getCacheLocal } from "./lib/client";
 import { cmdCollect, extractTranscriptSignals } from "./lib/transcript";
 import { writeReport, weekStart, lastWeekRange } from "./lib/report";
@@ -416,6 +416,37 @@ function recordSubmission(date: string, session: string, taskId: number, hours: 
   return rec;
 }
 
+/** 提交流水逐笔落盘(ZENPILOT_HOME/submitted/<date>.jsonl,append-only 永不覆盖)。
+ *  禅道 API 返回 submitted 后调用,与 recordSubmission(冷却用聚合)互补;
+ *  daemon collectWorklogs 读此目录全量上报 tokenserver,逐笔镜像禅道工时记录
+ *  (plan.json 同会话同任务只存一条会被顶替,流水按行累积,行号即 subId=date:行号)。
+ *  并发:不同项目同时 commit 会写同一日文件,单行 <1KB 的 append 原子性足够;
+ *  极端交错的坏行 daemon 解析时跳过,不会污染其余行。 */
+function appendSubmittedLog(e: {
+  date: string;
+  session: string;
+  cwd: string;
+  repo: string | null;
+  branch: string | null;
+  start: string | null;
+  end: string | null;
+  minutes: number | null;
+  hours: number;
+  task: number;
+  taskName: string | null;
+  project: number | null;
+  projectName: string | null;
+  work: string;
+}): void {
+  mkdirSync(SUBMITTED_LOG_DIR, { recursive: true });
+  try {
+    appendFileSync(path.join(SUBMITTED_LOG_DIR, `${e.date}.jsonl`), JSON.stringify({ ts: nowISOSeconds(), ...e }) + "\n", "utf8");
+  } catch (err) {
+    // 落盘失败不中断提交循环(后续条目仍要报禅道),但流水缺行=镜像缺笔,必须大声报出来
+    console.error(`[appendSubmittedLog] 流水落盘失败(该笔已提交禅道,但不会出现在 tokenserver): ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 /** 提交冷却检查:距上次 commit < COMMIT_COOLDOWN_MINUTES 返回 {waitMinutes, lastCommitAt, elapsed},否则 null。cmdCommit(die)+cmdAuto(return)共用,消除冷却逻辑复制。 */
 function checkCooldown(date: string): { waitMinutes: number; lastCommitAt: string; elapsed: number } | null {
   const meta = (loadJSON<any>(SUBMITTED_PATH, {})[date] || {})._meta || {};
@@ -425,7 +456,7 @@ function checkCooldown(date: string): { waitMinutes: number; lastCommitAt: strin
   return { waitMinutes: Math.trunc(COMMIT_COOLDOWN_MINUTES - elapsed) + 1, lastCommitAt: meta.lastCommitAt, elapsed };
 }
 
-async function cmdCommit(client: Client, opts: { dryRun?: boolean; amend?: boolean }): Promise<any> {
+export async function cmdCommit(client: Client, opts: { dryRun?: boolean; amend?: boolean }): Promise<any> {
   const dryRun = !!opts.dryRun;
   const amend = !!opts.amend;
   const plan = loadJSON<any>(PLAN_PATH, null);
@@ -468,6 +499,22 @@ async function cmdCommit(client: Client, opts: { dryRun?: boolean; amend?: boole
     }
     if (out.submitted) {
       recordSubmission(plan.date, i.session, i.task, i.hours, i.minutes);
+      appendSubmittedLog({
+        date: plan.date,
+        session: i.session,
+        cwd: PROJECT_CWD,
+        repo: typeof i.repo === "string" ? i.repo : null,
+        branch: typeof i.branch === "string" ? i.branch : null,
+        start: typeof i.start === "string" ? i.start : null,
+        end: typeof i.end === "string" ? i.end : null,
+        minutes: typeof i.minutes === "number" ? i.minutes : null,
+        hours: i.hours,
+        task: i.task,
+        taskName: typeof i.taskName === "string" ? i.taskName : null,
+        project: typeof i.project === "number" ? i.project : null,
+        projectName: typeof i.projectName === "string" ? i.projectName : null,
+        work: applyMark(i.work, mark), // 落实际提交文案(含 AI 标识),与禅道记录逐字一致
+      });
       if (i.project) {
         mappings.repoToProject[i.repo] = i.project;
         if (i.projectName) {
@@ -903,14 +950,32 @@ async function main(): Promise<void> {
     const work = applyMark(requireStr(a, "work"), loadMarkSetting());
     const left = a.left !== undefined ? parseFloat(String(a.left)) : null;
     out = await client.submitEffort(taskId, date, hours, work, left, !!a["dry-run"]);
-    if (out.submitted && a.session !== undefined) {
-      out.recorded = recordSubmission(
+    if (out.submitted) {
+      if (a.session !== undefined) {
+        out.recorded = recordSubmission(
+          date,
+          String(a.session),
+          taskId,
+          hours,
+          a.minutes !== undefined ? parseInt(String(a.minutes), 10) : null,
+        );
+      }
+      appendSubmittedLog({
         date,
-        String(a.session),
-        taskId,
+        session: a.session !== undefined ? String(a.session) : "",
+        cwd: PROJECT_CWD,
+        repo: null, // 手动 submit 无 plan 上下文,展示字段从缺
+        branch: null,
+        start: null,
+        end: null,
+        minutes: a.minutes !== undefined ? parseInt(String(a.minutes), 10) : null,
         hours,
-        a.minutes !== undefined ? parseInt(String(a.minutes), 10) : null,
-      );
+        task: taskId,
+        taskName: out.task?.name ?? null,
+        project: null,
+        projectName: null,
+        work, // 已 applyMark
+      });
     }
   } else {
     die(`未知命令: ${cmd}`);

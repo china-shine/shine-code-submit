@@ -2,6 +2,15 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.40 — 2026-08-14
+
+禅道工时逐笔镜像:tokenserver「禅道工时」表与禅道记录一比一,不再丢多笔提交。
+
+### 变更
+- **提交流水落盘 `zenpilot/submitted/<date>.jsonl`**:`commit`/`amend`/`submit` 每条禅道 API 返回成功后逐笔 append(含实际提交文案/AI 标识),append-only 永不覆盖、按日分文件。旧方案只留当天 plan.json 快照,同会话同任务二次提交被顶替、未提交成功的 resolved 条目也被误上报——8-14 实测禅道 9.7h 平台只显 2.2h。
+- **daemon collectWorklogs 改读流水**:全量遍历 `submitted/*.jsonl`,行号即流水号 `subId=<date>:<行号>`;不再读 plan.json(双保险:只上报真正提交成功的条目)。
+- **tokenserver worklogs 主键加 `subId`**:`(gitUser, date, sessionId, taskId, subId)`,同会话同任务多笔提交各占一行;旧表自动重建迁移(旧行 subId='',旧上报语义不变)。已验证迁移不丢行、同 subId 重放幂等。⚠️ 需重新部署 tokenserver(linux 二进制),否则新上报仍走旧主键照旧顶替(不会崩,extra 字段被忽略)。
+
 ## 1.3.39 — 2026-08-14
 
 周报/日报确认文本分行展示 + 清理死代码。

@@ -169,27 +169,29 @@ export interface ReportTotals {
   lines: LinesStat;
 }
 
-/** 禅道工时条目(来自本地 zenpilot/projects/<cwd>/plan.json 的 status=resolved items;
+/** 禅道工时条目(来自本地 zenpilot/submitted/<date>.jsonl 提交流水,逐笔 append-only;
  *  daemon buildReport 时全量读取上报,与 token/lines 同一 ReportResponse。
- *  plan.json 原字段 task/project 映射为 taskId/projectId;work 为提交禅道的工作内容文案;
- *  zentaoUrl 为禅道根 url(前端拼任务超链接);status 收集时只保留 "resolved"。 */
+ *  每行 = 一次禅道 API 提交成功;流水原字段 task/project 映射为 taskId/projectId;
+ *  work 为实际提交文案(含 AI 标识);zentaoUrl 为禅道根 url(前端拼任务超链接);
+ *  subId = "<date>:<行号>" 流水号,tokenserver PK 含它,同会话同任务多笔提交不顶替。 */
 export interface WorklogEntry {
-  date: string; // YYYY-MM-DD(plan.json 顶层 date,本地日)
+  date: string; // YYYY-MM-DD(提交日期,本地日)
   sessionId: string;
-  cwd: string; // decodeProjectCwd(目录名),有损;展示用 repo
+  cwd: string; // 提交时所在项目 cwd
   repo: string | null;
   branch: string | null;
   start: string | null; // HH:MM
   end: string | null; // HH:MM
-  minutes: number; // 该会话活跃分钟(plan.json item.minutes)
+  minutes: number; // 该会话活跃分钟
   hours: number; // 提交工时(可为 0.5)
-  taskId: number | null; // plan.json item.task
+  taskId: number | null;
   taskName: string | null;
-  projectId: number | null; // plan.json item.project
+  projectId: number | null;
   projectName: string | null;
   work: string | null; // 工作内容文案
   status: string; // "resolved"(已提交禅道)
   zentaoUrl: string | null; // 禅道根 url(zenpilot/config.json url)
+  subId?: string; // 提交流水号(旧 plan.json 上报路径无此字段,tokenserver 端空串兜底)
 }
 
 /** GET /api/report 响应。 */

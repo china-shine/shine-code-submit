@@ -156,15 +156,15 @@ sessions(sessionId, gitUser, cwd, lastActive,
          input, output, cacheCreation, cacheRead,
          added, deleted, modified, activeMs, title, updatedAt)          -- PK(sessionId)
 git_changes(hash, gitUser, cwd, ts, added, deleted, aiAdded)             -- PK(hash)
-worklogs(gitUser, date, sessionId, taskId, repo, branch, cwd,
+worklogs(gitUser, date, sessionId, taskId, subId, repo, branch, cwd,
          start, end, minutes, hours, taskName, projectId,
-         projectName, work, status, zentaoUrl, updatedAt)   -- PK(gitUser,date,sessionId,taskId)
+         projectName, work, status, zentaoUrl, updatedAt)   -- PK(gitUser,date,sessionId,taskId,subId)
 ```
 
 - 上报时拆分逐条 upsert：项目按 `(gitUser, cwd)` 去重，会话按 `sessionId` 去重（仅 `lastActive >= 旧` 时覆盖 token，取最新快照）
 - token 拆成 4 个整数列（`input/output/cacheCreation/cacheRead`），SQL 可直接 SUM；另存代码行 / `activeMs` / `title`
 - `git_changes` 按 commit hash 去重（`aiAdded` 取 MAX，嵌套项目重复上报不膨胀）——AI 占比分母
-- `worklogs` 按 `(gitUser,date,sessionId,taskId)` 复合 upsert 累积（daemon 每次全量发，靠 PK 去重跨天保留历史）——禅道工时台账
+- `worklogs` 按 `(gitUser,date,sessionId,taskId,subId)` 复合 upsert 累积（daemon 每次全量发提交流水 `submitted/<date>.jsonl`，`subId=<date>:<行号>` 使同会话同任务多笔提交各占一行）——禅道工时台账，逐笔镜像禅道记录
 - 聚合查询（`getStats` / `getMember`）实时算，`getSessions` 走 LIMIT/OFFSET；前端不再有全量拉取，所有响应大小不随会话数膨胀
 
 上报是**增量快照**：daemon 按 `lastReportAt` 水位只发 `last_activity >= 水位` 的 session，成功推进水位；每 24h 或手动触发一次 `since=0` 全量校准（含 daemon 升级后的 gitCommits 全量回填）。服务端 upsert 幂等，天然兼容增量/全量两种。
