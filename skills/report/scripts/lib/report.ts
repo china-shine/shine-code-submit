@@ -373,12 +373,15 @@ export function renderReportText(d: ReportData): string {
   };
   const lines: string[] = [`${d.title} · ${d.realname}`];
   let total = 0;
+  // 工作内容逐条一行(对齐 HTML 的 <br> 分行);effort 内部换行也拆行,统一 4 空格缩进
+  const worksLines = (works: string[]): string[] =>
+    works.flatMap((w) => w.replace(/\r/g, "").split("\n").map((l) => `    ${l}`));
   if (daily) {
     const day = d.byDate[d.dates[0]];
     for (const id of Object.keys(day)) {
       total += day[id].hours;
       lines.push(head(id, day[id]));
-      lines.push(`    ${day[id].works.join("; ")}`); // 原始 effort,不排版(AI 在 SKILL 流程统一排版)
+      lines.push(...worksLines(day[id].works)); // 原始 effort,不排版(AI 在 SKILL 流程统一排版)
     }
     lines.push(`合计 ${round1(total)}h · ${Object.keys(day).length} 个任务${d.aiHours > 0 ? `(其中 AI 代报 ${round1(d.aiHours)}h)` : ""}`);
   } else {
@@ -388,7 +391,7 @@ export function renderReportText(d: ReportData): string {
       for (const id of Object.keys(day)) {
         total += day[id].hours;
         lines.push(`[${date.slice(5)} ${wd}] ${head(id, day[id])}`);
-        lines.push(`    ${day[id].works.join("; ")}`);
+        lines.push(...worksLines(day[id].works));
       }
     }
     lines.push(`本周合计 ${round1(total)}h${d.aiHours > 0 ? `(其中 AI 代报 ${round1(d.aiHours)}h)` : ""}`);
