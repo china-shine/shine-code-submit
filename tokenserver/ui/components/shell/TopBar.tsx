@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { DayPicker, type Matcher } from "react-day-picker";
 import { zhCN } from "date-fns/locale";
-import { ChevronDown, RefreshCw, Check, Calendar, RotateCcw } from "lucide-react";
+import { ChevronDown, RefreshCw, Check, Calendar, RotateCcw, BookText } from "lucide-react";
 import { Avatar } from "../common/Avatar";
 import { toDateInput } from "../../lib/util";
 
@@ -164,16 +164,27 @@ export function TopBar({
 
       <span className="text-xs text-muted-foreground font-mono whitespace-nowrap">{rangeText}</span>
 
-      <button
-        onClick={() => {
-          setSpinning(true);
-          onRefresh();
-          setTimeout(() => setSpinning(false), 500);
-        }}
-        className="ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-sm border border-border text-xs text-muted-foreground hover:bg-muted transition-colors"
-      >
-        <RefreshCw className={`w-3.5 h-3.5 ${spinning ? "animate-spin" : ""}`} /> 刷新
-      </button>
+      <div className="ml-auto flex items-center gap-2">
+        {/* 数据说明:新开 /docs(由 scripts/build-docs.ts 从 数据说明.md 渲染,主题同本站) */}
+        <button
+          type="button"
+          onClick={() => window.open("/docs", "_blank")}
+          title="打开数据说明文档(新标签页)"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm border border-border text-xs text-muted-foreground hover:bg-muted transition-colors"
+        >
+          <BookText className="w-3.5 h-3.5" /> 数据说明
+        </button>
+        <button
+          onClick={() => {
+            setSpinning(true);
+            onRefresh();
+            setTimeout(() => setSpinning(false), 500);
+          }}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm border border-border text-xs text-muted-foreground hover:bg-muted transition-colors"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${spinning ? "animate-spin" : ""}`} /> 刷新
+        </button>
+      </div>
     </header>
   );
 }

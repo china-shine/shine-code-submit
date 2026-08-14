@@ -7,7 +7,7 @@ import { gzipSync, gunzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
 import { saveReport, getStats, getSessions, getMember, getMemberWorklogs, getDenominatorBreakdown, type Granularity } from "./store";
 import type { ReportResponse } from "./types";
-import { APP_JS, INDEX_HTML, STYLE_CSS } from "./ui-assets";
+import { APP_JS, DOCS_HTML, INDEX_HTML, STYLE_CSS } from "./ui-assets";
 
 const PORT = Number(process.env.PORT ?? 36667);
 const HOST = "0.0.0.0";
@@ -19,6 +19,8 @@ const ASSETS: Record<string, { file: string; inline: string; type: string }> = {
   "/index.html": { file: "index.html", inline: INDEX_HTML, type: "text/html; charset=utf-8" },
   "/ui/app.js": { file: ".build/app.js", inline: APP_JS, type: "application/javascript; charset=utf-8" },
   "/ui/style.css": { file: ".build/style.css", inline: STYLE_CSS, type: "text/css; charset=utf-8" },
+  // 数据说明页(顶栏「数据说明」按钮新开;由 scripts/build-docs.ts 从 数据说明.md 渲染)
+  "/docs": { file: ".build/docs.html", inline: DOCS_HTML, type: "text/html; charset=utf-8" },
 };
 
 function json(req: Request, body: unknown, status = 200): Response {

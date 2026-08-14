@@ -5,6 +5,7 @@
 import { $ } from "bun";
 import { mkdirSync, readFileSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
+import { buildDocs } from "./build-docs";
 
 const UI_DIR = join(import.meta.dir, "..", "ui");
 const OUT_DIR = join(UI_DIR, ".build");
@@ -33,3 +34,6 @@ if (!uiBuild.success) {
   throw new Error("ui bundle failed:\n" + uiBuild.logs.join("\n"));
 }
 console.log("ui bundled -> " + join(OUT_DIR, "app.js"));
+
+// 数据说明.md -> .build/docs.html(顶栏「数据说明」按钮新开页 /docs 用)
+buildDocs();
