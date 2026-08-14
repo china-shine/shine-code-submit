@@ -374,10 +374,16 @@ function cmdRender(): string {
     if (i.status !== "resolved") continue;
     n++;
     const inc = i.increment ? "(增量)" : "";
+    // 内容逐条一行(确认展示对齐日报/周报):work 内以 ;/；分隔的多条记录拆行编号;
+    // 仅改草稿显示,plan.json 的 work 原样不动(提交禅道的文案不受影响)。
+    const parts = String(i.work).split(/[;；]/).map((s) => s.trim()).filter(Boolean);
+    const workLines = parts.length > 1
+      ? [`    内容:`, ...parts.map((s, k) => `    ${k + 1}. ${s}`)]
+      : [`    内容:${i.work}`];
     lines.push(
       `[${n}] ${i.projectName || i.repo}(项目#${i.project}) / ${i.taskName || "?"}(任务#${i.task})`,
       `    ${i.start}—${i.end},${fmtHours(i.hours)}小时${inc}`,
-      `    内容:${i.work}`,
+      ...workLines,
       `    置信度:${i.confidence}%`,
       `    理由:${i.reason ?? null}`,
       "",
