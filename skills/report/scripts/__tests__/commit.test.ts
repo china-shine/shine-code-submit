@@ -27,7 +27,7 @@ describe("cmdCommit 提交流水落盘", () => {
   test("每条 resolved 提交成功后逐笔 append,collectWorklogs 读回带 subId", async () => {
     const r = await runCommit({
       plan: PLAN([
-        { status: "resolved", session: "s1", repo: "r1", branch: "main", start: "09:00", end: "10:00", minutes: 55, hours: 1, task: 100, taskName: "T100", project: 1, projectName: "P1", work: "做A" },
+        { status: "resolved", session: "s1", repo: "r1", branch: "main", start: "09:00", end: "10:00", minutes: 55, hours: 1, task: 100, taskName: "T100", project: 1, projectName: "P1", work: "做A;做B" },
         { status: "resolved", session: "s2", repo: "r1", branch: "main", start: "11:00", end: "12:00", minutes: 25, hours: 0.5, task: 101, taskName: "T101", project: 1, projectName: "P1", work: "做B" },
         { status: "skipped", session: "s3", hours: 1, task: 100, work: "跳过的不落流水" },
       ]),
@@ -36,7 +36,8 @@ describe("cmdCommit 提交流水落盘", () => {
     expect(r.calls.length).toBe(2); // skipped 不提交
     const lines = r.logText.trim().split("\n").map((l: string) => JSON.parse(l));
     expect(lines.length).toBe(2);
-    expect(lines[0]).toMatchObject({ date: "2026-08-06", session: "s1", hours: 1, task: 100, work: "1. 做A(本次内容由AI填报)", repo: "r1" });
+    // 多条 work:逐条编号换行,每条行尾带 AI 标识(与禅道记录逐字一致)
+    expect(lines[0]).toMatchObject({ date: "2026-08-06", session: "s1", hours: 1, task: 100, work: "1. 做A(本次内容由AI填报)\n2. 做B(本次内容由AI填报)", repo: "r1" });
     expect(lines[1]).toMatchObject({ session: "s2", hours: 0.5, task: 101, work: "1. 做B(本次内容由AI填报)" });
     // daemon 读回:subId = <date>:<行号>,skipped 条目不出现
     expect(r.worklogs.length).toBe(2);
