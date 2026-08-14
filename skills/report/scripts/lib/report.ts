@@ -140,7 +140,7 @@ async function gatherReport(client: Client, cfg: Record<string, any>, from: stri
       day[key].hours += e.consumed;
       if (e.work) {
         if (isAiWork(e.work, mark.text)) aiHours += e.consumed;
-        day[key].works.push(e.work); // 保留原文(含括号标识);renumberWorks 按行处理时标识自然留在行末
+        day[key].works.push(e.work); // 保留原文(含括号标识),排版交给 AI(SKILL 流程)
       }
     }
   }
@@ -263,24 +263,6 @@ const REPORT_CSS = `
     details.task .task-body { display:block !important; }
   }
 `;
-
-/** 行首序号前缀:手填禅道或 AI 填报都可能带,统一剥离后重新编号,避免「1. 1,xxx」双层序号。
- *  支持 1. 1、 1, 1， 1) 1） 1: 1： (1) （1）;(?!\d) 防误吃版本号(3.14)/年份(2026.08),序号限 1-2 位。 */
-const LEADING_NUM_RE = /^\s*[（(]?\d{1,2}[）).、,，:：]\s*(?!\d)/;
-
-/** 把多个 work(各自 "1. a\n2. b" 从1编号)的条目拆出,顺延重新编号成单列表(1..N 不重复)。
- *  一天内多次提交同任务时,日报/周报聚合后避免出现多个重复的 1./2.;手填逗号/顿号/括号序号也一并剥离。 */
-export function renumberWorks(works: string[], markText?: string): string {
-  // 每个 work(禅道一条 effort 记录)作为一条编号项,不按 \n 拆条;
-  // item 内的换行合并为一行(; 分隔)——一条记录显示为一行,AI 标识留在末尾。
-  const items: string[] = [];
-  for (const w of works) {
-    const t = String(w).replace(/\r/g, "").trim();
-    if (!t) continue;
-    items.push(t.replace(LEADING_NUM_RE, "").trim().replace(/\n+/g, "; ")); // 去行首序号;连续换行合并为一个 ; (一条记录一行)
-  }
-  return items.map((it, i) => `${i + 1}. ${it}`).join("\n");
-}
 
 /** 把报告数据渲染成自包含 HTML(内联 CSS,无外部依赖)。 */
 export function renderReportHtml(d: ReportData): string {

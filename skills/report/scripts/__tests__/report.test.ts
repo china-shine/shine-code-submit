@@ -1,55 +1,6 @@
 import { describe, test, expect } from "bun:test";
-import { renumberWorks, renderReportHtml, renderReportText, reportFilename, lastWeekRange } from "../lib/report";
-
-describe("renumberWorks", () => {
-  test("多条 work 跨条顺延编号", () => {
-    expect(renumberWorks(["1. a\n2. b", "3. c"])).toBe("1. a\n2. b\n3. c");
-  });
-  test("无原编号也加编号", () => {
-    expect(renumberWorks(["a", "b"])).toBe("1. a\n2. b");
-  });
-  test("空数组 → 空串", () => {
-    expect(renumberWorks([])).toBe("");
-  });
-  test("空行跳过", () => {
-    expect(renumberWorks(["1. a\n\n2. b"])).toBe("1. a\n2. b");
-  });
-  test("去原编号(多位数)", () => {
-    expect(renumberWorks(["10. x"])).toBe("1. x");
-  });
-  test("trim 空白", () => {
-    expect(renumberWorks(["  1. 带空格  "])).toBe("1. 带空格");
-  });
-  test("手填逗号序号: 不双层编号(1,xxx / 2，xxx)", () => {
-    expect(renumberWorks(["1,由于服务器卡", "2，本地调通"])).toBe("1. 由于服务器卡\n2. 本地调通");
-  });
-  test("手填顿号序号", () => {
-    expect(renumberWorks(["1、第一项", "2、第二项"])).toBe("1. 第一项\n2. 第二项");
-  });
-  test("括号序号(全/半角)", () => {
-    expect(renumberWorks(["（1）全角", "(2) 半角"])).toBe("1. 全角\n2. 半角");
-  });
-  test("冒号序号(全/半角)", () => {
-    expect(renumberWorks(["1: 半角冒号", "2：全角冒号"])).toBe("1. 半角冒号\n2. 全角冒号");
-  });
-  test("手填带序号 + 无序号混合(复现禅道双层 bug)", () => {
-    expect(renumberWorks(["1,服务器卡\n2，本地调通", "配置gitignore\n整理Dify"])).toBe(
-      "1. 服务器卡\n2. 本地调通\n3. 配置gitignore\n4. 整理Dify",
-    );
-  });
-  test("版本号不误剥(3.14 / 2026.08)", () => {
-    expect(renumberWorks(["3.14 升级版本"])).toBe("1. 3.14 升级版本");
-    expect(renumberWorks(["2026.08 配置"])).toBe("1. 2026.08 配置");
-  });
-  test("work 含括号 AI 标识:正常编号、标识保留在行末", () => {
-    expect(renumberWorks(["修复bug(本次内容由AI填报)", "其他工作"]))
-      .toBe("1. 修复bug(本次内容由AI填报)\n2. 其他工作");
-  });
-  test("旧换行格式 + markText:标识行附尾不单独编号(历史记录兼容)", () => {
-    expect(renumberWorks(["修复bug\n本次内容由AI填报"], "本次内容由AI填报"))
-      .toBe("1. 修复bug\n本次内容由AI填报");
-  });
-});
+import { renderReportHtml, renderReportText, reportFilename, lastWeekRange } from "../lib/report";
+// renumberWorks 已删(9b4b559 起 work 排版移到 AI,该函数成死代码,连同其测试一并移除)。
 
 const mkDaily = (over: Record<string, unknown> = {}): any => ({
   from: "2026-08-06", to: "2026-08-06", title: "日报 2026-08-06", realname: "张三",
