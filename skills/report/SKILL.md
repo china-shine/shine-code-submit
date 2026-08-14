@@ -34,7 +34,7 @@ bun "<Base directory>/scripts/zentao.ts" auto        # 默认直接提交;加 --
 auto 内部 collect → plan →(全 resolved)→ commit 一次跑完,**默认自动提交、不再逐条确认**(summary 自记归属可信,错可 amend)。按返回的 `action` 分支处理:
 
 - `committed` — 已提交:用 `result`(成功/跳过条数、每条任务) + `draft`(草稿文本)直接汇报,本次只 1 次工具调用。
-- `needs_review` — 有 `pending`(needs_semantic / **unmatched** 即 task=-1)或 `noWork`(resolved 缺 work):只对这些条目走下面的「自动汇总日志」,改 plan.json 后跑 `commit`(其余条目已就绪,无需重跑 auto)。**下次可先跑 `/shine-worklog:prepare` 把日志汇总前置,本动作即变秒级**。
+- `needs_review` — 有 `pending`(needs_semantic / **unmatched** 即 task=-1)或 `noWork`(resolved 缺 work):只对这些条目走下面的「自动汇总日志」,note 写齐 summary 后直接 `render` → 确认 → `commit`(**render 会自动本地重 plan**,note 后无需手动重跑 plan)。**下次可先跑 `/shine-worklog:prepare` 把日志汇总前置,本动作即变秒级**。
 - `cooldown` — 距上次提交 < 30 分钟:告知用户需等待 `waitMinutes` 分钟。
 - `nothing` — 全 already/skipped,无可提交:说明本次无需提交。
 - `abort` — collect 失败(通常 daemon 未启动):提示用户启 daemon 或走分步 collect 排查。

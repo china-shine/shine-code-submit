@@ -334,7 +334,11 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>, source
     it.left = leftByTask[it.task];
   }
 
-  const plan = { date, draftSeq: 0, items };
+  // draftSeq 跨 plan 保留(同日多次 plan/render 不重置,草稿编号持续递增);日期变了才归零。
+  // render 内部自动重 plan 也走这里——若每次重置,调整→重 render 会一直显示 #001,编号失去「第几版」意义。
+  const prevPlan = loadJSON<any>(PLAN_PATH, null);
+  const draftSeq = prevPlan?.date === date && Number.isFinite(Number(prevPlan.draftSeq)) ? Number(prevPlan.draftSeq) : 0;
+  const plan = { date, draftSeq, items };
   writeJSON(PLAN_PATH, plan);
   // cooldown 预判:返回给调用方(SKILL 据此决定是否 render/commit,避免 commit 失败再查)
   const cdMeta = (submittedAll[date] || {})._meta || {};
@@ -741,6 +745,14 @@ async function main(): Promise<void> {
 
   // 仅本地文件、不走网络的命令
   if (cmd === "render") {
+    // plan.json 可能滞后于 summary(note 写 summary 后没重跑 plan,直接 render 会误报"尚有会话未完成归属"):
+    // 有待归属/缺 work 条目时先纯本地重 plan 一次(note 已写齐的会转 resolved),重跑后仍缺才报错。
+    const stale = loadJSON<any>(PLAN_PATH, null);
+    const hasPending =
+      stale &&
+      Array.isArray(stale.items) &&
+      stale.items.some((i: any) => i.status === "needs_semantic" || i.status === "unmatched" || (i.status === "resolved" && !i.work));
+    if (hasPending) await cmdPlan(); // 无参 = source=cache,纯本地不联网
     console.log(cmdRender());
     return;
   }
