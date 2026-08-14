@@ -455,6 +455,13 @@ function appendSubmittedLog(e: {
   }
 }
 
+/** 提交禅道的工作内容加序号:按 ;/； 拆条 → 去行首旧序号 → 重新 1..N → 换行拼接。
+ *  禅道侧逐条多行展示(对齐手填记录格式);报表/日报读原文,AI 排版时再统一顺延编号。 */
+function numberWork(work: string): string {
+  const parts = String(work).split(/[;；]/).map((s) => s.trim().replace(/^\d+[.、]\s*/, "")).filter(Boolean);
+  return parts.map((s, k) => `${k + 1}. ${s}`).join("\n");
+}
+
 /** 提交冷却检查:距上次 commit < COMMIT_COOLDOWN_MINUTES 返回 {waitMinutes, lastCommitAt, elapsed},否则 null。cmdCommit(die)+cmdAuto(return)共用,消除冷却逻辑复制。 */
 function checkCooldown(date: string): { waitMinutes: number; lastCommitAt: string; elapsed: number } | null {
   const meta = (loadJSON<any>(SUBMITTED_PATH, {})[date] || {})._meta || {};
@@ -501,7 +508,7 @@ export async function cmdCommit(client: Client, opts: { dryRun?: boolean; amend?
   for (const i of toSubmit) {
     let out: any;
     try {
-      out = await client.submitEffort(i.task, plan.date, i.hours, applyMark(i.work, mark), i.left ?? null, dryRun);
+      out = await client.submitEffort(i.task, plan.date, i.hours, applyMark(numberWork(i.work), mark), i.left ?? null, dryRun);
     } catch (e) {
       out = { submitted: false, error: e instanceof Error ? e.message : String(e) }; // 单条失败不崩,继续其他条目
     }
@@ -521,7 +528,7 @@ export async function cmdCommit(client: Client, opts: { dryRun?: boolean; amend?
         taskName: typeof i.taskName === "string" ? i.taskName : null,
         project: typeof i.project === "number" ? i.project : null,
         projectName: typeof i.projectName === "string" ? i.projectName : null,
-        work: applyMark(i.work, mark), // 落实际提交文案(含 AI 标识),与禅道记录逐字一致
+        work: applyMark(numberWork(i.work), mark), // 落实际提交文案(含序号与 AI 标识),与禅道记录逐字一致
       });
       if (i.project) {
         mappings.repoToProject[i.repo] = i.project;

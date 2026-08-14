@@ -36,8 +36,8 @@ describe("cmdCommit 提交流水落盘", () => {
     expect(r.calls.length).toBe(2); // skipped 不提交
     const lines = r.logText.trim().split("\n").map((l: string) => JSON.parse(l));
     expect(lines.length).toBe(2);
-    expect(lines[0]).toMatchObject({ date: "2026-08-06", session: "s1", hours: 1, task: 100, work: "做A(本次内容由AI填报)", repo: "r1" });
-    expect(lines[1]).toMatchObject({ session: "s2", hours: 0.5, task: 101, work: "做B(本次内容由AI填报)" });
+    expect(lines[0]).toMatchObject({ date: "2026-08-06", session: "s1", hours: 1, task: 100, work: "1. 做A(本次内容由AI填报)", repo: "r1" });
+    expect(lines[1]).toMatchObject({ session: "s2", hours: 0.5, task: 101, work: "1. 做B(本次内容由AI填报)" });
     // daemon 读回:subId = <date>:<行号>,skipped 条目不出现
     expect(r.worklogs.length).toBe(2);
     expect(r.worklogs[0]).toMatchObject({ sessionId: "s1", subId: "2026-08-06:0", hours: 1, taskId: 100 });
@@ -55,7 +55,7 @@ describe("cmdCommit 提交流水落盘", () => {
     expect(r.ok).toBe(true);
     const lines = r.logText.trim().split("\n").map((l: string) => JSON.parse(l));
     expect(lines.length).toBe(1); // 本次 amend 的差额 0.5 追加为新行
-    expect(lines[0]).toMatchObject({ session: "s1", hours: 0.5, work: "补报:做A(本次内容由AI填报)" });
+    expect(lines[0]).toMatchObject({ session: "s1", hours: 0.5, work: "1. 补报:做A(本次内容由AI填报)" });
     expect(r.worklogs.length).toBe(1);
     expect(r.worklogs[0]).toMatchObject({ subId: "2026-08-06:0", hours: 0.5 });
   });
@@ -67,6 +67,6 @@ describe("cmdCommit 提交流水落盘", () => {
     });
     expect(r.ok).toBe(true);
     const line = JSON.parse(r.logText.trim());
-    expect(line.work).toBe("做A"); // 标识关 → 与禅道记录(同样无标识)逐字一致
+    expect(line.work).toBe("1. 做A"); // 标识关 → 与禅道记录(同样无标识、含序号)逐字一致
   });
 });
