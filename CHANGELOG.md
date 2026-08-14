@@ -2,6 +2,20 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.41 — 2026-08-14
+
+禅道缓存改 20 天滚动窗口:已完成任务的工时不再漏,缓存大小恒定不膨胀。
+
+### 修复
+- **已完成任务工时漏报**:refresh 原来只拉 doing/wait 任务,任务一旦完成,日报/周报 cache 源就漏它的工时(8-14 实测:cache 源 6.7h、实时源 11.2h,漏已完成的 #78500 松岗病房 4.5h)。现在「未完成全部 + 近 20 天完成的」任务都拉,cache 源与实时源对账一致。
+
+### 变更
+- **四层同窗口拉取**:项目(doing 且 left>0,或近 20 天有编辑)/执行(doing,或计划结束在窗口内——执行无 lastEditedDate 用 end 近似)/任务(未完成全量 + 近 20 天完成)/工时记录(只保留近 20 天)统一按 `EFFORT_FRESH_DAYS=20` 开窗,「与近 20 天工时关联的都拉」;回看更早历史/已关闭很久的项目用禅道实时源。
+- **缓存修剪**:efforts/ 目录与 cache.json 的 taskDetails 同窗口修剪(窗口外旧文件删除、过期记录按记录级过滤),缓存不随使用时间膨胀;损坏文件(半个 JSON)容错清理不崩 refresh,单任务拉取失败不清旧快照,Windows 文件占用删除失败留到下次。
+- **myProjects 签名简化**:去掉 filterActive 参数,全量返回 involved 项目(含 status/left/lastEdited),过滤移到调用方;`projects` 命令默认仍只看进行中(left>0),`--all` 显示全部含已关闭;`my-tasks` 兜底取项目补 doing 过滤。
+- **taskInfo 写回修复**:cmdPlan 补任务名写回 cache.json 时不再把内存里的 taskEfforts 一并写入(保持「efforts 按任务拆分、cache.json 只存元数据」的既定结构)。
+- daily/weekly/lastweek/refresh 四个 SKILL 的数据源说明同步更新。
+
 ## 1.3.40 — 2026-08-14
 
 禅道工时逐笔镜像:tokenserver「禅道工时」表与禅道记录一比一,不再丢多笔提交。
