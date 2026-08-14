@@ -379,13 +379,14 @@ ${body}
 </html>`;
 }
 
-/** 精简纯文本摘要(供 stdout/对话速览,非落盘文件)。 */
+/** 精简纯文本摘要(供 stdout/对话速览,非落盘文件)。
+ *  头行(日期+任务+工时)与工作内容分行:内容另起一行 4 空格缩进,确认时日期不被长 work 淹没。 */
 export function renderReportText(d: ReportData): string {
   const daily = d.daily ?? (d.from === d.to);
   if (d.dates.length === 0) return `${d.title} · ${d.realname}\n该范围内没有禅道提交记录。`;
-  const line = (id: string, r: ReportRow): string => {
+  const head = (id: string, r: ReportRow): string => {
     const info = d.infoMap.get(Number(id));
-    return `${info?.projectName ?? ""} / ${info?.taskName ?? ""} #${id}  ${round1(r.hours)}h  ${r.works.join("; ")}`; // 原始 effort,不排版(AI 在 SKILL 流程统一排版)
+    return `${info?.projectName ?? ""} / ${info?.taskName ?? ""} #${id}  ${round1(r.hours)}h`;
   };
   const lines: string[] = [`${d.title} · ${d.realname}`];
   let total = 0;
@@ -393,7 +394,8 @@ export function renderReportText(d: ReportData): string {
     const day = d.byDate[d.dates[0]];
     for (const id of Object.keys(day)) {
       total += day[id].hours;
-      lines.push(line(id, day[id]));
+      lines.push(head(id, day[id]));
+      lines.push(`    ${day[id].works.join("; ")}`); // 原始 effort,不排版(AI 在 SKILL 流程统一排版)
     }
     lines.push(`合计 ${round1(total)}h · ${Object.keys(day).length} 个任务${d.aiHours > 0 ? `(其中 AI 代报 ${round1(d.aiHours)}h)` : ""}`);
   } else {
@@ -402,7 +404,8 @@ export function renderReportText(d: ReportData): string {
       const wd = WEEKDAYS[new Date(date + "T00:00:00").getDay()];
       for (const id of Object.keys(day)) {
         total += day[id].hours;
-        lines.push(`[${date.slice(5)} ${wd}] ${line(id, day[id])}`);
+        lines.push(`[${date.slice(5)} ${wd}] ${head(id, day[id])}`);
+        lines.push(`    ${day[id].works.join("; ")}`);
       }
     }
     lines.push(`本周合计 ${round1(total)}h${d.aiHours > 0 ? `(其中 AI 代报 ${round1(d.aiHours)}h)` : ""}`);
