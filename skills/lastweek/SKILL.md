@@ -22,7 +22,7 @@ description: 生成上周(周一~周日)的工时周报(从禅道提交记录汇
    (选"先刷新"则先跑 `bun "<Base directory>/../report/scripts/zentao.ts" refresh`,再 lastweek --source cache)
    stdout 是 JSON:`{ ok, file, title, empty, text, pendingTasks, dashboardUrl }`。若 `empty: true` 跳过确认与排版,直接第5步(提示空)。
 
-   > cache 源只含未完成(doing/wait)任务的工时(refresh 快照);已完成任务可能漏。禅道源准但联网慢(每任务一次 GET)。
+   > cache 源是最近 20 天的滚动窗口(refresh 拉「未完成全部 + 近 20 天完成的」,记录也只留 20 天);更早历史/已关闭执行的任务用禅道实时源(准但联网慢,每任务一次 GET)。
 
 2. **确认工时是否正确**:`text` 字段已含每个任务每天的工时明细与工作内容。
    - **把 `text` 完整放进代码块展示**——让用户看到每个任务的具体工时与内容,底部自然显示合计

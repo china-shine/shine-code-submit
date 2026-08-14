@@ -58,23 +58,20 @@ describe("_request 三分错误", () => {
 });
 
 describe("myProjects", () => {
-  test("filterActive 剔除 left=0", async () => {
+  test("返回全部 involved 项目(含 status/left/lastEdited,过滤交给调用方)", async () => {
     use((url) => {
-      expect(url).toContain("/projects?involved=1&status=doing");
+      expect(url).toContain("/projects?involved=1&limit=100");
+      expect(url).not.toContain("status=doing");
       return { status: 200, body: { projects: [
-        { id: 1, name: "P1", left: 5, lastEditedDate: "2026-08-01" },
-        { id: 2, name: "P2", left: 0, lastEditedDate: "2026-08-02" },
+        { id: 1, name: "P1", status: "doing", left: 5, lastEditedDate: "2026-08-01" },
+        { id: 2, name: "P2", status: "closed", left: 0, lastEditedDate: "2026-08-02" },
       ] } };
     });
-    const list = await cli().myProjects(100, true);
-    expect(list).toEqual([{ id: 1, name: "P1", lastEdited: "2026-08-01" }]);
-  });
-  test("不过滤保留全部", async () => {
-    use(() => ({ status: 200, body: { projects: [
-      { id: 1, name: "P1", left: 5 }, { id: 2, name: "P2", left: 0 },
-    ] } }));
-    const list = await cli().myProjects(100, false);
-    expect(list.map((p) => p.id)).toEqual([1, 2]);
+    const list = await cli().myProjects(100);
+    expect(list).toEqual([
+      { id: 1, name: "P1", status: "doing", left: 5, lastEdited: "2026-08-01" },
+      { id: 2, name: "P2", status: "closed", left: 0, lastEdited: "2026-08-02" },
+    ]);
   });
 });
 
@@ -119,6 +116,26 @@ describe("myTasks", () => {
     });
     const r = await cli().myTasks([5], null);
     expect(r).toEqual([]);
+  });
+  test("已关闭执行:freshMs 窗口内(end 近)才遍历", async () => {
+    use((url) => {
+      if (url.includes("/projects/5/executions"))
+        return { status: 200, body: { executions: [
+          { id: 20, status: "doing", name: "S1" },
+          { id: 21, status: "closed", name: "S2", end: "2026-08-10" },
+          { id: 22, status: "closed", name: "S3", end: "2020-01-01" },
+        ] } };
+      if (url.includes("/executions/20/tasks"))
+        return { status: 200, body: { tasks: [{ id: 100, name: "T1", status: "doing", assignedTo: "me" }] } };
+      if (url.includes("/executions/21/tasks"))
+        return { status: 200, body: { tasks: [{ id: 101, name: "T2", status: "done", assignedTo: "me" }] } };
+      if (url.includes("/executions/22/tasks"))
+        throw new Error("老关闭执行不该遍历");
+      throw new Error("unexpected " + url);
+    });
+    const freshMs = new Date("2026-08-04").getTime(); // 窗口起点:end>=此才遍历
+    const r = await cli().myTasks([5], null, freshMs);
+    expect(r.map((t) => t.id).sort()).toEqual([100, 101]); // S3(2020 收尾)被跳过
   });
 });
 

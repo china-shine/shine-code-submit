@@ -101,8 +101,9 @@ async function gatherReport(client: Client, cfg: Record<string, any>, from: stri
   for (const t of cache.tasks) ids.add(t.id);
   const idList = [...ids];
 
-  // 拉每个任务的 efforts。source=cache 读本地 efforts/ 目录(0 网络,refresh 快照,但只含未完成任务);
-  // source=zentao 实时拉 client.myEfforts(准,联网)。cache 源可能缺已完成(done)任务的工时。
+  // 拉每个任务的 efforts。source=cache 读本地 efforts/ 目录(0 网络,refresh 快照,含已完成任务工时——
+  // refresh 拉全状态任务);source=zentao 实时拉 client.myEfforts(准,联网)。
+  // cache 源仍可能缺:已关闭执行里的任务/任务不指派给我的(靠实时源兜底)。
   let effMap: Map<number, any[]>;
   if (source === "cache") {
     effMap = new Map();

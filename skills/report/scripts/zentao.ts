@@ -127,7 +127,9 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>, source
         const pid = isObj(ex) ? (ex as any).project : raw.project;
         t = { name: raw.name ?? null, project: pid ?? null };
         cache.taskDetails[String(taskId)] = t;
-        writeJSON(CACHE_PATH, cache);
+        // 剥掉 getCache 返回值内嵌的 taskEfforts(增长大头,按任务拆在 efforts/,cache.json 不含)
+        const { taskEfforts: _te, ...slim } = cache as any;
+        writeJSON(CACHE_PATH, slim);
       } catch {
         return {};
       }
@@ -863,7 +865,9 @@ async function main(): Promise<void> {
     };
   } else if (cmd === "projects") {
     const limit = a.limit !== undefined ? parseInt(String(a.limit), 10) : 100;
-    let list = await client.myProjects(limit, !a.all); // 默认一层过滤(left>0,剔除任务全完成);--all 显示全部
+    // 默认只看进行中(left>0,剔除任务全完成的);--all 显示全部 involved(含已关闭)
+    let list = await client.myProjects(limit);
+    if (!a.all) list = list.filter((p: any) => p.status === "doing" && p.left > 0);
     if (a.search !== undefined) {
       const kw = String(a.search).toLowerCase();
       list = list.filter((p: any) => String(p.name).toLowerCase().includes(kw));
@@ -877,7 +881,7 @@ async function main(): Promise<void> {
       pids =
         cfg.projectIds && cfg.projectIds.length
           ? cfg.projectIds
-          : (await client.myProjects()).slice(0, 10).map((p: any) => p.id);
+          : (await client.myProjects()).filter((p: any) => p.status === "doing").slice(0, 10).map((p: any) => p.id);
     }
     const statuses = a["all-status"] ? null : new Set(["doing", "wait"]);
     out = await client.myTasks(pids, statuses);

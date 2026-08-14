@@ -2,8 +2,8 @@
  *  Client:三分错误处理(网络层 die / HTTP 非2xx throw 供重试 / 2xx→JSON)。
  *  getCache:本地缓存优先(TTL 过期自动刷新),首次或 refresh 才拉禅道。 */
 import * as path from "node:path";
-import { mkdirSync } from "node:fs";
-import { die, roundPy, todayISO, isObj, nowISOSeconds, loadJSON, writeJSON, DATA_DIR, CACHE_PATH, EFFORTS_DIR } from "./shared";
+import { mkdirSync, readdirSync, rmSync } from "node:fs";
+import { die, roundPy, todayISO, isObj, nowISOSeconds, loadJSON, writeJSON, pad2, DATA_DIR, CACHE_PATH, EFFORTS_DIR } from "./shared";
 
 export class Client {
   base: string;
@@ -50,16 +50,14 @@ export class Client {
     return this._request("GET", p);
   }
 
-  async myProjects(limit = 100, filterActive = false): Promise<any[]> {
-    const data = await this.get(`/projects?involved=1&status=doing&limit=${limit}&order=lastEditedDate_desc`);
-    let raw: any[] = data.projects || [];
-    if (filterActive) {
-      // 一层过滤:剔除任务全完成的项目(剩余工时 left=0),零额外请求
-      raw = raw.filter((p: any) => Number(p.left) > 0);
-    }
-    return raw.map((p: any) => ({
+  /** 全量 involved 项目(不限状态)——返回 status/left/lastEdited,由调用方按「进行中 或 近窗口有编辑」过滤。 */
+  async myProjects(limit = 100): Promise<any[]> {
+    const data = await this.get(`/projects?involved=1&limit=${limit}&order=lastEditedDate_desc`);
+    return (data.projects || []).map((p: any) => ({
       id: p.id,
       name: p.name,
+      status: p.status ?? null,
+      left: Number(p.left) || 0,
       lastEdited: p.lastEditedDate ?? null,
     }));
   }
@@ -73,7 +71,7 @@ export class Client {
       .map((r: any) => ({ date: r.date ?? null, consumed: Number(r.consumed) || 0, work: r.work ?? "" }));
   }
 
-  async myTasks(projectIds: number[], statuses: Set<string> | null): Promise<any[]> {
+  async myTasks(projectIds: number[], statuses: Set<string> | null, freshMs = 0): Promise<any[]> {
     const results: any[] = [];
     for (const pid of projectIds) {
       let execs: any[];
@@ -83,7 +81,12 @@ export class Client {
         continue;
       }
       for (const ex of execs) {
-        if (ex.status !== "doing") continue;
+        // 执行:进行中全遍历;已关闭的只遍历「计划结束时间在窗口内」的(近期收尾才可能带最近工时;
+        // 执行无 lastEditedDate,用 end 近似;老的关闭执行跳过,控住任务列表请求数)
+        if (ex.status !== "doing") {
+          const endMs = ex.end ? new Date(ex.end).getTime() : 0;
+          if (!(freshMs && endMs >= freshMs)) continue;
+        }
         let tasks: any[];
         try {
           tasks = (await this.get(`/executions/${ex.id}/tasks?limit=200`)).tasks || [];
@@ -105,6 +108,7 @@ export class Client {
             project: pid,
             execution: ex.id,
             executionName: ex.name ?? null,
+            lastEditedDate: t.lastEditedDate ?? null,
           });
         }
       }
@@ -195,6 +199,10 @@ export class Client {
   }
 }
 
+/** efforts 缓存滚动窗口(天):refresh 只拉「未完成全部 + 近 N 天完成的」任务,记录也只保留近 N 天——
+ *  缓存大小恒定(daily/weekly cache 源足够,覆盖 lastweek 回看);更早历史用禅道实时源。 */
+const EFFORT_FRESH_DAYS = 20;
+
 /** 纯读本地禅道缓存,不传 client/不联网。prepare 用它保证「绝不联网」契约;返回 null 表示尚未缓存。 */
 export function getCacheLocal(): any | null {
   return loadJSON<any>(CACHE_PATH, null);
@@ -213,37 +221,89 @@ async function getCache(client: Client, cfg: Record<string, any>, refresh = fals
     if (!expired) return existing;
     // TTL 过期:继续往下联网拉(自动刷新)
   }
-  // 项目:involved 进行中 + left>0(活跃,剔除任务全完成的历史项目);配了 projectIds 只留 setup 选的「属于自己的」项目。
+  // 滚动窗口基准:近 EFFORT_FRESH_DAYS 天。项目/执行/任务/记录四层同窗口——
+  // 「与近 20 天工时关联的都要拉」:项目按状态/最近编辑、执行按状态/计划结束、任务按状态/最近编辑、记录按日期。
+  const cutoffD = new Date(Date.now() - EFFORT_FRESH_DAYS * 86400_000);
+  const cutoffDate = `${cutoffD.getFullYear()}-${pad2(cutoffD.getMonth() + 1)}-${pad2(cutoffD.getDate())}`;
+  const freshMs = cutoffD.getTime();
+  const editedRecently = (x: any) => {
+    const ts = new Date(x?.lastEditedDate ?? x?.lastEdited ?? 0).getTime();
+    return Number.isFinite(ts) && ts > 0 && ts >= freshMs;
+  };
+  // 项目:进行中(doing 且还有剩余工时)或近窗口有编辑(可能带最近工时收尾的已关闭/挂起项目);
+  // 配了 projectIds 只留 setup 选的「属于自己的」项目。
   console.error("  [1/4] 拉项目...");
-  const allProjects = await client.myProjects(1000, true);
-  const projects = cfg.projectIds && cfg.projectIds.length
-    ? allProjects.filter((p: any) => cfg.projectIds.includes(p.id))
-    : allProjects;
+  const allProjects = await client.myProjects(1000);
+  const projects = allProjects
+    .filter((p: any) => (p.status === "doing" && p.left > 0) || editedRecently(p))
+    .filter((p: any) => !cfg.projectIds?.length || cfg.projectIds.includes(p.id));
   const pids = projects.map((p: any) => p.id);
-  // 任务:只未完成(doing/wait),已 done/closed 的不拉(不会提交工时,减 cache 噪音)。
-  console.error(`  [2/4] 拉未完成任务(${pids.length} 项目)...`);
-  const tasks = await client.myTasks(pids, new Set(["doing", "wait"]));
-  // 拉每个未完成任务的工时记录(effort:每天 consumed + work 总结),供 daily/weekly/防重读 cache 不联网。
-  console.error(`  [3/4] 拉工时记录(${tasks.length} 任务,并行)...`);
+  // 任务:未完成(doing/wait)全拉 + 已完成(done/closed)只拉「近 EFFORT_FRESH_DAYS 天有编辑」的
+  // ——已完成任务的工时也要进 efforts 缓存,否则任务一旦完成,日报/周报 cache 源就漏它的工时(#78500 案例);
+  // 但已完成任务随时间无限增长(每任务一次 GET),按最近编辑时间开窗,缓存恒为「最近 N 天」滚动窗口。
+  // cache.tasks 仍只留未完成(plan 匹配候选/pendingTasks 语义不变);已完成任务只拉 efforts + 记 taskDetails(名称/项目,报表解析不联网)。
+  // 窗口外的更早历史要看准 → 禅道实时源;任务不指派给我的始终拉不到,同样靠实时源兜底。
+  console.error(`  [2/4] 拉任务(${pids.length} 项目,含近 ${EFFORT_FRESH_DAYS} 天完成的)...`);
+  const allTasks = await client.myTasks(pids, null, freshMs);
+  const unfinished = (t: any) => t.status === "doing" || t.status === "wait";
+  const tasks = allTasks.filter(unfinished);
+  const doneTasks = allTasks.filter((t: any) => !unfinished(t) && editedRecently(t));
+  const effortTasks = [...tasks, ...doneTasks];
+  // 拉每个任务的工时记录(effort:每天 consumed + work 总结),供 daily/weekly cache 源不联网;
+  // 只保留窗口内(>=cutoffDate)的记录——无日期记录报表本就不展示,一并滤掉。
+  console.error(`  [3/4] 拉工时记录(${effortTasks.length} 任务,并行)...`);
   const taskEfforts: Record<number, { date: string | null; consumed: number; work: string }[]> = {};
-  await Promise.all(tasks.map(async (t: any) => {
-    try { taskEfforts[t.id] = await client.myEfforts(t.id); } catch { /* 单个任务拉失败跳过,不阻塞整体 */ }
+  await Promise.all(effortTasks.map(async (t: any) => {
+    try {
+      taskEfforts[t.id] = (await client.myEfforts(t.id)).filter((r: any) => r.date && r.date >= cutoffDate);
+    } catch { /* 单个任务拉失败跳过,不阻塞整体 */ }
   }));
   console.error("  [4/4] 拉执行 + 写本地缓存...");
   const executions = await client.executions(pids);
+  // 已完成任务记入 taskDetails(报表 cache 源解析任务名/项目免联网 GET);
+  // 与 efforts 同窗口:只保留当前拉取集合(未完成 ∪ 近 N 天完成)内的旧条目,窗口外的一并修剪,不随时间累积。
+  const effortIds = new Set(effortTasks.map((t: any) => t.id));
+  const taskDetails: Record<string, any> = {};
+  for (const [k, v] of Object.entries(existing?.taskDetails ?? {})) {
+    if (effortIds.has(Number(k))) taskDetails[k] = v; // submit 落下的名称缓存仍在集合内的保留
+  }
+  for (const t of doneTasks) taskDetails[String(t.id)] = { name: t.name, project: t.project };
   // 主 cache(元数据,稳定小):不含 taskEfforts(增长大头,拆到 efforts/<taskId>.json)
   const cache = {
     fetchedAt: nowISOSeconds(),
     projects,
     tasks,
     executions,
-    taskDetails: existing?.taskDetails ?? {},
+    taskDetails,
   };
   writeJSON(CACHE_PATH, cache);
   // 工时记录按任务拆分存(每任务独立文件,增长隔离,避免 cache.json 越来越大)
   mkdirSync(EFFORTS_DIR, { recursive: true });
-  for (const t of tasks) {
-    writeJSON(path.join(EFFORTS_DIR, `${t.id}.json`), { taskId: t.id, fetchedAt: cache.fetchedAt, efforts: taskEfforts[t.id] ?? [] });
+  for (const t of effortTasks) {
+    // 拉取失败(网络抖动)的任务不写:避免用空数组覆盖旧快照,丢窗口数据到下次 refresh
+    if (taskEfforts[t.id] === undefined) continue;
+    writeJSON(path.join(EFFORTS_DIR, `${t.id}.json`), { taskId: t.id, fetchedAt: cache.fetchedAt, efforts: taskEfforts[t.id] });
+  }
+  // 修剪:不在本次拉取集合的旧文件(窗口外任务的残留快照),记录按窗口过滤,全过期则删文件
+  // ——efforts/ 恒为「最近 N 天」滚动窗口,不随使用时间无限膨胀。
+  // 损坏文件(半个 JSON,如写入中途被杀)按可修剪处理直接删,不能让 refresh 崩掉。
+  for (const f of readdirSync(EFFORTS_DIR)) {
+    if (!f.endsWith(".json")) continue;
+    const p = path.join(EFFORTS_DIR, f);
+    let e: any;
+    try {
+      e = loadJSON<any>(p, null);
+    } catch {
+      try { rmSync(p); } catch { /* 删除失败(文件被占)留到下次 */ }
+      continue;
+    }
+    if (!e || e.taskId == null || effortIds.has(e.taskId)) continue;
+    const kept = (e.efforts ?? []).filter((r: any) => r.date && r.date >= cutoffDate);
+    if (kept.length === 0) {
+      try { rmSync(p); } catch { /* 删除失败(文件被占)留到下次 */ }
+    } else {
+      writeJSON(p, { ...e, efforts: kept });
+    }
   }
   return { ...cache, taskEfforts }; // 返回仍含 taskEfforts(内存,兼容 cmdPlan 等用 cache.tasks 的调用方)
 }
