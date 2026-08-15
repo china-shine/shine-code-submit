@@ -165,6 +165,24 @@ describe("cmdPlan — 跨午夜", () => {
     expect(items[0].hours).toBe(1); // hoursFromMinutes(120-50=70)=1
     expect(items[0].work).toBe("跨夜新增");
   });
+
+  test("增量水位严格大于:note 水位 == 提交水位的旧 note 不混入(08-15 踩坑回归)", async () => {
+    const items = await runPlan({
+      date: "2026-08-06",
+      sessions: [{ id: "s13", repo: "r", branch: "main", activeMinutes: 140, start: "20:00", end: "22:20" }],
+      // 已提交 rec.minutes=120(2h 取整回写);旧 note 水位恰为 120(已随上次提交)
+      submitted: { "2026-08-06": { s13: { tasks: [100], hours: 2, minutes: 120 } } },
+      summaries: { "2026-08-06": [
+        { session: "s13", work: "已提交旧段", task: 100, notedActiveMinutes: 120 },
+        { session: "s13", work: "真正新增", task: 100, notedActiveMinutes: 140 },
+      ] },
+      cache: { projects: [{ id: 1, name: "P1" }], tasks: [{ id: 100, name: "T1", project: 1 }], executions: [], taskDetails: {} },
+    });
+    expect(items[0].status).toBe("resolved");
+    expect(items[0].increment).toBe(true);
+    expect(items[0].hours).toBe(0.5); // 140-120=20min → 0.5h
+    expect(items[0].work).toBe("真正新增"); // 旧段(水位==120)不混入
+  });
 });
 
 describe("cmdPlan — task=-1 unmatched", () => {

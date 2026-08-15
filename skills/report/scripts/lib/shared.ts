@@ -1,7 +1,7 @@
 /** zentao.ts 底层共享层:路径常量 + 通用 helper + Args 类型。
  *  原 zentao.ts 1-203 行整段搬入(fat-shared 路线,全部 export),供 client/transcript/report/zentao 四模块复用。
  *  零 npm 依赖:仅 node:fs/node:os/node:path + Bun 全局。 */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync, renameSync } from "node:fs";
 import { homedir, networkInterfaces } from "node:os";
 import * as path from "node:path";
 
@@ -51,9 +51,13 @@ export function loadJSON<T>(p: string, def: T): T {
   return existsSync(p) ? (JSON.parse(readFileSync(p, "utf8")) as T) : def;
 }
 
+/** 原子写:先写 .tmp 再 rename——多进程并发写同一文件(如 hook collect 与 CLI 同时写 sessions.json、
+ *  并发 refresh 写 cache.json)时,读者(loadJSON 无容错)不会读到半截 JSON。 */
 export function writeJSON(p: string, obj: unknown): void {
   mkdirSync(path.dirname(p), { recursive: true }); // 自动建 ~/.zenpilot/ 与项目目录
-  writeFileSync(p, JSON.stringify(obj, null, 2) + "\n", "utf8");
+  const tmp = p + ".tmp";
+  writeFileSync(tmp, JSON.stringify(obj, null, 2) + "\n", "utf8");
+  renameSync(tmp, p); // 同目录 rename 原子替换(Windows libuv 带 REPLACE_EXISTING)
 }
 
 export function writeText(p: string, content: string): void {
@@ -145,11 +149,12 @@ export function loadMarkSetting(): { enabled: boolean; text: string } {
   };
 }
 
-/** enabled 且文案非空、且 work 末尾尚未带该标识 → 行内追加 (文案)(全角括号,不换行,作为内容一部分);否则原样(幂等,防重复拼)。 */
+/** enabled 且文案非空、且 work 尚未含该标识 → 行内追加 (文案)(全角括号,不换行,作为内容一部分);否则原样。
+ *  幂等用 includes 而非 endsWith:numberWork 逐条标识的产物中间行已带标识时,endsWith 判不到会重复再拼一个。 */
 export function applyMark(work: string, mark: { enabled: boolean; text: string }): string {
   if (!mark.enabled || !mark.text) return work;
   const tail = `(${mark.text})`;
-  return work.endsWith(tail) ? work : work + tail;
+  return work.includes(tail) ? work : work + tail;
 }
 
 export function isAiWork(work: string, text: string): boolean {

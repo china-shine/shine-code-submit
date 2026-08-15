@@ -184,9 +184,11 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>, source
         Object.assign(item, { status: "already", task: taskId, submittedHours: rec.hours ?? null }, await taskInfo(taskId));
       } else {
         // 增量补报:已提交会话已归属,增量沿用原 task(note 的 task=-1 表示"不确定",用会话已知归属)。
+        // 水位严格大于:note 水位 == 提交水位 的 note 已随上次提交(单条路径 minutes=会话全量、
+        // 拆段路径 minutes=segEnd),>= 会把已提交旧 note 的 work 混进增量重复报文案(08-15 实际踩坑)。
         const incNotes = notesBySession.get(s.id) || [];
         const submittedMin = rec.minutes ?? 0;
-        const newIncNotes = waterNotes(incNotes).filter((n: any) => (Number(n.notedActiveMinutes) || 0) >= submittedMin);
+        const newIncNotes = waterNotes(incNotes).filter((n: any) => (Number(n.notedActiveMinutes) || 0) > submittedMin);
         Object.assign(
           item,
           {
@@ -376,7 +378,7 @@ function cmdRender(): string {
     const inc = i.increment ? "(增量)" : "";
     // 内容逐条一行(确认展示对齐日报/周报):work 内以 ;/；分隔的多条记录拆行编号;
     // 仅改草稿显示,plan.json 的 work 原样不动(提交禅道的文案不受影响)。
-    const parts = String(i.work).split(/[;；\n]/).map((s) => s.trim()).filter(Boolean);
+    const parts = String(i.work).split(/[;；\n]/).map((s) => s.trim().replace(LEADING_INDEX_RE, "")).filter(Boolean);
     const workLines = parts.length > 1
       ? [`    内容:`, ...parts.map((s, k) => `    ${k + 1}. ${s}`)]
       : [`    内容:${i.work}`];
@@ -455,12 +457,14 @@ function appendSubmittedLog(e: {
   }
 }
 
-/** 提交禅道的工作内容加序号+逐条 AI 标识:按 ;/； 拆条 → 去行首旧序号 → 重新 1..N,
+/** 提交禅道的工作内容加序号+逐条 AI 标识:按 ;/；/\n 拆条 → 去行首旧序号 → 重新 1..N,
  *  每条行尾拼 AI 标识(幂等,已有不重拼)→ \n 换行拼接。
+ *  去旧序号正则限定 1-3 位数字且后面不是数字((?!\d))——防误剥「3.0 升级依赖」「2024.1 修复」这类版本号开头的文案。
  *  禅道侧逐条多行展示(对齐手填记录格式);报表/日报读原文(\n 渲染转 <br>),AI 排版时再统一顺延编号。 */
+const LEADING_INDEX_RE = /^\d{1,3}[.、](?!\d)\s*/;
 function numberWork(work: string, mark: { enabled: boolean; text: string }): string {
   const tail = mark.enabled && mark.text ? `(${mark.text})` : "";
-  const parts = String(work).split(/[;；]/).map((s) => s.trim().replace(/^\d+[.、]\s*/, "")).filter(Boolean);
+  const parts = String(work).split(/[;；\n]/).map((s) => s.trim().replace(LEADING_INDEX_RE, "")).filter(Boolean);
   return parts.map((s, k) => `${k + 1}. ${!tail || s.endsWith(tail) ? s : s + tail}`).join("\n");
 }
 
