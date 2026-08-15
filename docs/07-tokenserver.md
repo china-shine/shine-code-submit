@@ -4,13 +4,13 @@
 
 ## 架构
 
-```
-POST /api/report(daemon 每 10min,gzip + since 增量)
- → saveReport(store.ts):幂等 upsert 三张表
-   ├─ sessions:PK(gitUser,sessionId),WHERE excluded.lastActive >= 旧值 才更新(防过期全量回填回退)
-   ├─ git_changes:PK(hash)★全局——同 commit 多 cwd 上报自动去重合并;aiAdded/aiDeleted 取 MAX
-   └─ worklogs:PK(gitUser,date,sessionId,taskId,subId)——subId=提交流水行号,逐笔镜像禅道
- → GET /api/stats 等 → React UI(成员榜/项目榜/AI 占比/Token 趋势/禅道工时表)
+```mermaid
+flowchart LR
+    D["daemon(每 10min,gzip+增量)"] -->|"POST /api/report"| S["saveReport(store.ts)<br/>幂等 upsert"]
+    S --> T1[("sessions<br/>PK: sessionId 单列<br/>excluded.lastActive >= 旧值才更新<br/>(防全量回填回退)")]
+    S --> T2[("git_changes<br/>PK: hash ★全局<br/>同 commit 多 cwd 去重<br/>aiAdded/aiDeleted 取 MAX")]
+    S --> T3[("worklogs<br/>PK: gitUser,date,sessionId,taskId,subId<br/>subId=流水行号,逐笔镜像禅道")]
+    T1 & T2 & T3 --> UI["React UI:成员榜/项目榜/<br/>AI 占比/Token 趋势/禅道工时表"]
 ```
 
 ## 关键实现(store.ts)

@@ -14,16 +14,17 @@
 
 ## 数据中枢:watcher → SQLite dirty → consumer
 
-```
-fs.watch(transcript 目录,250ms debounce)
- → store.markFileDirtyOrInsert(只标脏,不读内容)
- → TranscriptConsumer 5s tick:
-    dirty 文件增量读尾部(readTailFromOffset:上次 offset→文件尾,半写行留下次)
-    → 全量重算该会话(activeMs/Token/代码行)→ transcript_sessions 表
- → 5min fullScanBackstop 全扫兜底(补 fs.watch 漏事件/watcher 失败)
+```mermaid
+flowchart LR
+    A["fs.watch(transcript 目录)<br/>250ms debounce"] -->|"只标脏,不读内容"| B[("transcript_files.dirty=1")]
+    B -->|"5s tick,批量≤100"| C["增量读尾部<br/>readTailFromOffset<br/>(半写行留下次)"]
+    C --> D["全量重算会话<br/>activeMs / Token / 代码行"]
+    D --> F[("transcript_sessions")]
+    G["5min fullScanBackstop<br/>全扫兜底(补漏事件)"] -.-> B
+    H["API 层只读 SQLite<br/>getTranscriptSessions"] -.-> F
 ```
 
-API 层**只读 SQLite**(`getTranscriptSessions`),近实时且秒回。
+接口读 SQLite 近实时秒回。
 
 ## events.sqlite 三表(store.ts)
 

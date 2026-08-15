@@ -29,16 +29,16 @@
 
 ## 一页速览
 
-```
-Claude Code ──hooks──▶ daemon(36666) ──transcript 挖掘──▶ events.sqlite
-   │                      │                                   │
-   │ /report 等 skill     │ 禅道缓存(20 天滚动窗口)           │ 工时/Token/代码行
-   ▼                      ▼                                   ▼
-skills/report/scripts/zentao.ts ──提交──▶ 禅道(API)
-   │                                        │
-   └──提交流水镜像 submitted/*.jsonl ──daemon 上报──▶ tokenserver(36667)
-                                                    ├─ 多机数据汇总(SQLite)
-                                                    └─ AI 效能平台(UI)
+```mermaid
+flowchart LR
+    CC["Claude Code"] -->|"hooks(7 事件)"| D["daemon :36666"]
+    D -->|"transcript 挖掘"| DB[("events.sqlite")]
+    D -->|"禅道缓存<br/>20 天滚动窗口"| ZC[("cache + efforts")]
+    CC -->|"/report /daily 等 skill"| Z["zentao.ts"]
+    Z -->|"提交工时"| ZT["禅道 API"]
+    Z -->|"流水镜像 submitted/*.jsonl"| D
+    D -->|"10min gzip+增量"| TS["tokenserver :36667"]
+    TS --> EFF["AI 效能平台 UI"]
 ```
 
 - 语言/运行时:TypeScript + Bun(零 npm 运行时依赖,skills 层零依赖)

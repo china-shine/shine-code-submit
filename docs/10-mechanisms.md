@@ -6,11 +6,14 @@
 
 **口径:与 Claude 对话的活跃度**(非代码量、非真实工时;离开 Claude 自己干的 gap 不计)。
 
-```
-transcript 逐条消息 timestamp
- → 相邻消息间隔 < 1h → 计入活跃;≥ 1h → 切段(间隔不计)
- → 每段首尾各加 10min buffer;单点会话记 10min
- → activeMs 累计 → transcript_sessions.active_ms
+```mermaid
+flowchart LR
+    A["transcript 逐条消息 timestamp"] --> B{"相邻间隔"}
+    B -->|"< 1h"| C["计入活跃"]
+    B -->|"≥ 1h"| D["切段,间隔不计"]
+    C --> E["每段首尾各加 10min buffer<br/>单点会话记 10min"]
+    D --> E
+    E --> F[("activeMs 累计<br/>transcript_sessions.active_ms")]
 ```
 
 位置:`src/daemon/transcript-consumer.ts`(全量重算,增量只优化读取)。详见根目录《对话时长统计说明.md》。
@@ -48,14 +51,17 @@ daily/weekly `--source cache` 时:`cacheStaleVsSubmissions`(cache.fetchedAt vs s
 
 ## ⑥ AI 代码占比
 
-```
-分母:git log -p 逐行(该窗口内 commit 的 added+deleted)
-分子:commit 的行 与「AI 编辑过的行集合」交集
-     集合 = PostToolUse(Edit/Write) patch + 行内容,按文件分组;
-     isTrivialLine 过滤(无字母/数字/中文的行:空行/}/); 不入集合——防惯用行虚高
-commit 识别:--grep "Co-Authored-By: Claude"(commit 粒度备用口径)
-host 白名单:提取 remote host 等值匹配(可配置 aiStatsHosts)
-tokenserver:git_changes hash 全局 PK 去重;只统计有覆盖(aiAdded/aiDeleted>0)的 commit
+```mermaid
+flowchart LR
+    A["PostToolUse(Edit/Write) patch"] --> B["AI 编辑过的行集合<br/>(按文件分组)"]
+    B -->|"isTrivialLine 过滤<br/>(空行/纯括号不入集合)"| C["集合"]
+    D["git log -p 该窗口内 commit"] --> E["分母:added+deleted"]
+    C --> F["分子:commit 行 ∩ 集合<br/>aiAdded / aiDeleted"]
+    E --> G["占比 = 分子/分母"]
+    F --> G
+    H["commit 识别:--grep 'Co-Authored-By: Claude'<br/>(commit 粒度备用口径)"] -.-> F
+    I["host 白名单:remote host 等值匹配<br/>(aiStatsHosts 可配)"] -.-> D
+    J["tokenserver:hash 全局 PK 去重<br/>只统计有覆盖的 commit"] -.-> G
 ```
 
 已知:行级字符串匹配有天花板(改一行也算 AI),口径细节见效能平台数据说明页。

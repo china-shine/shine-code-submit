@@ -2,92 +2,83 @@
 
 ## 全景图
 
-```
-┌───────────────────── 用户机(每台) ─────────────────────┐
-│                                                          │
-│  Claude Code                                             │
-│   ├─ hooks(7 事件:SessionStart/UserPromptSubmit/        │
-│   │        PostToolUse/Stop/SubagentStop/PreCompact/     │
-│   │        SessionEnd)                                   │
-│   │        │ POST /api/hook/<type>(Bearer pid token)     │
-│   │        ▼                                              │
-│   │   daemon(36666, src/)                                │
-│   │    ├─ events.sqlite(事件与会话,transcript 增量挖掘)   │
-│   │    ├─ 禅道缓存 zenpilot/cache.json + efforts/*.json    │
-│   │    │   (20 天滚动窗口,TTL zentaoCacheTtlMin 默认 300min 自动刷 + in-flight 锁) │
-│   │    ├─ dashboard UI(React,/ui?t=<token>)              │
-│   │    └─ 上报循环(10min)─ gzip+增量 ──▶ tokenserver       │
-│   │                                                      │
-│   └─ skills(/report /daily /weekly ...)                  │
-│        │ 调用                                             │
-│        ▼                                                  │
-│   skills/report/scripts/zentao.ts(命令集,零依赖)         │
-│    ├─ 读 daemon /api/sessions(工时数字)                  │
-│    ├─ 读 zenpilot/projects/<cwd>/(summary/plan/submitted)│
-│    ├─ 提交 ── POST ──▶ 禅道 REST API v1                  │
-│    └─ 提交流水逐笔落盘 zenpilot/submitted/<date>.jsonl    │
-│            │(daemon collectWorklogs 读取上报)            │
-└────────────┼─────────────────────────────────────────────┘
-             ▼
-┌──────────── tokenserver(36667,生产=linux 二进制) ──────────┐
-│  POST /api/report(upsert 幂等) ──▶ tokens.db              │
-│   ├─ sessions(会话)/ projects / git_changes(hash 全局 PK) │
-│   ├─ worklogs(禅道工时镜像,主键含 subId 逐笔)             │
-│   └─ AI 效能平台 UI:成员/项目榜/AI 占比/Token 趋势        │
-└───────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TB
+    subgraph 用户机["用户机(每台)"]
+        CC["Claude Code"]
+        CC -->|"hooks 7 事件<br/>POST /api/hook(Bearer token)"| D["daemon :36666"]
+        D --> DB[("events.sqlite<br/>事件+会话(transcript 增量挖掘)")]
+        D --> ZC[("禅道缓存<br/>cache.json + efforts/*.json<br/>20 天滚动窗口,TTL 默认 300min")]
+        D --> UI["dashboard UI<br/>/ui?t=token"]
+        CC -->|"skills 调用"| Z["zentao.ts<br/>(23 命令,零依赖)"]
+        Z -->|"读 /api/sessions 工时数字"| D
+        Z --> RD[("zenpilot/projects/&lt;cwd&gt;/<br/>summary / plan / submitted")]
+        Z -->|"提交工时"| ZT["禅道 REST API v1"]
+        Z --> SJ[("提交流水<br/>submitted/&lt;date&gt;.jsonl")]
+    end
+    D -->|"上报循环 10min<br/>gzip + 增量(since=lastReportAt)"| TS
+    SJ -->|"collectWorklogs 读取"| TS
+    subgraph tokenserver["tokenserver :36667(生产 = linux 二进制)"]
+        TS["POST /api/report<br/>(upsert 幂等)"] --> TDB[("tokens.db<br/>sessions / projects /<br/>git_changes(hash 全局 PK)<br/>worklogs(subId 逐笔)")]
+        TDB --> EFF["AI 效能平台 UI<br/>成员/项目榜/AI 占比/Token 趋势"]
+    end
+    ZT -.->|"禅道是工时事实源"| Z
 ```
 
 ## 五条核心数据流
 
 ### ① 会话采集流(自动,无需用户操作)
 
-```
-Claude 写 transcript jsonl(~/.claude/projects/<编码>/<sid>.jsonl)
- → hook 各事件 POST 到 daemon(落 events 表 + spool 兜底)
- → daemon watcher 标 dirty → consumer 5s tick 增量读 jsonl 尾部
- → 全量计算该会话:activeMs(gap-aware)、Token 四项、代码行(Edit/Write patch)
- → events.sqlite transcript_sessions 表(接口读 SQLite 秒回)
+```mermaid
+flowchart LR
+    A["Claude 写 transcript jsonl<br/>~/.claude/projects/&lt;编码&gt;/&lt;sid&gt;.jsonl"] --> B["hook 事件 POST daemon<br/>(events 表 + spool 兜底)"]
+    B --> C["watcher 标 dirty<br/>(250ms debounce)"]
+    C --> D["consumer 5s tick<br/>增量读 jsonl 尾部"]
+    D --> E["全量重算会话:<br/>activeMs(gap-aware)/ Token 四项 / 代码行"]
+    E --> F[("transcript_sessions 表<br/>(接口读 SQLite 秒回)")]
 ```
 
 ### ② 工时提交流(/report,用户触发)
 
-```
-plan:读 sessions.json(Stop hook 写的当日会话)+ summary(note 记录)
-     + submitted.json(防重水位)→ 产出 plan.json 草稿
- → 缺 work/task 的会话:prepare 读 transcript 信号 → AI 归纳 → note 写回
- → render(草稿文本)→ 用户确认 → commit
- → 禅道 API 逐条提交(work 带「(本次内容由AI填报)」标识、逐条编号)
- → recordSubmission 写水位;appendSubmittedLog 逐笔流水镜像
+```mermaid
+flowchart TD
+    A["plan:读 sessions.json + summary(note)<br/>+ submitted.json(防重水位)"] --> B{"有缺 work/task 的会话?"}
+    B -->|是| C["prepare 读 transcript 信号<br/>→ AI 归纳 → note 写回"]
+    B -->|否| D["render 草稿文本"]
+    C --> D
+    D --> E["用户确认"] --> F["commit:禅道 API 逐条提交<br/>(逐条编号 + AI 标识)"]
+    F --> G["写防重水位 + 逐笔流水镜像<br/>submitted/&lt;date&gt;.jsonl"]
 ```
 
 ### ③ 禅道缓存流(refresh / TTL / 报表按需)
 
-```
-getCache(refresh?):项目(进行中+近20天有编辑)→ 执行(doing+近20天结束)
- → 任务(未完成全量+近20天完成)→ efforts(只留近20天记录)
- → cache.json(元数据)+ efforts/<taskId>.json(按任务拆分)
- → 修剪:窗口外任务文件删除、过期记录过滤、taskDetails 同窗
-触发时机:①手动 /refresh ②daemon TTL(zentaoCacheTtlMin,默认 300min) ③报表 cache 源检测到
- 缓存旧于最后一笔提交时自动先刷新再读(cacheStaleVsSubmissions)
+```mermaid
+flowchart LR
+    T{"触发"} -->|"手动 /refresh"| R["getCache(refresh)"]
+    T -->|"daemon TTL(默认 300min)"| R
+    T -->|"报表 cache 源检测到<br/>缓存旧于最后一笔提交"| R
+    R --> A["项目(进行中+近20天有编辑)"] --> B["执行(doing+近20天结束)"]
+    B --> C["任务(未完成全量+近20天完成)"] --> D["efforts 只留近20天记录"]
+    D --> E["cache.json + efforts/&lt;taskId&gt;.json"]
+    E --> F["修剪:窗口外文件删除<br/>过期记录过滤 / taskDetails 同窗"]
 ```
 
 ### ④ 上报流(daemon→tokenserver,10min)
 
-```
-daemon buildReport(读 SQLite 聚合 + git log 带 AI 行匹配)
- → gzip POST /api/report(since=lastReportAt 增量;24h 全量校准)
- → tokenserver upsert(sessions 按 lastActive 新者胜;
-    git_changes 按 hash 全局 PK 幂等;worklogs 按 (gitUser,date,sessionId,taskId,subId) 逐笔)
- → 失败不推进水位(数据不丢,下轮重试)
+```mermaid
+flowchart LR
+    A["daemon buildReport<br/>(SQLite 聚合 + git log AI 行匹配)"] -->|"gzip POST /api/report<br/>since=lastReportAt 增量(24h 全量校准)"| B["tokenserver upsert:<br/>sessions 按 lastActive 新者胜<br/>git_changes 按 hash<br/>worklogs 按 subId 逐笔"]
+    B -->|失败| C["不推进水位(数据不丢,下轮重试)"]
 ```
 
 ### ⑤ 自动升级流(autoUpdate)
 
-```
-daemon 定期查 npm registry latest → 有新版 → spawn detached
- `npx shine-worklog@latest install`(Windows 走 wscript VBS 静默)
- → install 部署新缓存目录 + hook 新于 daemon 时重启 daemon
- → 用户重启 Claude Code 后 hook 也更新
+```mermaid
+flowchart LR
+    A["daemon 定期查 npm latest"] -->|有新版| B["spawn detached<br/>npx shine-worklog@latest install<br/>(Windows 走 wscript VBS 静默)"]
+    B --> C["install 部署新缓存目录"]
+    C -->|"hook 新于 daemon"| D["重启 daemon"]
+    C -->|"用户重启 Claude Code"| E["hook 也更新"]
 ```
 
 ## 进程/模块边界(谁不依赖谁)
