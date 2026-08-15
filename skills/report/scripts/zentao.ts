@@ -583,6 +583,7 @@ export async function cmdCommit(client: Client, opts: { dryRun?: boolean; amend?
         const self = process.argv[1];
         if (self) {
           const p = Bun.spawn({ cmd: [process.execPath, "run", self, "refresh"], stdout: "ignore", stderr: "ignore", windowsHide: true });
+          p.unref(); // 关键:不解绑则父进程(Bun)会等子进程跑完才退出,commit 从秒回变成 10s+(09-24 实测 14s)
           p.exited.then(() => {}, () => {}); // 挂个空回调防 unhandledRejection,不 await
         }
       } catch { /* 刷新失败无碍:缓存按 TTL/手动刷新兜底 */ }
