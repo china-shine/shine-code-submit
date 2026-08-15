@@ -2,6 +2,31 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.44 — 2026-08-15
+
+三路代码审查集中修复:工时增量水位、禅道提交文案保护、上报可靠性、AI 占比口径。
+
+### 修复(skills)
+- **增量水位严格大于**:`>=` 改 `>`,note 水位==提交水位的旧 note 不再混进增量重复报文案(note 123min vs 已提交取整 120min 实际踩坑)。
+- **numberWork 序号误剥保护**:去旧序号正则加 `(?!\d)`,「3.0 升级依赖」「2024.1 修复」等版本号开头文案不再被剥坏。
+- **numberWork 按 \n 拆条**:increment 多 note 以 \n join 的 work 逐条编号+逐条 AI 标识(此前中间行丢标识)。
+- **applyMark 幂等改 includes**:逐条标识产物二次走 applyMark 不再重复拼标识。
+- **writeJSON 原子写**(tmp+rename):并发写 sessions.json/cache.json 不再产生半截 JSON。
+
+### 修复(daemon)
+- **uploadReport 校验 res.ok**:tokenserver 4xx/5xx 不再误推 lastReportAt 水位丢增量数据(404 实测:skipped+水位不动)。
+- **禅道刷新 in-flight 锁**:手动+定时并发触发不再交错 spawn 写坏 cache.json(2/5 并发压测:1 成功 N 拦截)。
+- **hook postOnce 非 2xx 视为失败**:daemon 换 token 后 401 走 ensureDaemon+重读 token 重试,不再静默丢实时性;isNewer 对无 version 响应防护。
+- **AI 行集合过滤空行/纯括号**(isTrivialLine):aiAdded 不再被惯用行(`}` `);`)虚高。
+
+### 修复(tokenserver)⚠️ 需重新部署 linux 二进制
+- **分母构成 no-ai 桶复活**:原 SQL 固定 `AND aiAdded>0`,no-ai 桶永远为空;改 JS 聚合后真实数据 258 commits 正确入桶。
+- **纯删除型 AI commit 不再整条丢弃**(aiAdded=0,aiDeleted>0):此前其 AI 删除行既不进分子也不进分母,占比系统性低估。
+- **host 白名单改提取 remote host 等值比较**:LIKE 子串会误命中 `my-github.company.cn` 等非目标仓库。
+
+### 验证
+126 测试全过(+5 回归用例);全量推送三次幂等零漂移;daemon↔tokenserver 交叉对账一致;并发锁/404 负面/新格式禅道记录真跑验证。
+
 ## 1.3.43 — 2026-08-15
 
 禅道提交逐条带 AI 标识 + 草稿渲染换行拆分修复。
