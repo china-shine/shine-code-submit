@@ -157,7 +157,7 @@ aside.toc a.active { color: var(--accent); background: var(--toc-active-bg); fon
 aside.toc a.active::before { content: ""; width: 3px; height: 1rem; background: var(--accent); border-radius: 2px; margin-right: .5rem; flex-shrink: 0; }
 aside.toc a.lv2:not(.active)::before { content: ""; width: 3px; height: 3px; background: var(--border); border-radius: 50%; margin-right: .5rem; flex-shrink: 0; }
 
-article { flex: 1; min-width: 0; padding: 1.75rem 2.5rem 4rem; max-width: 52rem; }
+article { flex: 1; min-width: 0; padding: 1.75rem 2.5rem 4rem; }
 
 h2 { font-size: 1.375rem; font-weight: 700; margin: 2.5rem 0 1rem; padding-bottom: .5rem; border-bottom: 2px solid var(--border); scroll-margin-top: 3.5rem; }
 h3 { font-size: 1.1875rem; font-weight: 600; margin: 2rem 0 .875rem; scroll-margin-top: 3.5rem; }
