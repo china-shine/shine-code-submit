@@ -7,7 +7,7 @@
 import { $ } from "bun";
 import { mkdirSync, readFileSync, appendFileSync } from "node:fs";
 import { join } from "node:path";
-import { buildDocs } from "./build-docs";
+
 
 const TS_ROOT = join(import.meta.dir, "..");
 const UI_DIR = join(TS_ROOT, "ui");
@@ -37,15 +37,14 @@ if (!uiBuild.success) {
 console.log("1. ui bundled -> " + join(BUILD_DIR, "app.js"));
 
 // 1.5 数据说明.md -> .build/docs.html(顶栏「数据说明」按钮新开页 /docs 用)
-console.log("1.5 rendering docs page");
-buildDocs();
+console.log("1.5 embedding docs markdown");
+const docsMd = await Bun.file(join(TS_ROOT, "数据说明.md")).text();
 
 // 2. 生成 ui-assets.ts(字符串化内联)
-const [html, js, css, docs] = await Promise.all([
+const [html, js, css] = await Promise.all([
   Bun.file(join(UI_DIR, "index.html")).text(),
   Bun.file(join(BUILD_DIR, "app.js")).text(),
   Bun.file(join(BUILD_DIR, "style.css")).text(),
-  Bun.file(join(BUILD_DIR, "docs.html")).text(),
 ]);
 await Bun.write(
   join(TS_ROOT, "src", "ui-assets.ts"),
@@ -53,7 +52,7 @@ await Bun.write(
     "export const INDEX_HTML = " + JSON.stringify(html) + ";\n" +
     "export const APP_JS = " + JSON.stringify(js) + ";\n" +
     "export const STYLE_CSS = " + JSON.stringify(css) + ";\n" +
-    "export const DOCS_HTML = " + JSON.stringify(docs) + ";\n",
+    "export const DOCS_MD = " + JSON.stringify(docsMd) + ";\n",
 );
 console.log("2. src/ui-assets.ts generated");
 

@@ -1,13 +1,16 @@
 // HTTP 路由:API(health/report/reports) + 静态资源。
 // 静态资源双模式:开发(bun run src)读文件(改 HTML/CSS 直接刷新);
 // 编译(二进制)用内联 ui-assets(因二进制内无 ui/ 文件)。
+// /docs 例外:**运行时**读 数据说明.md → marked 渲染(改 md 刷新即生效,不需重新 build;
+// 二进制旁有 md 优先读,否则用 build 时内嵌的备份)。
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { gzipSync, gunzipSync } from "node:zlib";
 import { createHash } from "node:crypto";
 import { saveReport, getStats, getSessions, getMember, getMemberWorklogs, getDenominatorBreakdown, type Granularity } from "./store";
 import type { ReportResponse } from "./types";
-import { APP_JS, DOCS_HTML, INDEX_HTML, STYLE_CSS } from "./ui-assets";
+import { APP_JS, DOCS_MD, INDEX_HTML, STYLE_CSS } from "./ui-assets";
+import { Marked } from "marked";
 
 const PORT = Number(process.env.PORT ?? 36667);
 const HOST = "0.0.0.0";
@@ -19,9 +22,98 @@ const ASSETS: Record<string, { file: string; inline: string; type: string }> = {
   "/index.html": { file: "index.html", inline: INDEX_HTML, type: "text/html; charset=utf-8" },
   "/ui/app.js": { file: ".build/app.js", inline: APP_JS, type: "application/javascript; charset=utf-8" },
   "/ui/style.css": { file: ".build/style.css", inline: STYLE_CSS, type: "text/css; charset=utf-8" },
-  // 数据说明页(顶栏「数据说明」按钮新开;由 scripts/build-docs.ts 从 数据说明.md 渲染)
-  "/docs": { file: ".build/docs.html", inline: DOCS_HTML, type: "text/html; charset=utf-8" },
 };
+
+// ---------- /docs:运行时 markdown 渲染(VS Code preview 观感) ----------
+
+const DOCS_MD_PATHS = [
+  join(import.meta.dir, "..", "数据说明.md"),          // 开发:仓库根
+  join(process.execPath, "..", "数据说明.md"),          // 编译:二进制旁
+  join(process.cwd(), "数据说明.md"),                    // cwd 兜底
+];
+
+function readDocsMd(): string {
+  for (const p of DOCS_MD_PATHS) {
+    try { if (existsSync(p)) return readFileSync(p, "utf8"); } catch { /* try next */ }
+  }
+  return DOCS_MD; // build 时内嵌的备份(二进制部署且旁无 md 文件)
+}
+
+const docsMarked = new Marked({ gfm: true, breaks: false });
+docsMarked.use({
+  renderer: {
+    heading(this: any, token: any) {
+      const text = this.parser.parseInline(token.tokens);
+      if (token.depth === 1) return ""; // h1 与顶栏标题重复,跳过
+      return `<h${token.depth}>${text}</h${token.depth}>`;
+    },
+  },
+});
+
+function serveDocs(): Response {
+  const html = docsMarked.parse(readDocsMd(), { async: false }) as string;
+  return new Response(DOCS_PAGE(html), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+}
+
+function DOCS_PAGE(body: string): string {
+  return `<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>数据说明 · AI效能平台</title>
+<style>
+${DOCS_CSS}
+</style>
+</head>
+<body>
+<header class="topbar">
+  <h1>数据说明</h1>
+  <span class="sub">各项数据的含义与计算口径</span>
+  <a class="back" href="/">返回看板</a>
+</header>
+<article>${body}</article>
+</body>
+</html>`;
+}
+
+const DOCS_CSS = `
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body { margin: 0; font-family: Inter, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--background, #f8fafc); color: var(--foreground, #0f172a); font-size: 15px; line-height: 1.8; }
+:root { --background:#f8fafc; --foreground:#0f172a; --muted:#f1f5f9; --border:#e2e8f0; --secondary:#f1f5f9; --primary:#6366f1; }
+@media (prefers-color-scheme: dark) { :root { --background:#0f172a; --foreground:#e2e8f0; --muted:#1e293b; --border:#334155; --secondary:#1e293b; --primary:#818cf8; } }
+
+.topbar { height: 3.25rem; background: var(--foreground); color: var(--background); display: flex; align-items: center; gap: .75rem; padding: 0 1.25rem; position: sticky; top: 0; z-index: 10; }
+.topbar h1 { font-size: .9375rem; font-weight: 600; margin: 0; }
+.topbar .sub { font-size: .75rem; opacity: .6; }
+.topbar .back { margin-left: auto; color: inherit; opacity: .7; text-decoration: none; font-size: .8125rem; }
+.topbar .back:hover { opacity: 1; }
+
+article { padding: 1.5rem 2rem 4rem; }
+
+h2 { font-size: 1.375rem; font-weight: 700; margin: 2.25rem 0 1rem; padding-bottom: .5rem; border-bottom: 2px solid var(--border); }
+h3 { font-size: 1.1875rem; font-weight: 600; margin: 1.75rem 0 .875rem; }
+h4 { font-size: 1rem; font-weight: 600; margin: 1.375rem 0 .625rem; }
+h5, h6 { font-size: .9375rem; font-weight: 600; margin: 1.125rem 0 .5rem; }
+
+p { margin: .8125rem 0; overflow-wrap: break-word; }
+a { color: var(--primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+ul, ol { padding-left: 1.5em; margin: .8125rem 0; }
+li { margin: .25rem 0; }
+code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .85em; background: var(--muted); padding: .15em .4em; border-radius: 4px; overflow-wrap: break-word; }
+pre { background: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: .875rem 1.125rem; overflow-x: auto; margin: 1rem 0; }
+pre code { background: transparent; padding: 0; font-size: .8125rem; }
+blockquote { margin: 1rem 0; padding: .375rem 1.125rem; border-left: 4px solid var(--primary); background: var(--secondary); border-radius: 0 4px 4px 0; }
+blockquote p { margin: .4375rem 0; }
+strong { font-weight: 600; }
+hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
+
+table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .875rem; line-height: 1.6; }
+th, td { border: 1px solid var(--border); padding: .4375rem .875rem; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+th { background: var(--secondary); font-weight: 600; }
+`;
 
 function json(req: Request, body: unknown, status = 200): Response {
   const payload = JSON.stringify(body);
@@ -171,6 +263,9 @@ export function startServer() {
         const granularity: Granularity = gRaw === "week" || gRaw === "month" ? gRaw : "day";
         return json(req, getMember(gitUser, { from, to, granularity }));
       }
+
+      // /docs:运行时 markdown 渲染(改 md 刷新即生效)
+      if (path === "/docs") return serveDocs();
 
       const asset = await serveAsset(path, req);
       if (asset) return asset;
