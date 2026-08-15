@@ -178,8 +178,24 @@ function readReportHtml(filename: string): string | null {
 }
 
 /** 触发禅道缓存刷新:spawn `bun zentao.ts refresh`(禅道登录/拉取逻辑全在 skill 层 zentao.ts,daemon 只触发)。
- *  超时 120s;返回刷新结果或错误(如 config.json 未配禅道账号)。 */
+ *  超时 120s;返回刷新结果或错误(如 config.json 未配禅道账号)。
+ *  in-flight 锁:手动按钮与后台 cacheTick 并发触发时跳过第二个——两个 refresh 并发写 cache.json/efforts/
+ *  (非原子 writeFileSync)会交错出半截 JSON,读方(loadJSON 无容错)直接崩。 */
+let zentaoRefreshInFlight = false;
 async function refreshZentaoCache(): Promise<
+  | { ok: true; projects: number; tasks: number; executions: number; fetchedAt: string }
+  | { ok: false; error: string }
+> {
+  if (zentaoRefreshInFlight) return { ok: false, error: "刷新进行中(上一轮未完成),已跳过并发触发" };
+  zentaoRefreshInFlight = true;
+  try {
+    return await refreshZentaoCacheInner();
+  } finally {
+    zentaoRefreshInFlight = false;
+  }
+}
+
+async function refreshZentaoCacheInner(): Promise<
   | { ok: true; projects: number; tasks: number; executions: number; fetchedAt: string }
   | { ok: false; error: string }
 > {
@@ -809,7 +825,7 @@ async function getProjectSessions(
 }
 
 /** 上报结果:uploaded=true 已 POST;false=主动跳过(附 reason);抛错=网络/服务端失败。 */
-type UploadOutcome = { uploaded: boolean; reason?: string };
+type UploadOutcome = { uploaded: boolean; reason?: string; status?: number };
 
 /** 构建 report 并 POST 到 settings.reportUrl(自动/手动上报共用)。
  *  无 reportUrl,或采集不到 git user.name(上报身份缺失,tokenserver 只会落「未知用户」) 则跳过不报,返回原因由调用方记日志/回前端;失败抛错。 */
@@ -830,12 +846,16 @@ async function uploadReport(store: Store, opts?: { full?: boolean }): Promise<Up
     writeSettings({ ...readSettings(), lastReportAt: Date.now() });
     return { uploaded: false, reason: "增量无变化" };
   }
-  await fetch(url, {
+  const res = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json", "content-encoding": "gzip" },
     body: gzipSync(Buffer.from(JSON.stringify(report), "utf8")),
     signal: AbortSignal.timeout(60000),
   });
+  // fetch 对 4xx/5xx 不抛错:不检查 res.ok 会在失败时也推水位,该增量数据永久丢失(等 24h 全量才补)
+  if (!res.ok) {
+    return { uploaded: false, reason: `tokenserver HTTP ${res.status}`, status: res.status };
+  }
   // 成功推进水位:增量水位总推进;全量额外推进 lastFullReportAt(定期校准锚点)
   const cur = readSettings();
   const patch: { lastReportAt: number; lastFullReportAt?: number } = { lastReportAt: Date.now() };

@@ -193,7 +193,8 @@ async function forward(event: HookEvent): Promise<void> {
 }
 
 /** semver:a 是否严格新于 b(x.y.z 逐段数值比较,非字符串字典序)。 */
-function isNewer(a: string, b: string): boolean {
+function isNewer(a: string, b: string | undefined): boolean {
+  if (!b) return false; // 老 daemon 响应无 version 字段:无法比较,不触发重启
   const pa = a.split('.').map(Number);
   const pb = b.split('.').map(Number);
   for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
@@ -215,6 +216,9 @@ async function postOnce(url: string, event: HookEvent, token: string | null): Pr
       body: JSON.stringify(event),
       signal: AbortSignal.timeout(HOOK_POST_TIMEOUT_MS),
     });
+    // 4xx/5xx 也算失败(不只网络异常):daemon 重启换 token 后旧 hook 拿旧 token 得 401,
+    // 若当成功会静默丢实时性——返回 ok:false 让 forward 走 ensureDaemon+重读 token 重试链路
+    if (!res.ok) return { ok: false };
     const data = (await res.json().catch(() => ({}))) as { version?: string };
     return { ok: true, version: data.version }; // 到达 daemon 即视为成功(事件也已落盘,回捞兜底);顺带读 version
   } catch {

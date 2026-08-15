@@ -102,6 +102,13 @@ export function normRelPath(cwd: string, p: string): string {
 interface AiLinesCacheEntry { at: number; lines: Map<string, Set<string>>; }
 const aiLinesCache = new Map<string, AiLinesCacheEntry>();
 
+/** 无信息量行(空行/纯括号分号等):不含任何字母/数字/中文。
+ *  行级 AI 匹配把这些行排除在 AI 行集合外——否则任何 commit 里的空行/惯用行(`}` `);`)都会
+ *  命中 set.has(l),aiAdded 系统性虚高、占比失真。 */
+export function isTrivialLine(l: string): boolean {
+  return !/[\p{L}\p{N}]/u.test(l);
+}
+
 /** 提取某项目"AI 写过的所有行内容"(按规范化文件路径分组),供 buildProjectDetail 行级匹配 commit added 行。
  *  全量扫描该 cwd 的 PostToolUse(Edit/Write/MultiEdit/NotebookEdit):取 structuredPatch 的 + 行(去前缀);
  *  Write 新建文件(patch 空)fallback tool_input.content 全文行。分页突破 query 的 2000 cap。
@@ -137,14 +144,21 @@ export function getProjectAILines(store: Store, cwd: string): Map<string, Set<st
           if (!Array.isArray(ls)) continue;
           for (const l of ls) {
             if (typeof l === "string") {
-              if (l.startsWith("+") && !l.startsWith("+++")) set.add(l.slice(1));
-              else if (l.startsWith("-") && !l.startsWith("---")) set.add(l.slice(1));
+              if (l.startsWith("+") && !l.startsWith("+++")) {
+                const c = l.slice(1);
+                if (!isTrivialLine(c)) set.add(c); // 空行/纯括号等无信息量行不入集合(防 aiAdded 虚高)
+              } else if (l.startsWith("-") && !l.startsWith("---")) {
+                const c = l.slice(1);
+                if (!isTrivialLine(c)) set.add(c);
+              }
             }
           }
         }
       } else if (typeof input?.content === "string") {
         // Write 新建文件:patch 空,fallback content 全文行
-        for (const l of input.content.split("\n")) set.add(l);
+        for (const l of input.content.split("\n")) {
+          if (!isTrivialLine(l)) set.add(l);
+        }
       }
     }
     if (events.length < PAGE) break;
