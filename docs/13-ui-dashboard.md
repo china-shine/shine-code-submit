@@ -1,5 +1,7 @@
 # 13 Dashboard 前端(ui/)
 
+[← 手册索引](README.md)
+
 daemon 自带的本地控制台(http://<ip>:36666/ui?t=<token>),React 19 + TypeScript,无路由库,Bun.build 打包。
 
 ## 结构

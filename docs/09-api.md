@@ -1,5 +1,7 @@
 # 09 HTTP API 参考
 
+[← 手册索引](README.md)
+
 ## daemon(默认 bind 0.0.0.0:36666,hook 走 127.0.0.1)
 
 鉴权:`Authorization: Bearer <token>`(token=DATA_DIR/daemon.token 持久化值,普通字符串比较);WS 用 `?t=`。**免鉴权**:`/api/health`、`/` 与 `/ui/*` 静态页、`/favicon.ico`;reports 预览走 `?t=<token>` query。

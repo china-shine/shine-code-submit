@@ -1,5 +1,7 @@
 # 08 数据与文件布局
 
+[← 手册索引](README.md)
+
 ## 运行时数据(`%LOCALAPPDATA%/shine-worklog/`,代码里 `DATA_DIR`)
 
 > 源码:`src/shared/paths.ts` 与 `skills/report/scripts/lib/shared.ts`(两处内联复刻,改动需同步)

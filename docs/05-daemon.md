@@ -1,5 +1,7 @@
 # 05 Daemon 子系统(src/daemon/)
 
+[← 手册索引](README.md)
+
 常驻后台进程(36666),会话数据中枢。源码模式 `bun run src/daemon/main.ts`,二进制模式 `bin/<plat>-<arch>/daemon.exe`。
 
 ## 启动流程(main.ts)

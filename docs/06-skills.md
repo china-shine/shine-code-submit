@@ -1,5 +1,7 @@
 # 06 Skills 子系统(skills/,含 zentao.ts 命令参考)
 
+[← 手册索引](README.md)
+
 ## 结构
 
 每个 skill = 一个目录的 `SKILL.md`(给 AI 的执行指令)+ 共用脚本 `skills/report/scripts/zentao.ts`。**skills 层零 npm 依赖**(只 node: 内置),因为要在用户机裸跑。
@@ -39,7 +41,7 @@
 | `amend` | 修正最后一次提交(禅道只能追加,补差额;独立命令) | — |
 | `submit --task --date --hours --work` | 手工单条提交(计划外修正) | — |
 | `auto [--dry-run]` | collect→plan→(全 resolved)commit 一键 | action 分支 |
-| `daily/weekly/lastweek --source cache\|zentao` | ★ 报表(stdout JSON:text/file/pendingTasks/dashboardUrl/autoRefreshed) | HTML 落盘 |
+| `daily` / `weekly` / `lastweek` | ★ 报表(公共参数 `--source cache 或 zentao`;stdout JSON:text/file/pendingTasks/dashboardUrl/autoRefreshed) | HTML 落盘 |
 | `learn` | 学习仓库→项目映射 | — |
 | `mappings` | 查看/维护映射缓存(列表/新增/修改/删除,等同 /mappings skill) | 映射表 |
 

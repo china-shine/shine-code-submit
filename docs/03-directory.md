@@ -1,5 +1,7 @@
 # 03 目录结构导览
 
+[← 手册索引](README.md)
+
 ```
 livesetting/
 ├─ docs/                      # 本开发手册
@@ -9,7 +11,7 @@ livesetting/
 │  ├─ report/                 #   核心:/report + 脚本目录
 │  │  └─ scripts/
 │  │     ├─ zentao.ts         #   ★ 命令集入口(check/plan/note/render/commit/refresh/
-│  │     │                    #     daily/weekly/lastweek/auto/submit/... 约 20 个命令)
+│  │     │                    #     daily/weekly/lastweek/auto/mappings/... 共 23 个命令)
 │  │     └─ lib/              #   shared.ts(路径+helpers)/ client.ts(禅道 REST+缓存层)/
 │  │                          #   transcript.ts(collect)/ report.ts(报表渲染)
 │  │     └─ __tests__/        #   bun:test 单测(plan/commit/mark/client)+ 子进程 runner

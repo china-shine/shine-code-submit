@@ -1,5 +1,7 @@
 # 04 Hook 子系统(src/hook/)
 
+[← 手册索引](README.md)
+
 ## 职责
 
 Claude Code 生命周期的**轻量转发器**:stdin 读事件 → POST 给 daemon。自身不做业务,daemon 不在时自动拉起(ensureDaemon)。入口 `src/hook/main.ts`,由 `hooks/hooks.json` 声明(`node ${CLAUDE_PLUGIN_ROOT}/bin/launcher.cjs <事件>`)。

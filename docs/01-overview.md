@@ -1,5 +1,7 @@
 # 01 项目概览
 
+[← 手册索引](README.md)
+
 shine-worklog(原名 shine-code-submit,1.3.0 合并 ZenPilot 更名)是一套 **Claude Code 工时自动填报与 AI 效能统计系统**。
 
 ## 它解决什么问题

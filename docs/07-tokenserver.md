@@ -1,5 +1,7 @@
 # 07 Tokenserver 子系统(tokenserver/)
 
+[← 手册索引](README.md)
+
 独立部署的数据汇聚服务 + AI 效能平台。生产为 linux-x64 单文件二进制(`scripts/build.ts` 打包,95MB 内含 UI),开发模式 `bun run tokenserver/src/main.ts`(数据落 `tokenserver/data/`,gitignored)。
 
 ## 架构
