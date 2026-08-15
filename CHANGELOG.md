@@ -2,6 +2,14 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.45 — 2026-08-15
+
+提交后自动刷缓存 + 报表 staleCache 检测,根除「日报/周报缺刚提交的工时」。
+
+### 变更
+- **commit 成功后自动刷新禅道缓存**:detached spawn `refresh`(不阻塞提交返回,原子写+in-flight 锁保证并发安全)——缓存 efforts 立即含刚提交的笔,daily/weekly cache 源不再"少一笔"(08-15 两次踩坑的根因)。
+- **daily/weekly cache 源输出 staleCache**:缓存 fetchedAt 旧于区间内最后一笔提交流水时,JSON 附 `staleCache: true` + staleHint,AI 据此建议 refresh 重跑(手动在禅道页面录入等自身提交无法覆盖的场景兜底)。
+
 ## 1.3.44 — 2026-08-15
 
 三路代码审查集中修复:工时增量水位、禅道提交文案保护、上报可靠性、AI 占比口径。
