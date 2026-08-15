@@ -16,7 +16,6 @@
  * 模块拆分:常量/helper → ./lib/shared;禅道客户端+缓存 → ./lib/client;
  *   会话采集+transcript → ./lib/transcript;日报/周报 → ./lib/report。本文件只留命令实现 + 入口分发。 */
 import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
-import { spawn } from "node:child_process";
 import * as path from "node:path";
 import { Args, die, loadJSON, writeJSON, roundPy, todayISO, nowISOSeconds, minutesSinceISO, hoursFromMinutes, fmtHours, isObj, loadConfig, loadMarkSetting, applyMark, requireStr, requireInt, summaryPathFor, CONFIG_PATH, CACHE_PATH, MAPPINGS_PATH, SETTINGS_PATH, SESSIONS_PATH, SUBMITTED_PATH, PLAN_PATH, PROJECT_DIR, PROJECT_CWD, SUBMITTED_LOG_DIR, COMMIT_COOLDOWN_MINUTES } from "./lib/shared";
 import { Client, getCache, getCacheLocal } from "./lib/client";
@@ -577,16 +576,8 @@ export async function cmdCommit(client: Client, opts: { dryRun?: boolean; amend?
         day._meta = { lastCommitAt: nowISOSeconds(), lastCommit: entries };
       }
       writeJSON(SUBMITTED_PATH, log);
-      // 提交成功后异步刷新禅道缓存:缓存里的 efforts 不含刚提交的这笔,daily/weekly cache 源会"少一笔"
-      // (08-15 两次踩坑)。node:child_process detached spawn(Bun.spawn 无 detached 选项,
-      // unref+ignore 在 Windows 上父进程退出会把子进程带掉,10-54 探针实测);detached+unref
-      // 子进程独立进程组,父进程(commit)秒回不受影响;writeJSON 原子写,与 daemon 刷新并发安全。
-      try {
-        const self = process.argv[1];
-        if (self) {
-          spawn(process.execPath, ["run", self, "refresh"], { detached: true, stdio: "ignore", windowsHide: true }).unref();
-        }
-      } catch { /* 刷新失败无碍:缓存按 TTL/手动刷新兜底 */ }
+      // 注:不做「提交后自动刷缓存」——改为报表侧按需刷新(report.ts cacheStaleVsSubmissions:
+      // daily/weekly 发现缓存旧于最后一笔提交时同步先刷新再读),commit 保持纯净,零跨进程坑。
     }
   }
   return {

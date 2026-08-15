@@ -407,7 +407,7 @@ export function reportFilename(from: string, to: string, realname: string, kind?
   return daily ? `日报-${from}-${who}.html` : `周报-${from}~${to}-${who}.html`;
 }
 
-/** 缓存旧于区间内最后一笔提交 → true(提示 AI 建议刷新重跑)。
+/** 缓存旧于区间内最后一笔提交 → true(报表侧据此先自动刷新再读)。
  *  比 cache.fetchedAt 与 submitted/<date>.jsonl 末行 ts(同 ISO 无时区格式,字符串可比)。
  *  仅检测自己工具的提交(手动在禅道页面录入的无法感知,靠实时源)。 */
 function cacheStaleVsSubmissions(from: string, to: string): boolean {
@@ -433,12 +433,18 @@ function cacheStaleVsSubmissions(from: string, to: string): boolean {
 
 /** 生成日报/周报 HTML 并落盘到 DATA_DIR/reports/(daemon 可稳定访问,dashboard 日报/周报模块查看),返回文件路径与文本摘要。 */
 export async function writeReport(client: Client, cfg: Record<string, any>, from: string, to: string, kind?: "daily" | "weekly", source: "zentao" | "cache" = "zentao") {
+  // cache 源且缓存旧于区间内最后一笔提交 → 先同步刷新再读(提交后的笔立即进缓存,报表不缺数)。
+  // 替代原「commit 后 detached spawn 刷新」方案——Windows 跨进程坑多(10-15 三次迭代:
+  // unref 拖慢/ignore stdio 子进程被杀),同进程同步刷新零此类问题,代价仅 stale 时报表多几秒。
+  let autoRefreshed = false;
+  if (source === "cache" && cacheStaleVsSubmissions(from, to)) {
+    await getCache(client, cfg, true);
+    autoRefreshed = true;
+  }
   const data = await gatherReport(client, cfg, from, to, kind, source);
   const html = renderReportHtml(data);
   const dir = path.join(DATA_DIR, "reports");
   const file = path.join(dir, reportFilename(from, to, data.realname, kind));
   writeText(file, html);
-  // cache 源且缓存旧于区间内最后一笔提交 → 输出 staleCache 提示(AI 据此建议 refresh 重跑)
-  const staleCache = source === "cache" && cacheStaleVsSubmissions(from, to);
-  return { ok: true, file, title: data.title, empty: data.dates.length === 0, text: renderReportText(data), pendingTasks: data.pendingTasks, dashboardUrl: dashboardUrl(), ...(staleCache ? { staleCache: true, staleHint: "缓存旧于最后一笔提交,刚提交的工时可能缺失;建议 refresh 后重跑" } : {}) };
+  return { ok: true, file, title: data.title, empty: data.dates.length === 0, text: renderReportText(data), pendingTasks: data.pendingTasks, dashboardUrl: dashboardUrl(), ...(autoRefreshed ? { autoRefreshed: true } : {}) };
 }
