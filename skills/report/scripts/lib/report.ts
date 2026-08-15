@@ -1,8 +1,8 @@
 /** 日报 / 周报:从禅道 efforts 汇总提交记录,渲染自包含 HTML(内联 CSS)落盘到 DATA_DIR/reports/。
  *  纯渲染层:gatherReport 装配数据 → renderReportHtml/Text 渲染 → writeReport 落盘。 */
-import { readdirSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import * as path from "node:path";
-import { esc, writeText, loadJSON, isObj, pad2, DATA_DIR, ZENPILOT_HOME, EFFORTS_DIR, loadMarkSetting, isAiWork, dashboardUrl } from "./shared";
+import { esc, writeText, loadJSON, isObj, pad2, DATA_DIR, ZENPILOT_HOME, EFFORTS_DIR, loadMarkSetting, isAiWork, dashboardUrl, CACHE_PATH, SUBMITTED_LOG_DIR } from "./shared";
 import { getCache, type Client } from "./client";
 
 export function weekStart(): string {
@@ -407,6 +407,30 @@ export function reportFilename(from: string, to: string, realname: string, kind?
   return daily ? `日报-${from}-${who}.html` : `周报-${from}~${to}-${who}.html`;
 }
 
+/** 缓存旧于区间内最后一笔提交 → true(提示 AI 建议刷新重跑)。
+ *  比 cache.fetchedAt 与 submitted/<date>.jsonl 末行 ts(同 ISO 无时区格式,字符串可比)。
+ *  仅检测自己工具的提交(手动在禅道页面录入的无法感知,靠实时源)。 */
+function cacheStaleVsSubmissions(from: string, to: string): boolean {
+  try {
+    const cache = loadJSON<any>(CACHE_PATH, null);
+    if (!cache?.fetchedAt) return false;
+    let lastTs: string | null = null;
+    for (let d = from; d <= to; ) { // 区间内逐日找最后一笔流水(文件按日,末行即最新)
+      try {
+        const lines = readFileSync(path.join(SUBMITTED_LOG_DIR, `${d}.jsonl`), "utf8").trimEnd().split("\n");
+        const ts = lines.length ? (JSON.parse(lines[lines.length - 1])?.ts ?? null) : null;
+        if (typeof ts === "string" && ts > (lastTs ?? "")) lastTs = ts;
+      } catch { /* 当日无流水文件 */ }
+      const dt = new Date(d + "T00:00:00");
+      dt.setDate(dt.getDate() + 1);
+      d = `${dt.getFullYear()}-${pad2(dt.getMonth() + 1)}-${pad2(dt.getDate())}`;
+    }
+    return lastTs !== null && cache.fetchedAt < lastTs;
+  } catch {
+    return false;
+  }
+}
+
 /** 生成日报/周报 HTML 并落盘到 DATA_DIR/reports/(daemon 可稳定访问,dashboard 日报/周报模块查看),返回文件路径与文本摘要。 */
 export async function writeReport(client: Client, cfg: Record<string, any>, from: string, to: string, kind?: "daily" | "weekly", source: "zentao" | "cache" = "zentao") {
   const data = await gatherReport(client, cfg, from, to, kind, source);
@@ -414,5 +438,7 @@ export async function writeReport(client: Client, cfg: Record<string, any>, from
   const dir = path.join(DATA_DIR, "reports");
   const file = path.join(dir, reportFilename(from, to, data.realname, kind));
   writeText(file, html);
-  return { ok: true, file, title: data.title, empty: data.dates.length === 0, text: renderReportText(data), pendingTasks: data.pendingTasks, dashboardUrl: dashboardUrl() };
+  // cache 源且缓存旧于区间内最后一笔提交 → 输出 staleCache 提示(AI 据此建议 refresh 重跑)
+  const staleCache = source === "cache" && cacheStaleVsSubmissions(from, to);
+  return { ok: true, file, title: data.title, empty: data.dates.length === 0, text: renderReportText(data), pendingTasks: data.pendingTasks, dashboardUrl: dashboardUrl(), ...(staleCache ? { staleCache: true, staleHint: "缓存旧于最后一笔提交,刚提交的工时可能缺失;建议 refresh 后重跑" } : {}) };
 }

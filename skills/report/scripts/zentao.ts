@@ -576,6 +576,16 @@ export async function cmdCommit(client: Client, opts: { dryRun?: boolean; amend?
         day._meta = { lastCommitAt: nowISOSeconds(), lastCommit: entries };
       }
       writeJSON(SUBMITTED_PATH, log);
+      // 提交成功后异步刷新禅道缓存:缓存里的 efforts 不含刚提交的这笔,daily/weekly cache 源会"少一笔"
+      // (08-15 两次踩坑)。detached spawn 自身跑 refresh,不阻塞 commit 返回;writeJSON 原子写,
+      // 与 daemon 侧刷新并发安全(最坏互相覆盖,内容等价)。
+      try {
+        const self = process.argv[1];
+        if (self) {
+          const p = Bun.spawn({ cmd: [process.execPath, "run", self, "refresh"], stdout: "ignore", stderr: "ignore", windowsHide: true });
+          p.exited.then(() => {}, () => {}); // 挂个空回调防 unhandledRejection,不 await
+        }
+      } catch { /* 刷新失败无碍:缓存按 TTL/手动刷新兜底 */ }
     }
   }
   return {
