@@ -14,7 +14,8 @@
 7. [09-api.md](09-api.md) — HTTP API 参考
 8. [14-env-and-config.md](14-env-and-config.md) — 环境变量与配置清单
 9. [11-build-release.md](11-build-release.md) — 构建、测试、发版、部署
-10. [12-runbook.md](12-runbook.md) — 运维 FAQ 与交接清单
+10. [15-install-troubleshooting.md](15-install-troubleshooting.md) — **安装部署与问题排查**(分 OS 目录位置、排查决策树;装机/运维必读)
+11. [12-runbook.md](12-runbook.md) — 运维 FAQ 与交接清单
 
 ## 仓库既有专题文档(本手册之外)
 
