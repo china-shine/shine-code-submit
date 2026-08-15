@@ -364,59 +364,90 @@ function readConfig(): { aiStatsHosts?: string[] } {
   }
 }
 
+/** 从 git remote URL 提取 host(AI 占比 host 白名单等值比较用):
+ *  https://host/...、ssh://git@host:22/...、git@host:owner/repo;解析失败返回 null。
+ *  替代原先的 LIKE '%host%' 子串匹配——那会把配置 github.com 误命中 my-github.company.cn
+ *  或 evil.com/github.com/x,且未转义 LIKE 通配符(_ 匹配任意字符)。 */
+function extractGitHost(remote: string | null | undefined): string | null {
+  if (!remote) return null;
+  const m = /^(?:ssh|https?):\/\/(?:[^@/@]+@)?([^\/:]+)(?::\d+)?[\/]/.exec(remote);
+  if (m?.[1]) return m[1].toLowerCase();
+  const s = /^git@([^:]+):/.exec(remote);
+  return s?.[1] ? s[1].toLowerCase() : null;
+}
+
+/** host 白名单命中:提取 remote 的 host 后等值比较(大小写不敏感);白名单空 = 不过滤。 */
+function hostAllowed(remote: string | null | undefined, hosts: string[]): boolean {
+  if (hosts.length === 0) return true;
+  const h = extractGitHost(remote);
+  return h !== null && hosts.some((x) => x.trim().toLowerCase() === h);
+}
+
+/** projects 表 (gitUser\0cwd)→gitRemote 映射(host 过滤查表用)。 */
+function projectRemoteMap(): Map<string, string | null> {
+  const rows = db.prepare("SELECT gitUser, cwd, gitRemote FROM projects").all() as Array<{
+    gitUser: string;
+    cwd: string;
+    gitRemote: string | null;
+  }>;
+  const m = new Map<string, string | null>();
+  for (const r of rows) m.set(r.gitUser + "\0" + r.cwd, r.gitRemote ?? null);
+  return m;
+}
+
 /** 查 from..to + members 过滤的 git_changes(commit 代码变化行,AI 占比分母;与 querySessions 同过滤口径)。
- *  host 白名单非空时 JOIN projects,只算 gitRemote 命中 host 的 commit(NULL gitRemote 排除)。*/
+ *  host 白名单非空时,按 projects.gitRemote 提取 host 等值过滤(无 remote/解析失败/不命中 → 排除)。*/
 function queryGitChanges(opts: FilterOpts): GitChangeRow[] {
   const hosts = readConfig().aiStatsHosts ?? [];
   const params: (number | string)[] = [];
   let sql =
     "SELECT g.ts AS ts, g.gitUser AS gitUser, g.cwd AS cwd, g.added AS added, g.deleted AS deleted, g.aiAdded AS aiAdded, g.aiDeleted AS aiDeleted FROM git_changes g";
-  if (hosts.length > 0) sql += " JOIN projects p ON p.gitUser = g.gitUser AND p.cwd = g.cwd";
   sql += " WHERE g.ts >= ? AND g.ts <= ?";
   params.push(opts.from, opts.to);
   if (opts.members.length > 0) {
     sql += ` AND g.gitUser IN (${opts.members.map(() => "?").join(",")})`;
     params.push(...opts.members);
   }
+  let rows = db.prepare(sql).all(...params) as GitChangeRow[];
   if (hosts.length > 0) {
-    sql += ` AND p.gitRemote IS NOT NULL AND (${hosts.map(() => "p.gitRemote LIKE ?").join(" OR ")})`;
-    params.push(...hosts.map((h) => `%${h}%`));
+    const remotes = projectRemoteMap();
+    rows = rows.filter((g) => hostAllowed(remotes.get(g.gitUser + "\0" + g.cwd), hosts));
   }
-  return db.prepare(sql).all(...params) as GitChangeRow[];
+  return rows;
 }
 
-/** AI 占比「分母构成」:按 cwd + 按 aiAdded 有无,拆分 git_changes 的分母(added+deleted)。
- *  过滤口径同 queryGitChanges(from/to/members);member(单成员,成员详情页用)优先于 members。
- *  让 dashboard 看清分母里有多少真实 AI 项目、多少是无 transcript 覆盖(aiAdded=0)的 commit。 */
+/** AI 占比「分母构成」:按 cwd + 按有无 AI 覆盖,拆分 git_changes 的分母(added+deleted)。
+ *  过滤口径同 queryGitChanges(from/to/members/host);member(单成员,成员详情页用)优先于 members。
+ *  让 dashboard 看清分母里有多少真实 AI 项目、多少是无 transcript 覆盖的 commit——
+ *  原实现 base 里固定 AND aiAdded>0,no-ai 桶是死分支永远为空;现 JS 聚合含全部 commit。 */
 export function getDenominatorBreakdown(opts: FilterOpts & { member?: string }): {
   byCwd: Array<{ cwd: string; denom: number; ai: number; commits: number }>;
   byAi: Array<{ bucket: "ai" | "no-ai"; denom: number; ai: number; commits: number }>;
   total: { denom: number; ai: number; commits: number };
 } {
-  const hosts = readConfig().aiStatsHosts ?? [];
-  const params: (number | string)[] = [opts.from, opts.to];
-  let memberClause = "";
-  if (opts.member) {
-    memberClause = " AND g.gitUser = ?";
-    params.push(opts.member);
-  } else if (opts.members.length > 0) {
-    memberClause = ` AND g.gitUser IN (${opts.members.map(() => "?").join(",")})`;
-    params.push(...opts.members);
+  const rows = queryGitChanges(opts).filter((g) => (opts.member ? g.gitUser === opts.member : true));
+  const byCwdMap = new Map<string, { cwd: string; denom: number; ai: number; commits: number }>();
+  const aiB = { denom: 0, ai: 0, commits: 0 }; // 有 AI 覆盖(aiAdded/aiDeleted 任一 >0)
+  const noB = { denom: 0, ai: 0, commits: 0 }; // 无覆盖(纯手写 commit)
+  for (const g of rows) {
+    const denom = g.added + g.deleted;
+    const ai = g.aiAdded + g.aiDeleted;
+    const hasAi = g.aiAdded > 0 || g.aiDeleted > 0;
+    const b = hasAi ? aiB : noB;
+    b.denom += denom;
+    b.ai += ai;
+    b.commits += 1;
+    const c = byCwdMap.get(g.cwd) ?? { cwd: g.cwd, denom: 0, ai: 0, commits: 0 };
+    c.denom += denom;
+    c.ai += ai;
+    c.commits += 1;
+    byCwdMap.set(g.cwd, c);
   }
-  let joinClause = "";
-  let hostClause = "";
-  if (hosts.length > 0) {
-    joinClause = " JOIN projects p ON p.gitUser = g.gitUser AND p.cwd = g.cwd";
-    hostClause = ` AND p.gitRemote IS NOT NULL AND (${hosts.map(() => "p.gitRemote LIKE ?").join(" OR ")})`;
-    params.push(...hosts.map((h) => `%${h}%`));
-  }
-  const base = `FROM git_changes g${joinClause} WHERE g.ts >= ? AND g.ts <= ?${memberClause} AND g.aiAdded > 0${hostClause}`;
-  const byCwd = db
-    .prepare(`SELECT g.cwd AS cwd, SUM(g.added+g.deleted) AS denom, SUM(g.aiAdded + g.aiDeleted) AS ai, COUNT(*) AS commits ${base} GROUP BY g.cwd ORDER BY denom DESC`)
-    .all(...params) as Array<{ cwd: string; denom: number; ai: number; commits: number }>;
-  const byAi = db
-    .prepare(`SELECT CASE WHEN g.aiAdded>0 THEN 'ai' ELSE 'no-ai' END AS bucket, SUM(g.added+g.deleted) AS denom, SUM(g.aiAdded + g.aiDeleted) AS ai, COUNT(*) AS commits ${base} GROUP BY bucket`)
-    .all(...params) as Array<{ bucket: "ai" | "no-ai"; denom: number; ai: number; commits: number }>;
+  const byCwd = [...byCwdMap.values()].sort((a, b) => b.denom - a.denom);
+  const byAi: Array<{ bucket: "ai" | "no-ai"; denom: number; ai: number; commits: number }> = [
+    { bucket: "ai", ...aiB },
+    { bucket: "no-ai", ...noB },
+  ];
   const total = {
     denom: byCwd.reduce((s, r) => s + r.denom, 0),
     ai: byCwd.reduce((s, r) => s + r.ai, 0),
@@ -635,7 +666,7 @@ export function getStats(opts: FilterOpts & { granularity: Granularity }): Stats
 
   // git_changes 分母累加(全局 + 按 member + 按日,与 sessions 同 from/to/members 口径)
   for (const g of gitRows) {
-    if (g.aiAdded <= 0) continue; // AI 占比只统计有 transcript 覆盖(aiAdded>0)的 commit;无覆盖的不进分母,避免拉低占比
+    if (g.aiAdded <= 0 && g.aiDeleted <= 0) continue; // 只统计有 transcript 覆盖(aiAdded/aiDeleted 任一>0)的 commit;无覆盖不进分母(避免拉低占比)。纯删除型 AI commit(aiAdded=0,aiDeleted>0)不再被整条丢弃——其 AI 删除行此前既不进分子也不进分母,占比系统性低估
     tGitAdded += g.added;
     tGitDeleted += g.deleted;
     tGitAiAdded += g.aiAdded;
@@ -826,7 +857,7 @@ export function getMember(gitUser: string, opts: { from: number; to: number; gra
     dailyMap.set(dk.key, ds);
   }
   for (const g of gitRows) {
-    if (g.aiAdded <= 0) continue; // AI 占比只统计有 transcript 覆盖(aiAdded>0)的 commit;无覆盖的不进分母,避免拉低占比
+    if (g.aiAdded <= 0 && g.aiDeleted <= 0) continue; // 只统计有 transcript 覆盖(aiAdded/aiDeleted 任一>0)的 commit;无覆盖不进分母(避免拉低占比)。纯删除型 AI commit(aiAdded=0,aiDeleted>0)不再被整条丢弃——其 AI 删除行此前既不进分子也不进分母,占比系统性低估
     tGitAdded += g.added;
     tGitDeleted += g.deleted;
     tGitAiAdded += g.aiAdded;
