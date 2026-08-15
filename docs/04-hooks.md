@@ -1,0 +1,32 @@
+# 04 Hook 子系统(src/hook/)
+
+## 职责
+
+Claude Code 生命周期的**轻量转发器**:stdin 读事件 → POST 给 daemon。自身不做业务,daemon 不在时自动拉起(ensureDaemon)。入口 `src/hook/main.ts`,由 `hooks/hooks.json` 声明(`node ${CLAUDE_PLUGIN_ROOT}/bin/launcher.cjs <事件>`)。
+
+## 事件流
+
+```
+Claude Code 触发 hook(launcher.cjs 选平台二进制或 bun run 源码)
+ → main.ts 读 stdin(JSON:session_id/cwd/payload)
+ → postOnce:POST /api/hook/<type>,Authorization: Bearer <pid 文件 token>
+   ├─ 成功 → 返回(顺带读响应 version 做 hook/daemon 版本同步判断)
+   └─ 失败(含 4xx/5xx,不只网络异常)→ ensureDaemon(探活/拉起)
+       → 重读 token 重试一次;仍失败 → 事件落 spool 目录(daemon 起来后 1s 回捞)
+```
+
+关键点:
+- **postOnce 非 2xx 也算失败**(1.3.44 修):daemon 换 token 后旧 hook 得 401,曾被视为成功静默丢实时性——现在会走重试链路(`main.ts:207`);
+- **版本同步**(`forward`,`main.ts:175`):仅当 **hook 版本 > daemon 版本**时 stopDaemon+spawnDaemon(把 daemon 升到 hook 版);反方向绝不动(会用旧 hook 降级新 daemon);
+- **Stop hook fork**:事件为 Stop 时 detached fork `zentao.ts collect`(把该会话当日数据写 sessions.json 供 /report),不阻塞;
+- **SubagentStop 也触发 collect**(并行 subagent 各自 spawn,写 JSON 为原子写)。
+
+## spool 机制
+
+POST 失败且重试失败 → 事件原样落 `DATA_DIR/spool/` 目录;daemon 的 SpoolConsumer 每 1s 扫描回捞。热路径(500ms 超时)永不阻塞 Claude Code。
+
+## 修改注意
+
+- hook 是用户机上**最先跑起来**的代码,必须零依赖、秒退;
+- launcher.cjs 按平台选 `bin/<plat>-<arch>/hook.exe`,没有二进制则 `bun run src/hook/main.ts`(ensureBun 保证 bun 存在);
+- 改 hook 后要重启 Claude Code 才生效(hook 按会话加载)。
