@@ -12,7 +12,7 @@
 │   │   daemon(36666, src/)                                │
 │   │    ├─ events.sqlite(事件与会话,transcript 增量挖掘)   │
 │   │    ├─ 禅道缓存 zenpilot/cache.json + efforts/*.json    │
-│   │    │   (20 天滚动窗口,TTL 30min 自动刷 + in-flight 锁) │
+│   │    │   (20 天滚动窗口,TTL zentaoCacheTtlMin 默认 300min 自动刷 + in-flight 锁) │
 │   │    ├─ dashboard UI(React,/ui?t=<token>)              │
 │   │    └─ 上报循环(10min)─ gzip+增量 ──▶ tokenserver       │
 │   │                                                      │
@@ -65,7 +65,7 @@ getCache(refresh?):项目(进行中+近20天有编辑)→ 执行(doing+近20天�
  → 任务(未完成全量+近20天完成)→ efforts(只留近20天记录)
  → cache.json(元数据)+ efforts/<taskId>.json(按任务拆分)
  → 修剪:窗口外任务文件删除、过期记录过滤、taskDetails 同窗
-触发时机:①手动 /refresh ②daemon TTL(30min) ③报表 cache 源检测到
+触发时机:①手动 /refresh ②daemon TTL(zentaoCacheTtlMin,默认 300min) ③报表 cache 源检测到
  缓存旧于最后一笔提交时自动先刷新再读(cacheStaleVsSubmissions)
 ```
 

@@ -22,7 +22,7 @@ livesetting/
 │  │  ├─ store.ts             #   events.sqlite 三表(events/transcript_files/transcript_sessions)
 │  │  ├─ claude-scan.ts       #   transcript 目录发现与收集(纯工具)
 │  │  ├─ transcript-consumer.ts #  核心:5s tick 增量读 jsonl 尾部→重算会话(工时/Token/行)
-│  │  ├─ transcript-watcher.ts#   fs.watch 只标 SQLite dirty(轻量)
+│  │  ├─ watcher.ts             #   fs.watch 只标 SQLite dirty(轻量,250ms debounce)
 │  │  ├─ spool-consumer.ts    #   hook 漏发事件回捞(1s)
 │  │  ├─ aggregate.ts         #   报表/列表共享聚合(cwd 分组 normCwd/token 汇总)
 │  │  ├─ git.ts               #   git log 拉取(commits/AI commit 识别,quotepath=false)

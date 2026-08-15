@@ -37,12 +37,12 @@ WAL 模式;查询 `store.query({cwd, sessionId, type, since, limit≤2000, offse
 
 ## HTTP/WS 服务(server.ts)
 
-- 鉴权:`Authorization: Bearer <token>`(token 比较恒时);WS 用 `?t=`;
+- 鉴权:`Authorization: Bearer <token>`(token 字符串比较);WS 用 `?t=`;
 - `/api/health`(version 运行时读 package.json)、`/api/sessions`(L1 项目/L2 项目会话)、`/api/report`(自构建报表)、`/api/hook/<type>`、`/api/settings` GET/PUT、`/api/zentao-cache` GET + `/refresh` POST(in-flight 锁)、`/api/report/upload` POST(full=1 全量)、`/ui`(dashboard 静态资源)、`/api/ws`(实时事件推送)——完整清单见 09-api;
 - **三个后台 tick**(每 60s tick 节流,间隔实时读 settings):
   - 自动上报:reportIntervalMin(默认 10min)→ uploadReport(buildReport → gzip POST tokenserver;**失败不推进水位**;24h 强制全量校准);
   - 自动更新:autoUpdateIntervalMin(默认 60min)→ 查 npm latest → spawn detached `npx shine-worklog@latest install`(Windows 走 wscript VBS 静默);
-  - 禅道缓存:zentaoCacheTtlMin(默认 30min)→ spawn `zentao.ts refresh`(in-flight 锁防并发)。
+  - 禅道缓存:zentaoCacheTtlMin(默认 300min,本机常配 30)→ spawn `zentao.ts refresh`(in-flight 锁防并发)。
 
 ## 聚合与 git 模块
 

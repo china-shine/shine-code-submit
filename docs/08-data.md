@@ -6,12 +6,14 @@
 
 ```
 DATA_DIR/
-├─ daemon.pid                 # {pid, token}:daemon 进程标识 + Bearer 鉴权 token
+├─ daemon.pid                 # {pid, port, token, startedAt}:进程标识 + Bearer 鉴权
+├─ daemon.token               # 持久 token(重启/升级复用,dashboard 链接不失效)
 ├─ settings.json              # 行为开关:reportUrl/reportIntervalMin/autoUpdate/
 │                             #   zentaoCacheTtlMin/aiSubmitMark 等(与 config.json 分离)
-├─ events.sqlite              # daemon 主库:hook 事件 + transcript 会话(见 05-daemon)
+├─ db/events.sqlite           # daemon 主库:hook 事件 + transcript 会话(见 05-daemon)
+├─ log/daemon.log             # 运行日志(5MB 轮换)
+├─ spool/                     # hook 发送失败的事件暂存(daemon 1s 回捞)
 ├─ reports/                   # 日报/周报 HTML(日报-YYYY-MM-DD-<姓名>.html,同日覆盖)
-├─ plugins 相关日志 daemon.log
 └─ zenpilot/                  # 工时链路数据(原 ZenPilot 目录统一迁入)
    ├─ config.json             # 禅道连接(url/account/password)—— /setup 写
    ├─ cache.json              # 禅道元数据缓存:{fetchedAt,projects[],tasks[](仅未完成),
@@ -30,7 +32,8 @@ DATA_DIR/
 ## tokenserver 数据(`tokenserver/data/tokens.db`,生产同构)
 
 ```
-sessions     (gitUser,sessionId PK 内容更新)  # 会话:Token 四项/activeMs/行数/标题
+sessions     (sessionId 单列 PK)             # 会话:Token 四项/activeMs/行数/标题
+                                              # (多机同名 sessionId 会互相覆盖,当前单人单机无碍)
 projects     (gitUser,cwd)                    # 项目名/gitRemote
 git_changes  (hash 全局 PK)                   # 每 commit:added/deleted/aiAdded/aiDeleted
                                               # ★hash 全局主键 → 同 commit 多 cwd 上报天然去重

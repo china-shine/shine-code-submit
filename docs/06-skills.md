@@ -17,7 +17,7 @@
 
 ## zentao.ts 命令参考(核心脚本)
 
-调用约定:**绝对路径 + 当前项目目录下执行**(靠 `process.cwd()` 识别项目);已 cd 加 `--cwd "$PWD"`。
+调用约定:**绝对路径 + 当前项目目录下执行**(靠 `process.cwd()` 识别项目);已 cd 加 `--cwd "$PWD"`。共 23 个命令(上表全量)。
 
 | 命令 | 作用 | 关键输出 |
 |---|---|---|
@@ -28,11 +28,15 @@
 | `create-task --execution --name --estimate --desc` | 建任务并指派自己 | 自动进缓存 |
 | `refresh` | 全量刷缓存(20 天窗口,进度走 stderr) | {fetchedAt,projects,tasks} |
 | `collect [--session]` | 从 daemon 拉当日会话写 sessions.json | 会话数 |
+| `config` | 写禅道连接配置(url/account/password) | — |
+| `mark` | AI 提交标识配置(开关/文案,等同 /mark skill) | — |
+| `efforts` | 查某任务工时记录 | 记录列表 |
 | `prepare` | 读 transcript 信号供 AI 归纳 | prompts/files/recent |
 | `plan [--source zentao]` | ★ 生成 plan.json(读 sessions+summary+submitted,防重+冷却预判) | items+cooldown |
 | `note --session --work --task` | ★ 写 summary(work+task+水位) | — |
 | `render` | ★ 工时草稿文本(逐条分行编号;有 pending/缺 work 会 die) | 草稿 |
-| `commit [--dry-run] [--amend]` | ★ 逐条提交禅道+写水位+流水镜像 | results+mappings |
+| `commit [--dry-run]` | ★ 逐条提交禅道+写水位+流水镜像 | results+mappings |
+| `amend` | 修正最后一次提交(禅道只能追加,补差额;独立命令) | — |
 | `submit --task --date --hours --work` | 手工单条提交(计划外修正) | — |
 | `auto [--dry-run]` | collect→plan→(全 resolved)commit 一键 | action 分支 |
 | `daily/weekly/lastweek --source cache\|zentao` | ★ 报表(stdout JSON:text/file/pendingTasks/dashboardUrl/autoRefreshed) | HTML 落盘 |

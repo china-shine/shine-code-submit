@@ -17,7 +17,7 @@ transcript 逐条消息 timestamp
 
 ## ② 汇报工时与水位防重
 
-- `hoursFromMinutes`:向上取 0.5h、最小 0.5h(roundPy 银行家舍入);
+- `hoursFromMinutes`:取整到 0.5h 粒度(roundPy 银行家舍入,非纯向上)、最小 0.5h;
 - **水位**:`submitted.json` 按 (date,session) 记 {tasks,hours,minutes,_meta.lastCommitAt};增量 = activeMinutes − rec.minutes(原始分钟);
 - **增量 note 过滤严格大于**(1.3.44 修):`notedActiveMinutes > submittedMin`——相等也算已提交(note 水位 123min vs 取整提交 120min 曾重复混入);
 - 阈值:增量 ≥15min 才补报;两次 commit 冷却 30min(amend 可豁免同会话);
