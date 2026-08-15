@@ -69,11 +69,31 @@ function serveDocs(): Response {
 }
 
 function DOCS_PAGE(body: string, toc: { id: string; text: string; depth: number }[]): string {
-  const tocNav = toc.map(t =>
-    t.depth === 2
-      ? `<a href="#${t.id}" class="lv2" title="${t.text}"><span>${t.text}</span></a>`
-      : `<a href="#${t.id}" class="lv3" title="${t.text}"><span>${t.text}</span></a>`
-  ).join("");
+  // 按 h2 分组生成可折叠目录:每个 h2 是一个组(可点击展开/收起其 h3 子项)
+  let tocNav = "";
+  let currentGroup = -1;
+  const groups: { h2: string; h3s: string[] }[] = [];
+  for (const t of toc) {
+    if (t.depth === 2) {
+      groups.push({ h2: t.text, h3s: [] });
+      currentGroup = groups.length - 1;
+    } else if (currentGroup >= 0) {
+      groups[currentGroup].h3s.push(t.text);
+    }
+  }
+  tocNav = groups.map((g, gi) => {
+    const h2 = toc.filter(t => t.depth === 2)[gi];
+    const subs = g.h3s.map((txt, si) => {
+      const h3 = toc.filter(t => t.depth === 3 && t.text === txt)[si] ?? toc.filter(t => t.depth === 3)[si];
+      if (!h3) return "";
+      return `<a href="#${h3.id}" class="lv3" title="${txt}"><span>${txt}</span></a>`;
+    }).join("");
+    return `<div class="toc-group">
+      <button class="toc-toggle" type="button" data-target="tg${gi}"><span class="arrow">▸</span><span>${g.h2}</span></button>
+      <div class="toc-children" id="tg${gi}" hidden>${subs}</div>
+    </div>`;
+  }).join("");
+
   return `<!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -99,15 +119,45 @@ ${DOCS_CSS}
 </div>
 <script>
 (function(){
-  var links = Array.prototype.slice.call(document.querySelectorAll("aside.toc a"));
+  // 折叠/展开:点击 h2 切换其子项显示;箭头旋转
+  document.querySelectorAll(".toc-toggle").forEach(function(btn){
+    btn.addEventListener("click", function(e){
+      e.preventDefault();
+      var children = document.getElementById(btn.dataset.target);
+      if (!children) return;
+      var isHidden = children.hidden;
+      children.hidden = !isHidden;
+      btn.querySelector(".arrow").textContent = isHidden ? "▾" : "▸";
+      btn.classList.toggle("open", isHidden);
+    });
+  });
+
+  // 子项点击后导航;同时高亮
+  var allLinks = document.querySelectorAll("aside.toc a");
   var byId = {};
-  links.forEach(function(a){ byId[a.getAttribute("href").slice(1)] = a; });
+  allLinks.forEach(function(a){ byId[a.getAttribute("href").slice(1)] = a; });
+  allLinks.forEach(function(a){
+    a.addEventListener("click", function(){
+      allLinks.forEach(function(x){ x.classList.remove("active"); });
+      a.classList.add("active");
+    });
+  });
+
+  // 滚动高亮:当前 h2/h3 所在的组自动展开 + 点亮
   var obs = new IntersectionObserver(function(entries){
     entries.forEach(function(en){
       if (en.isIntersecting) {
-        links.forEach(function(a){ a.classList.remove("active"); });
-        var a = byId[en.target.id];
-        if (a) a.classList.add("active");
+        allLinks.forEach(function(a){ a.classList.remove("active"); });
+        var link = byId[en.target.id];
+        if (link) {
+          link.classList.add("active");
+          var children = link.closest(".toc-children");
+          if (children && children.hidden) {
+            children.hidden = false;
+            var btn = children.previousElementSibling;
+            if (btn) { btn.querySelector(".arrow").textContent = "▾"; btn.classList.add("open"); }
+          }
+        }
       }
     });
   }, { rootMargin: "-10% 0px -80% 0px" });
@@ -142,20 +192,28 @@ body { margin: 0; font-family: Inter, -apple-system, "PingFang SC", "Microsoft Y
 .layout { display: flex; min-height: calc(100vh - 3rem); }
 
 /* 侧栏:同页面底色,右边框分隔;滚动条细化 */
-aside.toc { width: 15rem; flex-shrink: 0; padding: 1.25rem .625rem 2rem; position: sticky; top: 3rem; height: calc(100vh - 3rem); overflow-y: auto; border-right: 1px solid var(--border); scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+aside.toc { width: 15rem; flex-shrink: 0; padding: 1.25rem .5rem 2rem; position: sticky; top: 3rem; height: calc(100vh - 3rem); overflow-y: auto; border-right: 1px solid var(--border); scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
 aside.toc::-webkit-scrollbar { width: 3px; }
 aside.toc::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
 .toc-label { font-size: .6875rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--toc-fg); opacity: .6; padding: .25rem .75rem .5rem; }
 
-aside.toc a { display: flex; align-items: center; padding: .3125rem .75rem; font-size: .8125rem; color: var(--toc-fg); text-decoration: none; border-radius: 6px; transition: color .12s, background .12s; line-height: 1.45; white-space: nowrap; overflow: hidden; }
-aside.toc a span { overflow: hidden; text-overflow: ellipsis; }
-aside.toc a:hover { color: var(--toc-hover); background: var(--secondary); }
-aside.toc a.lv2 { font-weight: 600; margin-top: .5rem; font-size: .8125rem; }
-aside.toc a.lv3 { padding-left: 1.5rem; font-size: .7813rem; }
-aside.toc a.active { color: var(--accent); background: var(--toc-active-bg); font-weight: 600; }
-aside.toc a.active::before { content: ""; width: 3px; height: 1rem; background: var(--accent); border-radius: 2px; margin-right: .5rem; flex-shrink: 0; }
-aside.toc a.lv2:not(.active)::before { content: ""; width: 3px; height: 3px; background: var(--border); border-radius: 50%; margin-right: .5rem; flex-shrink: 0; }
+/* h2 折叠按钮:全宽,左对齐,箭头指示状态 */
+.toc-toggle { display: flex; align-items: center; gap: .375rem; width: 100%; padding: .3125rem .5rem; font-size: .8125rem; font-weight: 600; color: var(--toc-fg); background: none; border: 0; border-radius: 6px; cursor: pointer; text-align: left; white-space: nowrap; overflow: hidden; line-height: 1.45; }
+.toc-toggle span:last-child { overflow: hidden; text-overflow: ellipsis; }
+.toc-toggle:hover { color: var(--toc-hover); background: var(--secondary); }
+.toc-toggle .arrow { flex-shrink: 0; font-size: .6875rem; color: var(--toc-fg); opacity: .5; transition: transform .15s; width: .75rem; }
+.toc-toggle.open .arrow { transform: rotate(90deg); }
+.toc-toggle.open { color: var(--accent); }
+
+/* h3 子项容器 */
+.toc-children { }
+.toc-children a { display: flex; align-items: center; padding: .25rem .5rem .25rem 1.625rem; font-size: .7813rem; color: var(--toc-fg); text-decoration: none; white-space: nowrap; overflow: hidden; border-radius: 4px; transition: color .12s, background .12s; line-height: 1.45; }
+.toc-children a span { overflow: hidden; text-overflow: ellipsis; }
+.toc-children a:hover { color: var(--toc-hover); background: var(--secondary); }
+.toc-children a.active { color: var(--accent); background: var(--toc-active-bg); font-weight: 600; }
+
+.toc-group { margin-bottom: .125rem; }
 
 article { flex: 1; min-width: 0; padding: 1.75rem 2.5rem 4rem; }
 
