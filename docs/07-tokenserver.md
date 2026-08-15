@@ -28,7 +28,7 @@ React 19 + tailwind(打包时编译内联)+ react-day-picker。页面:成员列�
 
 ## 打包与部署
 
-```
+```text
 cd tokenserver && bun run scripts/build.ts
 # 0. tailwind css → 1. bundle ui → 2. 生成 src/ui-assets.ts(内联)→ 3. bun build --compile --target bun-linux-x64
 # 产物 bin/tokenserver-linux-x64(gitignored)

@@ -2,7 +2,7 @@
 
 [← 手册索引](README.md)
 
-```
+```text
 livesetting/
 ├─ docs/                      # 本开发手册
 ├─ .claude-plugin/            # Claude Code 插件清单(marketplace.json/plugin.json,版本号在此!)

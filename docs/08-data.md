@@ -6,7 +6,7 @@
 
 > 源码:`src/shared/paths.ts` 与 `skills/report/scripts/lib/shared.ts`(两处内联复刻,改动需同步)
 
-```
+```text
 DATA_DIR/
 ├─ daemon.pid                 # {pid, port, token, startedAt}:进程标识 + Bearer 鉴权
 ├─ daemon.token               # 持久 token(重启/升级复用,dashboard 链接不失效)
@@ -33,7 +33,7 @@ DATA_DIR/
 
 ## tokenserver 数据(`tokenserver/data/tokens.db`,生产同构)
 
-```
+```text
 sessions     (sessionId 单列 PK)             # 会话:Token 四项/activeMs/行数/标题
                                               # (多机同名 sessionId 会互相覆盖,当前单人单机无碍)
 projects     (gitUser,cwd)                    # 项目名/gitRemote

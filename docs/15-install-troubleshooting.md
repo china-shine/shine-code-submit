@@ -53,7 +53,7 @@ scp bin/tokenserver-linux-x64 <生产机>:~/tokenserver
 
 三个 OS 结构相同(字段级明细见 [08-data](08-data.md)):
 
-```
+```text
 DATA_DIR/
 ├─ daemon.pid            # 排障第一入口:{pid, port, token} —— 401/token 问题看这里
 ├─ daemon.token          # 持久 token(重启/升级不变)

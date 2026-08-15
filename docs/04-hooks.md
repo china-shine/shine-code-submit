@@ -18,7 +18,7 @@ hooks.json 注册 **7 个事件**,统一走 `node ${CLAUDE_PLUGIN_ROOT}/bin/laun
 | Stop / SubagentStop | detached fork `zentao.ts collect`(把当日会话写 sessions.json 供 /report) |
 | PreCompact / SessionEnd | 转发(事件留存) |
 
-```
+```text
 Claude Code 触发 hook(launcher.cjs 选平台二进制或 bun run 源码)
  → main.ts 读 stdin(JSON:session_id/cwd/payload)
  → postOnce:POST /api/hook/<type>,Authorization: Bearer <pid 文件 token>

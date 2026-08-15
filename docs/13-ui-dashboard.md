@@ -6,7 +6,7 @@ daemon 自带的本地控制台(http://<ip>:36666/ui?t=<token>),React 19 + TypeS
 
 ## 结构
 
-```
+```text
 ui/
 ├─ index.html + app.tsx        # 入口:token 从 ?t= 取存 sessionStorage 后清 URL(无 token 显示提示)
 ├─ components/

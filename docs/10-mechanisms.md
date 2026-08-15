@@ -30,7 +30,7 @@ flowchart LR
 
 ## ③ 禅道缓存 20 天滚动窗口(EFFORT_FRESH_DAYS=20,1.3.41)
 
-```
+```text
 项目:doing 且 left>0,或近 20 天有编辑
 执行:doing,或计划结束在窗口内(执行无 lastEditedDate,用 end 近似)
 任务:未完成(doing/wait)全量 + 近 20 天完成的(lastEditedDate)
