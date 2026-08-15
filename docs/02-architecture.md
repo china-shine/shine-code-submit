@@ -6,7 +6,9 @@
 ┌───────────────────── 用户机(每台) ─────────────────────┐
 │                                                          │
 │  Claude Code                                             │
-│   ├─ hooks(SessionStart/Stop/UserPromptSubmit/PostToolUse)│
+│   ├─ hooks(7 事件:SessionStart/UserPromptSubmit/        │
+│   │        PostToolUse/Stop/SubagentStop/PreCompact/     │
+│   │        SessionEnd)                                   │
 │   │        │ POST /api/hook/<type>(Bearer pid token)     │
 │   │        ▼                                              │
 │   │   daemon(36666, src/)                                │
@@ -42,7 +44,7 @@
 ```
 Claude 写 transcript jsonl(~/.claude/projects/<编码>/<sid>.jsonl)
  → hook 各事件 POST 到 daemon(落 events 表 + spool 兜底)
- → daemon watcher 标 dirty → consumer 2s tick 增量读 jsonl 尾部
+ → daemon watcher 标 dirty → consumer 5s tick 增量读 jsonl 尾部
  → 全量计算该会话:activeMs(gap-aware)、Token 四项、代码行(Edit/Write patch)
  → events.sqlite transcript_sessions 表(接口读 SQLite 秒回)
 ```
