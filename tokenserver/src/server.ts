@@ -71,8 +71,8 @@ function serveDocs(): Response {
 function DOCS_PAGE(body: string, toc: { id: string; text: string; depth: number }[]): string {
   const tocNav = toc.map(t =>
     t.depth === 2
-      ? `<a href="#${t.id}" class="lv2">${t.text}</a>`
-      : `<a href="#${t.id}" class="lv3">${t.text}</a>`
+      ? `<a href="#${t.id}" class="lv2" title="${t.text}"><span>${t.text}</span></a>`
+      : `<a href="#${t.id}" class="lv3" title="${t.text}"><span>${t.text}</span></a>`
   ).join("");
   return `<!DOCTYPE html>
 <html lang="zh">
@@ -148,7 +148,8 @@ aside.toc::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3
 
 .toc-label { font-size: .6875rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--toc-fg); opacity: .6; padding: .25rem .75rem .5rem; }
 
-aside.toc a { display: flex; align-items: center; padding: .3125rem .75rem; font-size: .8125rem; color: var(--toc-fg); text-decoration: none; border-radius: 6px; transition: color .12s, background .12s; line-height: 1.45; }
+aside.toc a { display: flex; align-items: center; padding: .3125rem .75rem; font-size: .8125rem; color: var(--toc-fg); text-decoration: none; border-radius: 6px; transition: color .12s, background .12s; line-height: 1.45; white-space: nowrap; overflow: hidden; }
+aside.toc a span { overflow: hidden; text-overflow: ellipsis; }
 aside.toc a:hover { color: var(--toc-hover); background: var(--secondary); }
 aside.toc a.lv2 { font-weight: 600; margin-top: .5rem; font-size: .8125rem; }
 aside.toc a.lv3 { padding-left: 1.5rem; font-size: .7813rem; }
