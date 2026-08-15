@@ -37,7 +37,9 @@ livesetting/
 │  │  ├─ register.ts          #     注册三处 JSON(marketplace/installed/settings)
 │  │  ├─ bun.ts               #     自动装 bun
 │  │  └─ migrate.ts           #     1.3.0 改名一次性迁移(旧 daemon/数据/插件清理)
-│  ├─ shared/                 #   三端共用:config(常量)/paths(目录)/pidfile/daemonctl/updater
+│  ├─ shared/                 #   三端共用九模块:config(常量)/paths(目录)/pidfile/daemonctl/
+│  │                          #   updater(自动升级)/datetime(日期工具)/id(eventId 派生)/
+│  │                          #   spool(事件暂存)/types(共享类型)
 │  └─ daemon/ui-assets.ts     #   dashboard 前端内联产物(build:ui 生成,勿手改)
 ├─ ui/                        # dashboard 前端源码(React 19,Bun.build 打包)
 │  ├─ app.tsx / index.html

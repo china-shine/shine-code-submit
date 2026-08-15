@@ -41,6 +41,7 @@
 | `auto [--dry-run]` | collect→plan→(全 resolved)commit 一键 | action 分支 |
 | `daily/weekly/lastweek --source cache\|zentao` | ★ 报表(stdout JSON:text/file/pendingTasks/dashboardUrl/autoRefreshed) | HTML 落盘 |
 | `learn` | 学习仓库→项目映射 | — |
+| `mappings` | 查看/维护映射缓存(列表/新增/修改/删除,等同 /mappings skill) | 映射表 |
 
 ★ = /report /daily /weekly 主链路。
 
