@@ -1,186 +1,53 @@
 #!/usr/bin/env bun
 // 把 数据说明.md 渲染成静态页 ui/.build/docs.html(供 /docs 路由下发)。
-// 不引入 markdown 依赖,内置一个只覆盖本文档语法(标题/表格/代码块/引用/列表/加粗/行内码/链接)的
-// 简易转换器;页面复用 /ui/style.css 的主题变量(明暗两套),侧栏目录风格对齐 dashboard Sidebar。
+// 用 marked(GFM)做完整 markdown 渲染(嵌套列表/表格/引用/链接等全语法),
+// 仅在 heading 渲染器上包一层:h1 跳过(与顶栏重复)、h2 开章节卡(收集目录)、
+// hr 丢弃(章节已是卡片);页面复用 /ui/style.css 的主题变量(明暗两套),
+// 侧栏目录风格对齐 dashboard Sidebar。
 // 改 数据说明.md 后重跑 bun run scripts/build-docs.ts(或 build-ui / build 全流程)。
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { Marked } from "marked";
 
 const TS_ROOT = join(import.meta.dir, "..");
 
-// ---------- markdown -> html(仅覆盖本文档用到的语法) ----------
+// ---------- markdown -> html(marked GFM + 章节卡/目录包装) ----------
 
-function esc(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-}
-
-/** 行内:行内码 → 加粗 → 链接(先转义,码内容不再吃后续替换)。 */
-function inline(s: string): string {
-  return esc(s)
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
-    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-    .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
-}
-
-function isTableSep(s: string): boolean {
-  return /^\|?\s*:?-{2,}[-\s:|]*\|?\s*$/.test(s.trim());
-}
-
-function splitRow(line: string): string[] {
-  return line
-    .trim()
-    .replace(/^\|/, "")
-    .replace(/\|$/, "")
-    .split("|")
-    .map((c) => c.trim());
-}
-
+/** 渲染:h2 前的内容包 lead 卡;每个 h2 开一张 <section id> 章节卡(目录收集);文末补闭合。 */
 export function markdownToHtml(md: string): { html: string; toc: { id: string; text: string }[] } {
-  const lines = md.split(/\r?\n/);
-  const out: string[] = [];
   const toc: { id: string; text: string }[] = [];
-  let i = 0;
-  let openSection = false; // 是否有未闭合的 <section>(h2 章节卡 / 开篇 lead 卡)
-
-  const closeSection = () => {
-    if (openSection) {
-      out.push("</section>");
-      openSection = false;
-    }
-  };
-
-  while (i < lines.length) {
-    const line = lines[i];
-    const t = line.trim();
-
-    if (!t) {
-      i++;
-      continue;
-    }
-
-    // 第一个 h2 之前的内容(文档引言)包成 lead 卡
-    if (!openSection) {
-      out.push(`<section class="lead">`);
-      openSection = true;
-    }
-
-    // 围栏代码块
-    if (t.startsWith("```")) {
-      const buf: string[] = [];
-      i++;
-      while (i < lines.length && !lines[i].trim().startsWith("```")) {
-        buf.push(lines[i]);
-        i++;
-      }
-      i++; // 跳过结尾 ```
-      out.push(`<pre><code>${esc(buf.join("\n"))}</code></pre>`);
-      continue;
-    }
-
-    // 标题:文档 h1 与页面顶栏重复,跳过;h2 开新章节卡(收集进目录)
-    const h = t.match(/^(#{1,6})\s+(.*)$/);
-    if (h) {
-      const level = h[1].length;
-      const text = h[2].trim();
-      if (level === 1) {
-        i++;
-        continue;
-      }
-      if (level === 2) {
-        closeSection();
-        const id = `sec-${toc.length}`;
-        toc.push({ id, text: text.replace(/[（(].*$/, "") });
-        out.push(`<section id="${id}"><h2>${inline(text)}</h2>`);
-        openSection = true;
-      } else {
-        out.push(`<h${level}>${inline(text)}</h${level}>`);
-      }
-      i++;
-      continue;
-    }
-
-    // 分隔线:章节已拆成卡片,分隔线不再需要
-    if (/^-{3,}$/.test(t)) {
-      i++;
-      continue;
-    }
-
-    // 表格:| 开头且下一行是分隔行
-    if (t.startsWith("|") && i + 1 < lines.length && isTableSep(lines[i + 1])) {
-      const head = splitRow(line);
-      i += 2;
-      const rows: string[][] = [];
-      while (i < lines.length && lines[i].trim().startsWith("|")) {
-        rows.push(splitRow(lines[i]));
-        i++;
-      }
-      out.push(
-        "<table><thead><tr>" +
-          head.map((c) => `<th>${inline(c)}</th>`).join("") +
-          "</tr></thead><tbody>" +
-          rows.map((r) => "<tr>" + r.map((c) => `<td>${inline(c)}</td>`).join("") + "</tr>").join("") +
-          "</tbody></table>",
-      );
-      continue;
-    }
-
-    // 引用块(连续 > 行合成一个;> 空行分隔的段落各自成 <p>,段内行 <br>)
-    if (t.startsWith(">")) {
-      const buf: string[] = [];
-      while (i < lines.length && lines[i].trim().startsWith(">")) {
-        buf.push(lines[i].trim().replace(/^>\s?/, ""));
-        i++;
-      }
-      const paras = buf
-        .join("\n")
-        .split(/\n\s*\n/)
-        .filter((p) => p.trim())
-        .map((p) => `<p>${p.split("\n").map((x) => inline(x.trim())).join("<br>")}</p>`);
-      out.push(`<blockquote>${paras.join("")}</blockquote>`);
-      continue;
-    }
-
-    // 无序列表
-    if (/^[-*]\s+/.test(t)) {
-      const items: string[] = [];
-      while (i < lines.length && /^[-*]\s+/.test(lines[i].trim())) {
-        items.push(lines[i].trim().replace(/^[-*]\s+/, ""));
-        i++;
-      }
-      out.push(`<ul>${items.map((x) => `<li>${inline(x)}</li>`).join("")}</ul>`);
-      continue;
-    }
-
-    // 有序列表
-    if (/^\d+\.\s+/.test(t)) {
-      const items: string[] = [];
-      while (i < lines.length && /^\d+\.\s+/.test(lines[i].trim())) {
-        items.push(lines[i].trim().replace(/^\d+\.\s+/, ""));
-        i++;
-      }
-      out.push(`<ol>${items.map((x) => `<li>${inline(x)}</li>`).join("")}</ol>`);
-      continue;
-    }
-
-    // 段落(连续普通行合并)
-    const buf: string[] = [line];
-    i++;
-    while (
-      i < lines.length &&
-      lines[i].trim() &&
-      !/^(#{1,6}\s|>|\||[-*]\s|\d+\.\s|```|-{3,}$)/.test(lines[i].trim())
-    ) {
-      buf.push(lines[i]);
-      i++;
-    }
-    out.push(`<p>${buf.map((x) => inline(x.trim())).join("<br>")}</p>`);
-  }
-
-  closeSection();
-  return { html: out.join("\n"), toc };
+  const marked = new Marked({ gfm: true, breaks: false });
+  marked.use({
+    renderer: {
+      heading(this: any, token: any) {
+        const text = this.parser.parseInline(token.tokens);
+        const depth = token.depth;
+        if (depth === 1) return ""; // 文档 h1 与页面顶栏重复,跳过
+        if (depth === 2) {
+          // 开新章节卡:先闭合上一张(lead 或上一章);目录条目去掉括号补语
+          const id = `sec-${toc.length}`;
+          toc.push({ id, text: text.replace(/[（(].*$/, "").replace(/<[^>]+>/g, "") });
+          return `</section>\n<section id="${id}"><h2>${text}</h2>`;
+        }
+        return `<h${depth}>${text}</h${depth}>`;
+      },
+      hr() {
+        return ""; // 章节已拆成卡片,分隔线不再需要
+      },
+    },
+  });
+  const body = marked.parse(md, { async: false }) as string;
+  // 首个 h2 渲染器输出的 </section> 闭合的是这里预开的 lead 卡;文末统一闭合最后一张卡
+  const html = `<section class="lead">\n${body}\n</section>`;
+  return { html, toc };
 }
 
 // ---------- 页面模板(主题变量全部来自 /ui/style.css,风格对齐 dashboard) ----------
+
+/** 目录条目转义(标题文本进入 <a>,防 markdown 行内标记泄漏成标签)。 */
+function esc(s: string): string {
+  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 
 const PAGE_CSS = `
 * { box-sizing: border-box; }

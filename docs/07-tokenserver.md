@@ -24,7 +24,7 @@ flowchart LR
 
 ## UI(tokenserver/ui/)
 
-React 19 + tailwind(打包时编译内联)+ react-day-picker。页面:成员列表/成员详情(KPI+Token 构成+趋势+禅道工时表分页)/项目榜/AI 占比(含分母构成弹窗)/数据说明页(docs 渲染)。
+React 19 + tailwind(打包时编译内联)+ react-day-picker。页面:成员列表/成员详情(KPI+Token 构成+趋势+禅道工时表分页)/项目榜/AI 占比(含分母构成弹窗)/数据说明页(数据说明.md 经 **marked(GFM)** 渲染成 `ui/.build/docs.html`,build-docs.ts 的 heading 渲染器包章节卡+目录,h1 跳过、hr 丢弃;改 md 后重跑 build-docs 或 build 全流程)。
 
 ## 打包与部署
 
