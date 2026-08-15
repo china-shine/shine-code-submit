@@ -2,6 +2,13 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.46 — 2026-08-15
+
+缓存自动刷新重构为报表侧按需方案(修复 1.3.45 在 Windows 上不生效的问题)。
+
+### 变更
+- **报表侧按需同步刷新替代 commit 后 spawn**:daily/weekly cache 源检测到缓存旧于区间内最后一笔提交(cacheStaleVsSubmissions)时,先同步刷新禅道缓存再读,输出 `autoRefreshed: true`。1.3.45 的「commit 后 detached spawn 刷新」在 Windows 上踩三次坑(Bun.spawn 无 detached、unref 拖慢 commit 至 14s、ignore stdio 子进程被父进程退出带掉导致从未生效),本版整段删除——同进程同步刷新零跨进程坑,commit 恢复纯净秒回,代价仅 stale 时报表多几秒。真跑验证:stale 12-21s 出全量、新鲜 3s 秒回。
+
 ## 1.3.45 — 2026-08-15
 
 提交后自动刷缓存 + 报表 staleCache 检测,根除「日报/周报缺刚提交的工时」。
