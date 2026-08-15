@@ -39,23 +39,41 @@ function readDocsMd(): string {
   return DOCS_MD; // build 时内嵌的备份(二进制部署且旁无 md 文件)
 }
 
+// TOC 收集:渲染 heading 时同时收集 h2/h3 生成目录(带锚点 id)
+const docsToc: { id: string; text: string; depth: number }[] = [];
+let docsHeadingSeq = 0;
+
 const docsMarked = new Marked({ gfm: true, breaks: false });
 docsMarked.use({
   renderer: {
     heading(this: any, token: any) {
       const text = this.parser.parseInline(token.tokens);
-      if (token.depth === 1) return ""; // h1 与顶栏标题重复,跳过
-      return `<h${token.depth}>${text}</h${token.depth}>`;
+      const depth = token.depth;
+      if (depth === 1) return ""; // h1 与顶栏标题重复,跳过
+      // h2/h3 加锚点 id + 收集进目录
+      if (depth <= 3) {
+        const id = "hd-" + docsHeadingSeq++;
+        docsToc.push({ id, text: text.replace(/<[^>]+>/g, ""), depth });
+        return `<h${depth} id="${id}">${text}</h${depth}>`;
+      }
+      return `<h${depth}>${text}</h${depth}>`;
     },
   },
 });
 
 function serveDocs(): Response {
+  docsToc.length = 0;
+  docsHeadingSeq = 0;
   const html = docsMarked.parse(readDocsMd(), { async: false }) as string;
-  return new Response(DOCS_PAGE(html), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
+  return new Response(DOCS_PAGE(html, docsToc), { headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" } });
 }
 
-function DOCS_PAGE(body: string): string {
+function DOCS_PAGE(body: string, toc: { id: string; text: string; depth: number }[]): string {
+  const tocNav = toc.map(t =>
+    t.depth === 2
+      ? `<a href="#${t.id}" class="lv2">${t.text}</a>`
+      : `<a href="#${t.id}" class="lv3">${t.text}</a>`
+  ).join("");
   return `<!DOCTYPE html>
 <html lang="zh">
 <head>
@@ -72,7 +90,30 @@ ${DOCS_CSS}
   <span class="sub">各项数据的含义与计算口径</span>
   <a class="back" href="/">返回看板</a>
 </header>
-<article>${body}</article>
+<div class="layout">
+  <aside class="toc">
+    <div class="toc-label">目录</div>
+    ${tocNav}
+  </aside>
+  <article>${body}</article>
+</div>
+<script>
+(function(){
+  var links = Array.prototype.slice.call(document.querySelectorAll("aside.toc a"));
+  var byId = {};
+  links.forEach(function(a){ byId[a.getAttribute("href").slice(1)] = a; });
+  var obs = new IntersectionObserver(function(entries){
+    entries.forEach(function(en){
+      if (en.isIntersecting) {
+        links.forEach(function(a){ a.classList.remove("active"); });
+        var a = byId[en.target.id];
+        if (a) a.classList.add("active");
+      }
+    });
+  }, { rootMargin: "-10% 0px -80% 0px" });
+  document.querySelectorAll("h2[id],h3[id]").forEach(function(h){ obs.observe(h); });
+})();
+</script>
 </body>
 </html>`;
 }
@@ -81,8 +122,8 @@ const DOCS_CSS = `
 * { box-sizing: border-box; }
 html { scroll-behavior: smooth; }
 body { margin: 0; font-family: Inter, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; background: var(--background, #f8fafc); color: var(--foreground, #0f172a); font-size: 15px; line-height: 1.8; }
-:root { --background:#f8fafc; --foreground:#0f172a; --muted:#f1f5f9; --border:#e2e8f0; --secondary:#f1f5f9; --primary:#6366f1; }
-@media (prefers-color-scheme: dark) { :root { --background:#0f172a; --foreground:#e2e8f0; --muted:#1e293b; --border:#334155; --secondary:#1e293b; --primary:#818cf8; } }
+:root { --background:#f8fafc; --foreground:#0f172a; --muted:#f1f5f9; --border:#e2e8f0; --secondary:#f1f5f9; --primary:#6366f1; --sidebar-bg:#1e293b; --sidebar-fg:#e2e8f0; }
+@media (prefers-color-scheme: dark) { :root { --background:#0f172a; --foreground:#e2e8f0; --muted:#1e293b; --border:#334155; --secondary:#1e293b; --primary:#818cf8; --sidebar-bg:#0f172a; --sidebar-fg:#94a3b8; } }
 
 .topbar { height: 3.25rem; background: var(--foreground); color: var(--background); display: flex; align-items: center; gap: .75rem; padding: 0 1.25rem; position: sticky; top: 0; z-index: 10; }
 .topbar h1 { font-size: .9375rem; font-weight: 600; margin: 0; }
@@ -90,7 +131,17 @@ body { margin: 0; font-family: Inter, -apple-system, "PingFang SC", "Microsoft Y
 .topbar .back { margin-left: auto; color: inherit; opacity: .7; text-decoration: none; font-size: .8125rem; }
 .topbar .back:hover { opacity: 1; }
 
-article { padding: 1.5rem 2rem 4rem; }
+.layout { display: flex; min-height: calc(100vh - 3.25rem); }
+
+aside.toc { width: 14rem; flex-shrink: 0; background: var(--sidebar-bg); color: var(--sidebar-fg); padding: 1rem .5rem 2rem; position: sticky; top: 3.25rem; height: calc(100vh - 3.25rem); overflow-y: auto; }
+.toc-label { font-size: .6875rem; opacity: .45; padding: .375rem .75rem; margin-bottom: .25rem; }
+aside.toc a { display: block; padding: .3125rem .75rem; font-size: .8125rem; color: inherit; opacity: .65; text-decoration: none; border-radius: 4px; border-left: 2px solid transparent; transition: opacity .15s, border-color .15s; }
+aside.toc a:hover { opacity: 1; }
+aside.toc a.lv2 { font-weight: 500; margin-top: .375rem; }
+aside.toc a.lv3 { padding-left: 1.375rem; font-size: .7813rem; }
+aside.toc a.active { opacity: 1; border-left-color: var(--primary); background: rgba(99,102,241,.1); }
+
+article { flex: 1; min-width: 0; padding: 1.5rem 2rem 4rem; }
 
 h2 { font-size: 1.375rem; font-weight: 700; margin: 2.25rem 0 1rem; padding-bottom: .5rem; border-bottom: 2px solid var(--border); }
 h3 { font-size: 1.1875rem; font-weight: 600; margin: 1.75rem 0 .875rem; }
@@ -113,6 +164,11 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
 table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .875rem; line-height: 1.6; }
 th, td { border: 1px solid var(--border); padding: .4375rem .875rem; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
 th { background: var(--secondary); font-weight: 600; }
+
+@media (max-width: 768px) {
+  aside.toc { display: none; }
+  article { padding: 1.25rem 1rem 3rem; }
+}
 `;
 
 function json(req: Request, body: unknown, status = 200): Response {
