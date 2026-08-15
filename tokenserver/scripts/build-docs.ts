@@ -74,50 +74,66 @@ nav.toc a.active { background: var(--sidebar-accent); color: var(--sidebar-prima
 html.dark .icon-sun { display: block; }
 html.dark .icon-moon { display: none; }
 
-/* 内容区:顶栏对齐 TopBar(h-14 卡片底 + 下边框);内容铺满宽度,章节按卡片拆分(同 dashboard 卡风格) */
+/* 内容区:顶栏对齐 TopBar;正文限宽居中(长行可读性),不再通栏铺满 */
 main { flex: 1; min-width: 0; }
 .topbar { height: 3.5rem; background: var(--card); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 1.25rem; gap: 0.75rem; position: sticky; top: 0; z-index: 30; }
 .topbar h1 { font-size: 1.0625rem; font-weight: 500; margin: 0; }
 .topbar .sub { font-size: 0.75rem; color: var(--muted-foreground); }
-article { max-width: 104rem; margin: 0 auto; padding: 1.5rem 1.5rem 3rem; }
+article { max-width: 56rem; margin: 0 auto; padding: 2rem 1.5rem 4rem; }
 
-/* 章节卡:card 底 + 边框,对齐看板 KPI 卡/表卡;lead 为文档引言 banner */
-article section { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 1.5rem 2rem; margin-bottom: 1.25rem; scroll-margin-top: 4.5rem; }
-article section.lead { background: var(--secondary); }
+/* 章节卡:卡片化 + 顶部主题色细条(h2 卡),lead 为引言横幅 */
+article section { position: relative; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.75rem 2.25rem 1.875rem; margin-bottom: 1.5rem; scroll-margin-top: 4.5rem; overflow: hidden; }
+article section::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px; background: linear-gradient(90deg, var(--primary), transparent 65%); opacity: 0.85; }
+article section.lead { background: var(--secondary); border-color: var(--border); padding: 1.375rem 1.75rem; }
+article section.lead::before { background: linear-gradient(90deg, var(--primary), var(--sidebar-primary), transparent 70%); }
 article section.lead blockquote { background: transparent; border-left: 0; padding: 0 0.25rem; }
 article section > *:first-child { margin-top: 0; }
 article section > *:last-child { margin-bottom: 0; }
 
-article h2 { font-size: 1.25rem; font-weight: 500; line-height: 1.5; margin: 0 0 1rem; padding-bottom: 0.625rem; border-bottom: 1px solid var(--border); }
-article h3 { font-size: 1.0625rem; font-weight: 600; margin: 2rem 0 0.875rem; }
-article h4, article h5, article h6 { font-size: 0.9375rem; font-weight: 600; margin: 1.5rem 0 0.625rem; }
+/* 标题层级:h2 章名(大+底部双线)、h3 左侧主题色竖条、h4 弱化为小节标签 */
+article h2 { font-size: 1.375rem; font-weight: 700; line-height: 1.4; margin: 0 0 1.25rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border); position: relative; }
+article h2::after { content: ""; position: absolute; left: 0; bottom: -1px; width: 3.5rem; height: 2px; background: var(--primary); border-radius: 1px; }
+article h3 { font-size: 1.0625rem; font-weight: 600; margin: 2rem 0 0.875rem; padding-left: 0.625rem; border-left: 3px solid var(--primary); line-height: 1.5; }
+article h4 { font-size: 0.875rem; font-weight: 600; margin: 1.75rem 0 0.5rem; color: var(--muted-foreground); letter-spacing: 0.02em; }
+article h4::before { content: "▪ "; color: var(--primary); font-size: 0.75rem; vertical-align: 1px; }
+article h5, article h6 { font-size: 0.875rem; font-weight: 600; margin: 1.25rem 0 0.5rem; }
 
-/* 统一垂直节奏:所有内容块上下 1rem,标题负责拉开层级行距 */
-article p, article ul, article ol, article table, article pre, article blockquote { margin: 1rem 0; }
+/* 垂直节奏:内容块上下 0.875rem,h3 前拉开;正文 15px/1.85 */
+article p, article ul, article ol, article table, article pre, article blockquote { margin: 0.875rem 0; }
+article { font-size: 0.9375rem; line-height: 1.85; }
 
-/* 正文与卡片同宽铺满(不限行宽);仅长 token 可断行 */
 article p, article li, article blockquote { overflow-wrap: break-word; }
-article a { color: var(--primary); text-decoration: none; }
-article a:hover { text-decoration: underline; }
+article a { color: var(--primary); text-decoration: none; border-bottom: 1px dashed color-mix(in srgb, var(--primary) 45%, transparent); }
+article a:hover { border-bottom-style: solid; }
 article ul, article ol { padding-left: 1.375em; }
-article li { margin: 0.375rem 0; }
+article li { margin: 0.4375rem 0; }
 article ul li::marker, article ol li::marker { color: var(--primary); font-weight: 500; }
-article code { font-family: ui-monospace, SFMono-Regular, Consolas, "Courier New", monospace; font-size: 0.85em; background: var(--muted); color: var(--foreground); padding: 0.1em 0.4em; border-radius: 4px; overflow-wrap: break-word; }
-article pre { background: var(--muted); border: 1px solid var(--border); border-radius: 6px; padding: 0.75rem 1rem; overflow-x: auto; width: fit-content; max-width: 100%; min-width: 50%; }
-article pre code { background: transparent; color: inherit; padding: 0; font-size: 0.8125rem; }
-article blockquote { padding: 0.375rem 1rem; border-left: 3px solid var(--primary); background: var(--secondary); border-radius: 0 4px 4px 0; }
-article blockquote p { margin: 0.375rem 0; }
-article strong { font-weight: 600; }
+article code { font-family: ui-monospace, SFMono-Regular, Consolas, "Courier New", monospace; font-size: 0.85em; background: var(--muted); color: var(--foreground); padding: 0.1em 0.4em; border-radius: 4px; overflow-wrap: break-word; border: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+article pre { background: var(--muted); border: 1px solid var(--border); border-radius: 8px; padding: 0.875rem 1.125rem; overflow-x: auto; width: fit-content; max-width: 100%; min-width: 50%; box-shadow: 0 1px 2px color-mix(in srgb, var(--foreground) 5%, transparent); }
+article pre code { background: transparent; color: inherit; padding: 0; border: 0; font-size: 0.8125rem; }
+article blockquote { padding: 0.5rem 1.125rem; border-left: 3px solid var(--primary); background: color-mix(in srgb, var(--primary) 6%, var(--card)); border-radius: 0 6px 6px 0; }
+article blockquote p { margin: 0.4375rem 0; }
+article strong { font-weight: 600; color: var(--foreground); }
+article hr { display: none; }
 
-/* 表格:同看板表风格——外框圆角 + 表头 secondary 底 + 仅行分隔线,去掉竖线和斑马纹 */
-article table { width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; font-size: 0.8125rem; line-height: 1.6; }
-article th, article td { border-bottom: 1px solid var(--border); padding: 0.5rem 0.875rem; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
-article th { background: var(--secondary); color: var(--secondary-foreground); font-weight: 500; }
+/* 表格:圆角卡 + 表头 primary 调底 + 行 hover + 首列加粗 */
+article table { width: 100%; border-collapse: separate; border-spacing: 0; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; font-size: 0.8125rem; line-height: 1.65; }
+article th, article td { border-bottom: 1px solid var(--border); padding: 0.5625rem 0.9375rem; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+article th { background: color-mix(in srgb, var(--primary) 8%, var(--secondary)); color: var(--secondary-foreground); font-weight: 600; font-size: 0.7813rem; letter-spacing: 0.01em; }
+article tbody tr { transition: background 0.12s; }
+article tbody tr:hover { background: color-mix(in srgb, var(--primary) 4%, transparent); }
 article tbody tr:last-child td { border-bottom: 0; }
+article td:first-child strong { color: var(--primary); }
+
+/* 返回顶部 */
+#backTop { position: fixed; right: 1.25rem; bottom: 1.25rem; width: 2.25rem; height: 2.25rem; border: 1px solid var(--border); border-radius: 8px; background: var(--card); color: var(--muted-foreground); display: flex; align-items: center; justify-content: center; cursor: pointer; opacity: 0; pointer-events: none; transition: opacity 0.2s, color 0.15s; z-index: 40; }
+#backTop.show { opacity: 1; pointer-events: auto; }
+#backTop:hover { color: var(--primary); border-color: var(--primary); }
 
 @media (max-width: 768px) {
   aside.sidebar { display: none; }
   article { padding: 1.25rem 1rem 3rem; }
+  article section { padding: 1.25rem 1.125rem 1.375rem; border-radius: 8px; }
 }
 `;
 
@@ -152,6 +168,12 @@ const PAGE_JS = `
     { rootMargin: "-20% 0px -70% 0px" }
   );
   document.querySelectorAll("article section[id]").forEach(function (s) { obs.observe(s); });
+  // 返回顶部:滚动超过一屏出现
+  var top = document.getElementById("backTop");
+  if (top) {
+    top.addEventListener("click", function () { window.scrollTo({ top: 0, behavior: "smooth" }); });
+    window.addEventListener("scroll", function () { top.classList.toggle("show", window.scrollY > window.innerHeight * 0.6); }, { passive: true });
+  }
 })();
 `;
 
@@ -206,6 +228,9 @@ ${html}
     </article>
   </main>
 </div>
+<button id="backTop" type="button" aria-label="返回顶部">
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"></path></svg>
+</button>
 <script>${PAGE_JS}</script>
 </body>
 </html>
