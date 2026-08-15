@@ -17,7 +17,7 @@
 ```mermaid
 flowchart LR
     A["fs.watch(transcript 目录)<br/>250ms debounce"] -->|"只标脏,不读内容"| B[("transcript_files.dirty=1")]
-    B -->|"5s tick,批量≤100"| C["增量读尾部<br/>readTailFromOffset<br/>(半写行留下次)"]
+    B -->|"5s tick<br/>文件≤100/会话≤50"| C["增量读尾部<br/>readTailFromOffset<br/>(半写行留下次)"]
     C --> D["全量重算会话<br/>activeMs / Token / 代码行"]
     D --> F[("transcript_sessions")]
     G["5min fullScanBackstop<br/>全扫兜底(补漏事件)"] -.-> B

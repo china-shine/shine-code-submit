@@ -4,26 +4,37 @@
 
 ```mermaid
 flowchart TB
-    subgraph 用户机["用户机(每台)"]
+    subgraph userMachine["用户机(每台)"]
         CC["Claude Code"]
-        CC -->|"hooks 7 事件<br/>POST /api/hook(Bearer token)"| D["daemon :36666"]
-        D --> DB[("events.sqlite<br/>事件+会话(transcript 增量挖掘)")]
-        D --> ZC[("禅道缓存<br/>cache.json + efforts/*.json<br/>20 天滚动窗口,TTL 默认 300min")]
-        D --> UI["dashboard UI<br/>/ui?t=token"]
-        CC -->|"skills 调用"| Z["zentao.ts<br/>(23 命令,零依赖)"]
+        D["daemon :36666"]
+        Z["zentao.ts<br/>(23 命令,零依赖)"]
+        DB[("events.sqlite<br/>事件+会话(transcript 增量挖掘)")]
+        ZC[("禅道缓存 cache.json + efforts/*.json<br/>20 天滚动窗口,TTL 默认 300min")]
+        UI["dashboard UI<br/>/ui?t=token"]
+        RD[("zenpilot/projects/&lt;cwd&gt;/<br/>summary / plan / submitted")]
+        ZT["禅道 REST API v1"]
+        SJ[("提交流水<br/>submitted/&lt;date&gt;.jsonl")]
+        CC -->|"hooks 7 事件<br/>POST /api/hook(Bearer token)"| D
+        CC -->|"skills 调用"| Z
+        D --> DB
+        D --> ZC
+        D --> UI
         Z -->|"读 /api/sessions 工时数字"| D
-        Z --> RD[("zenpilot/projects/&lt;cwd&gt;/<br/>summary / plan / submitted")]
-        Z -->|"提交工时"| ZT["禅道 REST API v1"]
-        Z --> SJ[("提交流水<br/>submitted/&lt;date&gt;.jsonl")]
+        Z --> RD
+        Z -->|"提交工时(逐条编号+AI 标识)"| ZT
+        Z --> SJ
+    end
+    subgraph tokenServer["tokenserver :36667(生产 = linux 二进制)"]
+        TS["POST /api/report<br/>(upsert 幂等)"]
+        TDB[("tokens.db<br/>sessions / projects /<br/>git_changes(hash 全局 PK)<br/>worklogs(subId 逐笔)")]
+        EFF["AI 效能平台 UI<br/>成员/项目榜/AI 占比/Token 趋势"]
+        TS --> TDB --> EFF
     end
     D -->|"上报循环 10min<br/>gzip + 增量(since=lastReportAt)"| TS
-    SJ -->|"collectWorklogs 读取"| TS
-    subgraph tokenserver["tokenserver :36667(生产 = linux 二进制)"]
-        TS["POST /api/report<br/>(upsert 幂等)"] --> TDB[("tokens.db<br/>sessions / projects /<br/>git_changes(hash 全局 PK)<br/>worklogs(subId 逐笔)")]
-        TDB --> EFF["AI 效能平台 UI<br/>成员/项目榜/AI 占比/Token 趋势"]
-    end
-    ZT -.->|"禅道是工时事实源"| Z
+    SJ -->|"daemon collectWorklogs 读取"| TS
 ```
+
+> 原则:禅道是工时的**唯一事实源**(efforts),本地一切(sessions/plan/submitted)都是过程数据。
 
 ## 五条核心数据流
 
