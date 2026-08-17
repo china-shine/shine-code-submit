@@ -7,7 +7,7 @@
 // 纯结构化规则、零 LLM;逐行独立判定 → 可随 transcript-consumer 增量追加(blob 状态 + 新行)。
 // 只处理父 transcript(与 skills 侧 extractTranscriptSignals 同口径);不影响 token/activeMs 计算链。
 
-/** 上限:防 blob 无界膨胀(transcript_sessions.signals_blob 每会话一行)。 */
+/** 上限:防信号文件无界膨胀(DATA_DIR/signals 每会话一个 json)。 */
 const MAX_TURNS = 300;
 const MAX_PROMPTS_PER_TURN = 5;
 const MAX_COMMITS_PER_TURN = 10;
@@ -61,7 +61,11 @@ export function parseSignalsBlob(blob: string | null | undefined): SessionSignal
   if (!blob) return null;
   try {
     const o = JSON.parse(blob);
-    if (!o || typeof o !== "object" || !Array.isArray(o.turns) || typeof o.toolUseCounts !== "object") return null;
+    if (
+      !o || typeof o !== "object" ||
+      !Array.isArray(o.turns) || !Array.isArray(o.awaySummaries) || !Array.isArray(o.filesChanged) ||
+      !o.toolUseCounts || typeof o.toolUseCounts !== "object" // typeof null === "object",需显式排空
+    ) return null;
     return o as SessionSignals;
   } catch {
     return null;

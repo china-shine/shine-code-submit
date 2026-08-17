@@ -190,4 +190,25 @@ describe("SignalsStore + readSignalsForApi(文件存储)", () => {
     expect(store.has({ sessionId: "sess1", projectId })).toBe(true);
     expect(store.has({ sessionId: "nope", projectId })).toBe(false);
   });
+
+  test("truncated 回填不翻倍(带旧状态也必须从空重建)", () => {
+    writeFileSync(transcript, fixtureSession(), "utf8");
+    const store = new SignalsStore(base);
+    store.update({ path: transcript, sessionId: "tr1", projectId }, fixtureSession(), false);
+    // 文件被截断(理论上变小)后再消费:旧状态存在 + truncated=true → 若误叠加会 Edit=2/turns=4
+    store.update({ path: transcript, sessionId: "tr1", projectId }, "", true);
+    const s = readSignalsForApi({ cwd, sessionId: "tr1" }, base).sessions[0]!;
+    expect(s.toolUseCounts.Edit).toBe(1);
+    expect(s.turns.length).toBe(2);
+  });
+
+  test("transcript 删除后:已有信号保留不误清", () => {
+    writeFileSync(transcript, fixtureSession(), "utf8");
+    const store = new SignalsStore(base);
+    store.update({ path: transcript, sessionId: "tr2", projectId }, fixtureSession(), false);
+    rmSync(transcript);
+    store.update({ path: transcript, sessionId: "tr2", projectId }, "", false);
+    const s = readSignalsForApi({ cwd, sessionId: "tr2" }, base).sessions[0]!;
+    expect(s.turns.length).toBe(2); // 旧文件原样保留
+  });
 });

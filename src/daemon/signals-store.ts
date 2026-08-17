@@ -88,10 +88,10 @@ export class SignalsStore {
 
     let state: SessionSignals | null = cached ? parseSignalsBlob(safeRead(cached)) : null;
     if (!state || truncated) {
+      // 回填:必须从空状态整文件重建——不能把旧 state 传进来(truncated 时旧状态与全量叠加会翻倍)
       const raw = safeRead(info.path);
-      if (raw === null && !state) return; // transcript 已删且无旧信号:不写
-      state = parseSignalEvents(raw ?? "", state ?? emptySignals());
-      // 注意:回填重解析整个文件,toolUseCounts/turns 全量重建,不会翻倍
+      if (raw === null) return; // transcript 读不出:无旧状态不写空文件;有旧状态保留原样不动
+      state = parseSignalEvents(raw, emptySignals());
     } else if (newLines) {
       parseSignalEvents(newLines, state);
     } else {
@@ -107,6 +107,9 @@ export class SignalsStore {
 function dedupe(arr: string[]): string[] {
   return [...new Set(arr)];
 }
+
+/** /api/signals 响应会话数上限(按 lastAt 倒序取最近,防 since=0 全量撑爆响应;/report 场景 since=当天0点远达不到)。 */
+const MAX_API_SESSIONS = 200;
 
 function lastAtOf(st: SessionSignals): number {
   return Math.max(st.lastAt, st.turns.length ? st.turns[st.turns.length - 1]!.endMs : 0, st.open?.endMs ?? 0);
@@ -170,5 +173,6 @@ export function readSignalsForApi(
     }
   }
   out.sort((a, b) => b.lastAt - a.lastAt);
+  if (out.length > MAX_API_SESSIONS) out.length = MAX_API_SESSIONS;
   return { sessions: out, total: out.length };
 }
