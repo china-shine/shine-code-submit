@@ -413,13 +413,15 @@ export function startServer(deps: ServerDeps) {
         }
         const event = normalizeEvent(type, body);
         if (!event) return json({ error: "missing required fields (cwd, sessionId)" }, 400);
-        const inserted = store.insert(event);
-        if (inserted) {
-          bus.emit(event);
-          stats.recordEvent();
-          log.info(`ingest http ${event.type}`);
-        }
-        return json({ status: "ok", inserted, version: SERVICE_VERSION });
+        // 2026-08-17 用户决策:events 表停用(流水冗余、库体积大头;前端事件模块早已屏蔽,会话统计走 transcript 表)。
+        // 仍返回 200+version——hook↔daemon 版本同步依赖本响应,hook 收到 200 也不会再产生 spool。恢复记录时取消注释:
+        // const inserted = store.insert(event);
+        // if (inserted) {
+        //   bus.emit(event);
+        //   stats.recordEvent();
+        //   log.info(`ingest http ${event.type}`);
+        // }
+        return json({ status: "ok", inserted: false, version: SERVICE_VERSION });
       }
 
       if (path === "/api/stats" && req.method === "GET") {
