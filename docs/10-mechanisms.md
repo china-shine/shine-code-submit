@@ -67,7 +67,7 @@ flowchart LR
 ```
 
 已知:行级字符串匹配有天花板(改一行也算 AI),口径细节见效能平台数据说明页。
-数据源(2026-08-17 终局):AI 行集合与行数统计改读 `DATA_DIR/ailines` 文件——transcript 的 Edit/Write 提取(old/new 行级前后缀裁剪对齐 patch context 语义,失败编辑按 tool_result 延迟剔除),90 天回填窗口、历史完整可重建;events 表彻底停用。行数查不到仍报 null(无数据≠零行,tokenserver COALESCE 保留旧值)。
+⚠️ 数据源时效(2026-08-17):AI 行集合与行数统计读 events 表 PostToolUse 的 structuredPatch,**events 7 天滚动修剪**——超 7 天的会话行数上报 null(无数据≠零行,tokenserver COALESCE 保留旧值),AI 行集合超期不可回溯(git_changes 用 MAX 天然防降级,平台历史安全)。
 
 ## ⑦ 上报增量与幂等
 

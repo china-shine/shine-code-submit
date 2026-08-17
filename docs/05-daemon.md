@@ -51,20 +51,11 @@ consumer 消费父 transcript 时顺带提取「决定性内容」(每行已读�
 
 无已有文件/损坏/截断 → 整文件回填一次(覆盖升级前历史);此后每 tick 增量合并新行。**落后自愈**:consumeFile 先写库后写信号,两步之间 daemon 被杀(或被旧版无信号逻辑的 daemon 消费过)→ 信号文件 mtime 落后于 transcript——兜底全扫按 `needsConsume`(无信号文件,或信号 mtime < transcript mtime-5s)标脏,消费者全量重建。子代理文件不提取(与 skills 层 extractTranscriptSignals 同口径)。上限:turns 300/会话等;**conclusion 不截断**(2026-08-17 实测 120 轮全存 67KB vs 截断 61KB,代价 10%,保留全量细节;极端膨胀再收)。信号里的 cwd 取**首条**(first-wins,对齐 readFirstCwdFromText)——行内 cwd 是"当时"目录,会话中 cd 子目录不能覆盖,否则 /api/signals 按项目 cwd 过滤会查不到。
 
-### AI 行集合 + 会话行数(ailines.ts + ailines-store.ts,2026-08-17 终局)
-
-行数统计(getSessionLines)与 AI 占比分子(getProjectAILines)的数据源,events 表退役后的替代:
-- **提取**:transcript 的 Edit/Write/MultiEdit tool_use;**失败编辑延迟判定**——tool_use 先挂 pending,同 id 的 tool_result 到达且非 is_error 才计入(跨 tick 由持久化 state 承载);按块 id 去重防重放
-- **口径对齐原 structuredPatch**:old/new 做**行级公共前后缀裁剪**(锚点上下文行不计变更,等价 patch 的 context 合并),再按 min(plus,minus) 配对计 modified
-- **落文件** `DATA_DIR/ailines/<编码项目>/<日期>/<sessionId>.json`(与 signals 同布局同生命周期);父+子代理文件都解析合并(tool_result 配对需整 session,回填必读全量文件集)
-- **回填窗口 90 天**(AILINES_BACKFILL_WINDOW_MS,覆盖全部存量)——transcript 全在,行数与占比历史完整可重建
-- 读取:getSessionLines 按 session 读文件(无文件返回 null=无数据≠零行,tokenserver COALESCE 兜底);getProjectAILines 扫项目目录 union(±行合并同集,与 events 版语义一致)
-
 ## events.sqlite 三表(store.ts)
 
 | 表 | 主键 | 内容 |
 |---|---|---|
-| events | (session_id, event_id) | **已彻底停用(2026-08-17 终局)**:行数统计与 AI 占比换源 `DATA_DIR/ailines` 文件(transcript 提取)后无任何消费方;入库点已注释(server/spool),/api/hook 仍回 200+version(hook↔daemon 版本同步依赖);7 天修剪保留清残留 |
+| events | (session_id, event_id) | hook 事件;eventId 由内容派生 → INSERT OR IGNORE 幂等(多 hook 重复采集自动去重)。**7 天滚动修剪**(启动+每 24h DELETE+VACUUM,EVENTS_RETENTION_MS)控体积;行数/AI 占比靠 PostToolUse 的 structuredPatch,老会话被修剪后行数报 null(≠零行) |
 | transcript_files | path | 每个 transcript jsonl 一行:offset/entries_blob/dirty(增量读取游标) |
 | transcript_sessions | session_id | 会话聚合结果:token 四项/active_ms/last_activity/title/cwd/dirty |
 
