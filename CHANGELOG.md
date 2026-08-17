@@ -2,6 +2,13 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.49 — 2026-08-17
+
+日报/周报聚合修复:任务转「已完成」后,当天工时不再从报表消失。
+
+### 变更(skills)
+- **报表聚合并入 taskDetails**:gatherReport 的任务集合原为「本地提交过的(submitted.json)∪ cache.tasks(仅未完成)」,任务转 done 后移出 cache.tasks、只剩 taskDetails,聚合循环遍历不到 → 其窗口内工时从日报/周报的 cache 与禅道实时**两源同时消失**(#78363:上午手填 0.5h,下午任务转 done,当日日报少一条)。现把 taskDetails 的 key 并入聚合集合(与 efforts 同为 20 天滚动窗口,集合有界),daily/weekly/lastweek 三命令 × 两数据源全部生效;新增 `reportTaskIds` 纯函数 + 2 条测试锁行为(150/150 通过),docs 08/10/12/15 同步。
+
 ## 1.3.48 — 2026-08-17
 
 signals 结论全量保存 + events 表 7 天滚动修剪(控体积)+ 行数 NULL 语义防护链。⚠️ 本版含 tokenserver 后端变更,**生产 tokenserver 需重新部署新二进制**(旧版会把 NULL 洗成 0,全量校准时清零平台行数历史)。
