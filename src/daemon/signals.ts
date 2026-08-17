@@ -138,7 +138,9 @@ export function parseSignalEvents(raw: string, state: SessionSignals): SessionSi
     }
     const ts = tsOf(ev);
     if (ts && !state.firstAt) state.firstAt = ts;
-    if (typeof ev.cwd === "string" && ev.cwd) state.cwd = ev.cwd;
+    // cwd 取首条(first-wins,对齐 daemon readFirstCwdFromText 惯例):行内 cwd 是"当时"工作目录,
+    // 会话中 cd 子目录会变——last-wins 会存成子目录路径,与项目目录不再对应,/api/signals 按 cwd 精确过滤会整个查不到
+    if (!state.cwd && typeof ev.cwd === "string" && ev.cwd) state.cwd = ev.cwd;
 
     if (ev.type === "ai-title") {
       if (typeof ev.aiTitle === "string" && ev.aiTitle) state.aiTitle = ev.aiTitle;

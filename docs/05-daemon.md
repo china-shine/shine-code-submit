@@ -49,7 +49,7 @@ consumer 消费父 transcript 时顺带提取「决定性内容」(每行已读�
 | 会话标题 | `ai-title` 行,最后一条胜出(比 first-user-text 标题质量高) |
 | 报表类标记 | assistant 行 `attributionSkill`(识别 /report /daily 等自身操作) |
 
-无已有文件/损坏/截断 → 整文件回填一次(覆盖升级前历史);此后每 tick 增量合并新行。子代理文件不提取(与 skills 层 extractTranscriptSignals 同口径)。上限:turns 300/会话、conclusion 800 字等(防 blob 膨胀)。
+无已有文件/损坏/截断 → 整文件回填一次(覆盖升级前历史);此后每 tick 增量合并新行。子代理文件不提取(与 skills 层 extractTranscriptSignals 同口径)。上限:turns 300/会话、conclusion 800 字等(防文件膨胀)。信号里的 cwd 取**首条**(first-wins,对齐 readFirstCwdFromText)——行内 cwd 是"当时"目录,会话中 cd 子目录不能覆盖,否则 /api/signals 按项目 cwd 过滤会查不到。
 
 ## events.sqlite 三表(store.ts)
 

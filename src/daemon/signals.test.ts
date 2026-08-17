@@ -62,7 +62,7 @@ function fixtureSession(): string {
     line({ type: "user", timestamp: T1, message: { role: "user", content: "<command-message>/report</command-message>" } }),
     line({ type: "user", timestamp: T1, isMeta: true, message: { role: "user", content: "meta 消息" } }),
     line({ type: "user", timestamp: T1, message: { role: "user", content: [{ type: "text", text: "[Request interrupted by user for tool use]" }, { type: "tool_result", tool_use_id: "x", content: "结果" }] } }),
-    line({ type: "assistant", timestamp: T1, attributionSkill: "shine-worklog:report", message: { role: "assistant", content: [
+    line({ type: "assistant", timestamp: T1, cwd: "C:\\proj\\sub", attributionSkill: "shine-worklog:report", message: { role: "assistant", content: [
       { type: "tool_use", name: "TaskCreate", input: { subject: "重构 getCache 支持离线" } },
       { type: "text", text: "全部完成并验证通过" },
     ] } }),
@@ -96,7 +96,7 @@ describe("parseSignalEvents(逐行提取)", () => {
     expect(st.awaySummaries[0]!.text).toContain("登录超时修复");
     expect(st.toolUseCounts).toEqual({ Edit: 1, Bash: 1, TaskCreate: 1 });
     expect(st.filesChanged).toEqual(["C:\\proj\\a.ts"]);
-    expect(st.cwd).toBe("C:\\proj");
+    expect(st.cwd).toBe("C:\\proj"); // 首条 cwd 胜出(中途 cd 子目录不覆盖,否则 API 按 cwd 过滤查不到)
     expect(st.firstAt).toBe(Date.parse(T0));
     expect(st.lastAt).toBe(Date.parse(T1)); // attachment 行无贡献
   });

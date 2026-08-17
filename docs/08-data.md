@@ -18,7 +18,8 @@ DATA_DIR/
 ├─ signals/                   # ★transcript 关键信号(/report AI 填空素材,consumer 后台增量提取):
 │  └─ <编码项目>/<日期>/<sessionId>.json
 │                             #   turns(每轮结论/commits/任务/文件)+aiTitle+awaySummaries;
-│                             #   日期=首个信号事件日(跨午夜会话留开工日目录);不入 SQLite 可整目录删重建
+│                             #   日期=首个信号事件日(跨午夜会话留开工日目录);不入 SQLite,
+│                             #   整目录可删——近 3 天活跃的会话由兜底全扫自动重建,更早的走直读兜底
 ├─ reports/                   # 日报/周报 HTML(日报-YYYY-MM-DD-<姓名>.html,同日覆盖)
 └─ zenpilot/                  # 工时链路数据(原 ZenPilot 目录统一迁入)
    ├─ config.json             # 禅道连接(url/account/password)—— /setup 写
