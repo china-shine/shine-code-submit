@@ -2,7 +2,7 @@
 // 会话为合并单元(增量追加状态在会话内);日期 = 首个信号事件的本地日期——稳定不迁移,跨午夜会话留在开工日目录,
 // API 按 lastAt(而非目录日期)过滤,不丢跨天活跃会话。
 // 不入 SQLite:信号是"提取产物"而非统计事实源,文件形态可直接浏览/清理,也免去 schema 迁移。
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { SIGNALS_DIR } from "../shared/paths";
 import { encodeProject, dateISO } from "../shared/datetime";
@@ -98,8 +98,21 @@ export class SignalsStore {
       return; // 无新完整行(半写行等),状态不变,跳过重写
     }
 
+    // 全空状态不落盘:0 字节 transcript(会话刚建文件)写空文件到"今天"目录,日后内容 firstAt 赋值
+    // 落到真实日期目录 → 旧空文件残留,sessionId 精查会返回同 id 两条。空 → 等有内容再建。
+    if (!state.turns.length && !state.open && !state.awaySummaries.length && !state.aiTitle && !state.cwd && !Object.keys(state.toolUseCounts).length) {
+      return;
+    }
     const target = join(projectDir(this.baseDir, info.projectId), dateISO(state.firstAt), info.sessionId + ".json");
     atomicWrite(target, serializeSignals(state));
+    if (cached && target !== cached) {
+      // 归属日期漂移(firstAt 后到才赋值):迁移到新目录后删旧文件,防同 sessionId 双文件
+      try {
+        rmSync(cached);
+      } catch {
+        /* 旧文件已不在,忽略 */
+      }
+    }
     this.pathCache.set(info.sessionId, target);
   }
 }

@@ -1,5 +1,5 @@
 import { describe, test, expect, afterAll } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -210,5 +210,34 @@ describe("SignalsStore + readSignalsForApi(文件存储)", () => {
     store.update({ path: transcript, sessionId: "tr2", projectId }, "", false);
     const s = readSignalsForApi({ cwd, sessionId: "tr2" }, base).sessions[0]!;
     expect(s.turns.length).toBe(2); // 旧文件原样保留
+  });
+
+  test("空 transcript(0字节)不写空信号文件", () => {
+    const empty = join(base, "empty.jsonl");
+    writeFileSync(empty, "", "utf8");
+    const store = new SignalsStore(base);
+    const before = readSignalsForApi({ cwd }, base).total;
+    store.update({ path: empty, sessionId: "empty1", projectId }, "", false);
+    expect(readSignalsForApi({ cwd }, base).total).toBe(before);
+    expect(store.has({ sessionId: "empty1", projectId })).toBe(false);
+  });
+
+  test("归属日期漂移(firstAt 后到)→ 迁移到正确目录并删旧文件,无双份", () => {
+    // 手造 firstAt=0 但有内容的信号,落在错误日期目录(2026-01-01)
+    const oldDir = join(base, projectId, "2026-01-01");
+    mkdirSync(oldDir, { recursive: true });
+    const handcraft = {
+      ...emptySignals(),
+      cwd,
+      turns: [{ startMs: 0, endMs: 0, prompts: ["旧内容"], conclusion: null, commits: [], taskSubjects: [], files: [], added: 0, removed: 0, skills: [] }],
+    };
+    writeFileSync(join(oldDir, "drift.json"), JSON.stringify(handcraft), "utf8");
+    writeFileSync(transcript, fixtureSession(), "utf8");
+    const store = new SignalsStore(base);
+    store.update({ path: transcript, sessionId: "drift", projectId }, fixtureSession(), false);
+    expect(existsSync(join(oldDir, "drift.json"))).toBe(false); // 旧文件已删,不残留
+    const r = readSignalsForApi({ cwd, sessionId: "drift" }, base);
+    expect(r.total).toBe(1); // 只有一份(2026-08-17 目录)
+    expect(r.sessions[0]!.turns.length).toBe(3); // 旧 turn + fixture 2 turn
   });
 });
