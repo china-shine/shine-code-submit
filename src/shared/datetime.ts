@@ -15,3 +15,9 @@ export function todayISO(): string {
   const d = new Date();
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
+
+/** 任意时间戳的本地日期 YYYY-MM-DD(0/非法=今天)。 */
+export function dateISO(ts: number): string {
+  const d = new Date(Number.isFinite(ts) && ts > 0 ? ts : Date.now());
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+}

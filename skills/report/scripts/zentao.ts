@@ -17,9 +17,9 @@
  *   会话采集+transcript → ./lib/transcript;日报/周报 → ./lib/report。本文件只留命令实现 + 入口分发。 */
 import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
-import { Args, die, loadJSON, writeJSON, roundPy, todayISO, nowISOSeconds, minutesSinceISO, hoursFromMinutes, fmtHours, isObj, loadConfig, loadMarkSetting, applyMark, requireStr, requireInt, summaryPathFor, CONFIG_PATH, CACHE_PATH, MAPPINGS_PATH, SETTINGS_PATH, SESSIONS_PATH, SUBMITTED_PATH, PLAN_PATH, PROJECT_DIR, PROJECT_CWD, SUBMITTED_LOG_DIR, COMMIT_COOLDOWN_MINUTES } from "./lib/shared";
+import { Args, die, loadJSON, writeJSON, roundPy, todayISO, nowISOSeconds, minutesSinceISO, hoursFromMinutes, fmtHours, isObj, loadConfig, loadMarkSetting, applyMark, requireStr, requireInt, summaryPathFor, CONFIG_PATH, CACHE_PATH, MAPPINGS_PATH, SETTINGS_PATH, SESSIONS_PATH, SUBMITTED_PATH, PLAN_PATH, PROJECT_DIR, PROJECT_CWD, SUBMITTED_LOG_DIR, COMMIT_COOLDOWN_MINUTES, localMidnightEpoch } from "./lib/shared";
 import { Client, getCache, getCacheLocal } from "./lib/client";
-import { cmdCollect, extractTranscriptSignals } from "./lib/transcript";
+import { cmdCollect, extractTranscriptSignals, fetchDaemonSignalsMap } from "./lib/transcript";
 import { writeReport, weekStart, lastWeekRange } from "./lib/report";
 
 // ---------- 命令实现 ----------
@@ -712,6 +712,8 @@ async function cmdPrepare(): Promise<any> {
 
   const plan = await cmdPlan(undefined, undefined); // 走纯本地缓存,不联网
   const items: any[] = plan.items || [];
+  // 关键信号一次拉全(daemon 后台预提取,秒回);null=daemon 不可达/旧版无端点 → pending 逐条退化直读 transcript
+  const sigMap = await fetchDaemonSignalsMap(PROJECT_CWD, localMidnightEpoch());
   const ready: any[] = [];
   const pending: any[] = [];
   for (const i of items) {
@@ -722,6 +724,7 @@ async function cmdPrepare(): Promise<any> {
     }
     // pending: needs_semantic 或 resolved 缺 work(如增量补报无 summary-note)
     const submittedState = i.increment ? "increment" : "unsubmitted";
+    const signals = sigMap?.[String(i.session)] ?? null; // daemon 预提取:turns(每轮结论)/commits/taskSubjects/prompts...
     pending.push({
       session: i.session,
       repo: i.repo,
@@ -737,7 +740,8 @@ async function cmdPrepare(): Promise<any> {
       task: i.task ?? null, // increment 时沿用原提交任务
       taskName: i.taskName ?? null,
       candidates: i.candidates ?? [],
-      transcript: extractTranscriptSignals(String(i.session), PROJECT_CWD),
+      signals, // daemon 预提取信号(优选素材);null=无(老会话未提取/daemon 不可达)
+      transcript: signals ? null : extractTranscriptSignals(String(i.session), PROJECT_CWD), // 退化:现场直读 jsonl
     });
   }
 
@@ -749,7 +753,7 @@ async function cmdPrepare(): Promise<any> {
     ready,
     pending,
     instructions:
-      "对每个 pending:1) 据 transcript.recentAssistantTexts+prompts+filesChanged 生成 work(编号动宾,每条一个功能点);2) 选 task——submittedState=increment 时沿用现有 task;needs_semantic 时从 candidates 选(置信度≥85 直定,<85 仍填 topCandidates 留 /report 确认);3) 调 note --session <id> --work <生成的work> --task <id> 写 summary。uncertain 可跳过。全 ready 后 /report 秒级提交。",
+      "对每个 pending:1) 生成 work(编号动宾,每条一个功能点)——signals 非空时以 turns 逐轮 conclusion 为主料、commits/taskSubjects 佐证、prompts 补意图;signals 为 null 时用 transcript.recentAssistantTexts+prompts+filesChanged;两者皆空退化 daemonSummary+filesChanged。2) 选 task——submittedState=increment 时沿用现有 task;needs_semantic 时从 candidates 选(置信度≥85 直定,<85 仍填 topCandidates 留 /report 确认);3) 调 note --session <id> --work <生成的work> --task <id> 写 summary。uncertain 可跳过。全 ready 后 /report 秒级提交。",
   };
 }
 

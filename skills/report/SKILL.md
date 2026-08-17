@@ -66,9 +66,9 @@ bun "<Base directory>/scripts/zentao.ts" plan [--source zentao]
 
 对 `needs_semantic` / 缺 work 的会话,**先向用户输出一句「正在汇总日志...」**,然后自动读 transcript 归纳(不再依赖开发时记 note):
 
-1. 跑 `bun "<Base directory>/scripts/zentao.ts" prepare` —— 读 transcript 提取精选信号(最近汇报文本 + 用户要求 + 改动文件 + 工具计数)
-2. 对每个 `pending` 条目,据 `transcript` 信号归纳 work + 选 task:
-   - **work**:据 recentAssistantTexts + prompts + filesChanged 生成一句话核心成果(动宾,不罗列功能点);`transcript` 为 null 时退化用 daemonSummary + filesChanged 推断
+1. 跑 `bun "<Base directory>/scripts/zentao.ts" prepare` —— 拉取会话关键信号(daemon 后台预提取:每 turn 结论 + git commits + 任务清单 + 用户意图;老会话无预提取/daemon 不可达时退化 `transcript` 现场直读:最近汇报文本 + 用户要求 + 改动文件 + 工具计数)
+2. 对每个 `pending` 条目,据 `signals`(优先)或 `transcript`(退化)归纳 work + 选 task:
+   - **work**:`signals` 非空时以 `turns` 逐轮 `conclusion`(Claude 本轮结论汇报)为主料、`commits`/`taskSubjects` 佐证、`prompts` 补意图;`transcript` 非空时据 recentAssistantTexts + prompts + filesChanged;两者皆 null 时退化用 daemonSummary + filesChanged 推断。生成一句话核心成果(动宾,不罗列功能点)
    - **task**:从 candidates 选最匹配(置信度 ≥85 直定;<85 或候选模糊时用 AskUserQuestion 让用户选,≤4 选项,选项含「更新缓存后重新匹配 / 创建新任务 / 选候选 / 跳过」)
    - 调 `note --session <id> --work <生成的work> --task <task>` 写 summary
 3. **合并简化 work(激进归纳)**:每个 resolved 条目,把 work 归纳成一句话核心成果:

@@ -1,6 +1,7 @@
 /** 会话采集 + transcript 解析。
  *  cmdCollect:读 shine-worklog daemon /api/sessions 映射成 shine-worklog session 写盘(hook/full 双模式)。
- *  extractTranscriptSignals:为 prepare 提取生成 work 所需的精选 transcript 信号。 */
+ *  fetchDaemonSignalsMap:读 daemon /api/signals(后台预提取的关键信号,/report AI 填空的优选素材)。
+ *  extractTranscriptSignals:daemon 不可达/老会话无预提取时,现场直读 transcript 的退化提取。 */
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import * as path from "node:path";
@@ -26,6 +27,29 @@ function readDaemonToken(): string | null {
 }
 
 const DAEMON_BASE = "http://127.0.0.1:36666"; // config.ts BASE_URL,回环固定
+
+/** 查 daemon /api/signals 拿当天本项目各会话的关键信号(daemon 消费者后台持续提取:
+ *  每 turn 结论/用户意图/git commits/任务清单/改动文件,存 DATA_DIR/signals 按项目按日期)。
+ *  返回 sessionId→signals 映射(可能为空对象);daemon 不可达/端点不存在(旧版)返回 null,调用方退化直读 transcript。 */
+export async function fetchDaemonSignalsMap(cwd: string, sinceMs: number): Promise<Record<string, any> | null> {
+  const token = readDaemonToken();
+  if (!token) return null;
+  try {
+    const res = await fetch(`${DAEMON_BASE}/api/signals?cwd=${encodeURIComponent(cwd)}&since=${sinceMs}`, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { sessions?: any[] };
+    const map: Record<string, any> = {};
+    for (const s of data.sessions ?? []) {
+      if (s && typeof s.sessionId === "string") map[s.sessionId] = s;
+    }
+    return map;
+  } catch {
+    return null;
+  }
+}
 
 /** 查 daemon 当天本项目 sessions(GET /api/sessions?cwd=&since=当日0点)。 */
 async function fetchDaemonSessions(

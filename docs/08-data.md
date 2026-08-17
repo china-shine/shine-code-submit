@@ -15,6 +15,10 @@ DATA_DIR/
 ├─ db/events.sqlite           # daemon 主库:hook 事件 + transcript 会话(见 05-daemon)
 ├─ log/daemon.log             # 运行日志(5MB 轮换)
 ├─ spool/                     # hook 发送失败的事件暂存(daemon 1s 回捞)
+├─ signals/                   # ★transcript 关键信号(/report AI 填空素材,consumer 后台增量提取):
+│  └─ <编码项目>/<日期>/<sessionId>.json
+│                             #   turns(每轮结论/commits/任务/文件)+aiTitle+awaySummaries;
+│                             #   日期=首个信号事件日(跨午夜会话留开工日目录);不入 SQLite 可整目录删重建
 ├─ reports/                   # 日报/周报 HTML(日报-YYYY-MM-DD-<姓名>.html,同日覆盖)
 └─ zenpilot/                  # 工时链路数据(原 ZenPilot 目录统一迁入)
    ├─ config.json             # 禅道连接(url/account/password)—— /setup 写

@@ -28,12 +28,13 @@ bun "<Base directory>/../report/scripts/zentao.ts" prepare
 
 ### 2. 为每个 pending 生成 work + 选 task + 写 summary
 
-对 `pending` 数组的每个条目,基于 `transcript` 信号处理:
+对 `pending` 数组的每个条目,基于 `signals`(daemon 预提取,优先)或 `transcript`(退化直读)处理:
 
 **生成 work**(功能点编号文案,动宾、每条一个功能点,同 commit 的 work 规范):
-- 主要依据 `transcript.recentAssistantTexts`(Claude 最近的汇报文本,最能反映做了什么)+ `prompts`(用户要求)+ `filesChanged`+ `toolUseCounts`
+- `signals` 非空:以 `turns` 逐轮 `conclusion`(Claude 本轮结论汇报)为主料,`commits`/`taskSubjects` 佐证,`prompts` 补意图
+- `signals` 为 null:据 `transcript.recentAssistantTexts` + `prompts`(用户要求)+ `filesChanged`+ `toolUseCounts`
 - 形如 `1. 修复登录超时\n2. 新增 prepare 命令\n3. 重构 getCache 支持离线`
-- `transcript` 为 null 时退化用 `daemonSummary`+`filesChanged` 推断
+- 两者皆 null 时退化用 `daemonSummary`+`filesChanged` 推断
 
 **选 task**:
 - `submittedState=increment`(已提交会话的增量补报):**沿用现有 `task`**,不需选,只补 work
@@ -54,6 +55,6 @@ note 自动补 `taskName`/`project` 并追加到 `summary-YYYY-MM-DD.json`。
 ## 注意
 
 - uncertain 条目不强行 note:没写 summary 的会话在 `/report auto` 自然走 `needs_review` + AskUserQuestion,复用这里留的 `topCandidates`,**不重读 transcript**
-- transcript 读自 `~/.claude/projects/<编码cwd>/<sessionId>.jsonl`;跨项目或不存在的会话 `transcript` 为 null,退化处理
+- `signals` 来自 daemon 后台预提取(`DATA_DIR/signals/<编码项目>/<日期>/<sessionId>.json`,consumer 持续增量更新);daemon 不可达/老会话未提取时为 null,`transcript` 现场直读 `~/.claude/projects/<编码cwd>/<sessionId>.jsonl`;跨项目或不存在的会话两者皆 null,退化处理
 - 全部就绪后仍让用户自己跑 /report 确认提交——prepare 不替用户做提交决定
 - prepare 不请求禅道、纯本地;`needs_cache` 是唯一需要先联网(refresh)的前置

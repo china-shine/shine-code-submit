@@ -19,6 +19,7 @@ import type {
 } from "../shared/types";
 import { deriveStableEventId } from "../shared/id";
 import { checkToken } from "./auth";
+import { readSignalsForApi } from "./signals-store";
 import { gzipSync } from "node:zlib";
 import { parseTranscript, sumSessionUsage } from "./transcript";
 // claude-scan 现 only export claudeProjectsRoots/collectJsonl/parentSessionInfo/ScannedSession(供 watcher/consumer/aggregate);scanSessions 系列已删(P3)
@@ -488,6 +489,15 @@ export function startServer(deps: ServerDeps) {
           });
         sessions.sort((a, b) => b.lastActive - a.lastActive);
         return json({ sessions });
+      }
+
+      // 关键信号:/report 的 AI 填空素材(每 turn 结论/commits/任务清单...)。
+      // 读 DATA_DIR/signals/<编码项目>/<日期>/*.json(消费者后台持续提取),不查 SQLite——老会话未提取时这里查不到,调用方退化直读 transcript。
+      if (path === "/api/signals" && req.method === "GET") {
+        const cwd = url.searchParams.get("cwd");
+        if (!cwd) return json({ error: "missing cwd" }, 400);
+        const sessionId = url.searchParams.get("sessionId");
+        return json(readSignalsForApi({ cwd, since: num(url.searchParams.get("since")), sessionId: sessionId ?? undefined }));
       }
 
       // 对话视图：从该 session 任一事件的 payload.transcript_path 读完整 transcript

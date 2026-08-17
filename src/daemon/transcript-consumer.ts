@@ -1,6 +1,7 @@
 // transcript 消费者:定期处理 SQLite 的 dirty 文件(增量读尾部 + 合并 entries + 全量算 token/activeMs),
 // 写回 transcript_sessions。2s tick + 5min 兜底全扫(fs.watch 漏事件补救)。
 // 算法走 sessionUsageAndActiveFromEntries(与 sessionUsageAndActiveFromRaws 同一 dedupe 链),与 scanSessions 口径逐字节等价。
+// 父文件顺带提取关键信号(turns/commits/... 写 DATA_DIR/signals 文件,见 signals.ts;不碰 token/activeMs 链路)。
 import { openSync, readSync, fstatSync, closeSync, statSync } from "node:fs";
 import { join } from "node:path";
 import type { Store, TranscriptFileRow } from "./store";
@@ -14,11 +15,15 @@ import {
   type UsageDedupeEntry,
 } from "./transcript";
 import { Logger } from "./logger";
+import { SignalsStore } from "./signals-store";
 
 const TICK_MS = 5000;
 const FULL_SCAN_MS = 5 * 60_000;
 const MAX_FILES_PER_TICK = 100;
 const MAX_SESSIONS_PER_TICK = 50;
+/** 信号回填窗口:近 3 天活跃但尚无信号文件的父文件,兜底全扫标脏让消费者回填(覆盖升级前/期间结束的会话,当日 /report 可用);
+ *  更早的历史会话不回填,/report 走 skills 层直读 transcript 兜底。 */
+const SIGNALS_BACKFILL_WINDOW_MS = 3 * 86_400_000;
 
 /** 增量读:从 offset 读到文件尾,截到上一个 \n(半写行留下次补)。返回完整行文本 + 新 offset + mtime/size。 */
 function readTailFromOffset(path: string, offset: number): {
@@ -53,6 +58,7 @@ export class TranscriptConsumer {
   private tickTimer: ReturnType<typeof setInterval> | null = null;
   private fullTimer: ReturnType<typeof setInterval> | null = null;
   private running = false;
+  private signals = new SignalsStore();
 
   constructor(private store: Store) {}
 
@@ -126,6 +132,14 @@ export class TranscriptConsumer {
     if (f.is_subagent === 0 && f.read_offset === 0 && newLines) {
       this.store.updateSessionHead(f.session_id, readFirstUserTextFromText(newLines), readFirstCwdFromText(newLines));
     }
+    // 关键信号(父文件;独立 try——信号坏了不能拖垮 token/activeMs 统计,对齐"容错优先")
+    if (f.is_subagent === 0) {
+      try {
+        this.signals.update({ path: f.path, sessionId: f.session_id, projectId: f.project_id }, newLines, truncated);
+      } catch (e) {
+        this.log.info(`signals ${f.path} failed`, e);
+      }
+    }
   }
 
   /** 重算一个 session:聚合所有文件(父+子代理)entries → sessionUsageAndActiveFromEntries 全量算 → UPDATE 结果(清 dirty)。 */
@@ -170,6 +184,19 @@ export class TranscriptConsumer {
             projectId: info.projectId,
             parentPath: info.parentPath,
             isSubagent: info.kind === "subagent",
+          });
+        } else if (
+          info.kind === "parent" &&
+          mtimeMs >= Date.now() - SIGNALS_BACKFILL_WINDOW_MS &&
+          !this.signals.has({ sessionId: info.sessionId, projectId: info.projectId })
+        ) {
+          // 近期活跃但无信号文件(升级前已消费完的会话)→ 标脏回填,当日 /report 也有信号可用
+          this.store.markFileDirtyOrInsert({
+            path: file,
+            sessionId: info.sessionId,
+            projectId: info.projectId,
+            parentPath: info.parentPath,
+            isSubagent: false,
           });
         }
       }
