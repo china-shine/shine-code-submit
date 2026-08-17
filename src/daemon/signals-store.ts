@@ -6,7 +6,7 @@ import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, s
 import { join } from "node:path";
 import { SIGNALS_DIR } from "../shared/paths";
 import { encodeProject, dateISO } from "../shared/datetime";
-import { emptySignals, parseSignalEvents, parseSignalsBlob, serializeSignals, type SessionSignals, type TurnSignal } from "./signals";
+import { emptySignals, parseSignalEvents, parseSignalsBlob, serializeSignals, cleanAwayText, type SessionSignals, type TurnSignal } from "./signals";
 
 /** /api/signals 输出的会话级信号(turns 已并入 open;commits/taskSubjects 为全会话去重并集)。 */
 export interface ApiSignalSession {
@@ -205,7 +205,7 @@ export function readSignalsForApi(
         firstAt: st.firstAt,
         lastAt,
         aiTitle: st.aiTitle,
-        awaySummaries: st.awaySummaries,
+        awaySummaries: st.awaySummaries.map((a) => ({ ...a, text: cleanAwayText(a.text) })), // 存量旧文件尾巴也在此清掉
         turns,
         commits: dedupe(turns.flatMap((t) => t.commits)),
         taskSubjects: dedupe(turns.flatMap((t) => t.taskSubjects)),

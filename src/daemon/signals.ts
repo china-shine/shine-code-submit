@@ -120,6 +120,11 @@ function pushCapped(arr: string[], v: string, cap: number): void {
   if (arr.length < cap && !arr.includes(v)) arr.push(v);
 }
 
+/** 去掉 Claude Code recap 自带的 UI 提示尾巴("…(disable recaps in /config)")——对归纳 work 是噪音。 */
+export function cleanAwayText(t: string): string {
+  return t.replace(/ *\(disable recaps in \/config\)$/, "").trim();
+}
+
 function tsOf(obj: Record<string, unknown>): number {
   const v = obj.timestamp;
   const n = typeof v === "string" ? Date.parse(v) : typeof v === "number" ? v : NaN;
@@ -148,7 +153,7 @@ export function parseSignalEvents(raw: string, state: SessionSignals): SessionSi
     }
     if (ev.type === "system" && ev.subtype === "away_summary") {
       if (typeof ev.content === "string" && ev.content.trim()) {
-        state.awaySummaries.push({ ts, text: ev.content.trim().slice(0, AWAY_MAX_CHARS) });
+        state.awaySummaries.push({ ts, text: cleanAwayText(ev.content.trim().slice(0, AWAY_MAX_CHARS)) });
         if (state.awaySummaries.length > MAX_AWAY) state.awaySummaries.shift();
         if (ts) state.lastAt = ts;
       }

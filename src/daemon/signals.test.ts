@@ -69,7 +69,7 @@ function fixtureSession(): string {
     line({ type: "system", subtype: "turn_duration", timestamp: T1 }),
     line({ type: "ai-title", aiTitle: "早期标题" }),
     line({ type: "ai-title", aiTitle: "登录超时修复" }),
-    line({ type: "system", subtype: "away_summary", content: "本轮完成登录超时修复并提交。", timestamp: T1 }),
+    line({ type: "system", subtype: "away_summary", content: "本轮完成登录超时修复并提交。 (disable recaps in /config)", timestamp: T1 }),
     line({ type: "attachment", timestamp: T2, attachment: { type: "hook_success" } }),
   ].join("\n");
 }
@@ -93,7 +93,7 @@ describe("parseSignalEvents(逐行提取)", () => {
     expect(t2.skills).toEqual(["shine-worklog:report"]);
     expect(st.aiTitle).toBe("登录超时修复"); // 最后一条胜出
     expect(st.awaySummaries.length).toBe(1);
-    expect(st.awaySummaries[0]!.text).toContain("登录超时修复");
+    expect(st.awaySummaries[0]!.text).toBe("本轮完成登录超时修复并提交。"); // UI 提示尾巴被清掉
     expect(st.toolUseCounts).toEqual({ Edit: 1, Bash: 1, TaskCreate: 1 });
     expect(st.filesChanged).toEqual(["C:\\proj\\a.ts"]);
     expect(st.cwd).toBe("C:\\proj"); // 首条 cwd 胜出(中途 cd 子目录不覆盖,否则 API 按 cwd 过滤查不到)
