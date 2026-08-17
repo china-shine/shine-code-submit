@@ -83,9 +83,12 @@ export const GIT_CACHE_TTL_MS = 300_000; // 5 分钟
 export const SESSION_TOKEN_ENRICH_LIMIT = 50;
 
 // events 表保留窗口:超过此时长的事件每日自动修剪(DELETE+VACUUM)。
-// 行数/AI 占比查询(近端 git/会话视图)只需近期数据;tokenserver 侧 git_changes 用 MAX 天然防降级,
-// sessions 行数依赖 daemon 侧"无事件→null+服务端 COALESCE 保留旧值"(2026-08-17)。
+// 行数/AI 占比已换源 ailines 文件(transcript 提取),events 停用入库仅清残留(2026-08-17 终局)。
 export const EVENTS_RETENTION_MS = 7 * 86_400_000;
+
+// ailines 回填窗口:近 N 天活跃但无 ailines 文件的父 transcript 由兜底全扫标脏回填。
+// 取 90 天覆盖全部存量(transcript 全在,一次性建齐;行数/AI 占比历史因此可完整找回)。
+export const AILINES_BACKFILL_WINDOW_MS = 90 * 86_400_000;
 
 // events 修剪周期:启动后首跑一次 + 每 24h 一轮。
 export const EVENTS_PRUNE_INTERVAL_MS = 24 * 3_600_000;

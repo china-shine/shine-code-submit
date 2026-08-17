@@ -16,6 +16,8 @@ import {
 } from "./transcript";
 import { Logger } from "./logger";
 import { SignalsStore } from "./signals-store";
+import { AiLinesStore } from "./ailines-store";
+import { AILINES_BACKFILL_WINDOW_MS } from "../shared/config";
 
 const TICK_MS = 5000;
 const FULL_SCAN_MS = 5 * 60_000;
@@ -59,6 +61,7 @@ export class TranscriptConsumer {
   private fullTimer: ReturnType<typeof setInterval> | null = null;
   private running = false;
   private signals = new SignalsStore();
+  private ailines = new AiLinesStore();
 
   constructor(private store: Store) {}
 
@@ -140,6 +143,17 @@ export class TranscriptConsumer {
         this.log.info(`signals ${f.path} failed`, e);
       }
     }
+    // AI 行集合+会话行数(父+子代理文件都喂,合并进同一 session;行数统计与 AI 占比数据源)
+    try {
+      this.ailines.update(
+        { parentPath: f.is_subagent === 0 ? f.path : f.parent_path, sessionId: f.session_id, projectId: f.project_id },
+        newLines,
+        truncated,
+        f.is_subagent === 0,
+      );
+    } catch (e) {
+      this.log.info(`ailines ${f.path} failed`, e);
+    }
   }
 
   /** 重算一个 session:聚合所有文件(父+子代理)entries → sessionUsageAndActiveFromEntries 全量算 → UPDATE 结果(清 dirty)。 */
@@ -185,20 +199,23 @@ export class TranscriptConsumer {
             parentPath: info.parentPath,
             isSubagent: info.kind === "subagent",
           });
-        } else if (
-          info.kind === "parent" &&
-          mtimeMs >= Date.now() - SIGNALS_BACKFILL_WINDOW_MS &&
-          this.signals.needsConsume({ sessionId: info.sessionId, projectId: info.projectId, transcriptMtimeMs: mtimeMs })
-        ) {
-          // 近期活跃但无信号文件(升级前已消费完),或信号落后于 transcript(写库后写信号前被杀/旧版
-          // daemon 消费过)→ 标脏让消费者回填/全量重建自愈,当日 /report 也有信号可用
-          this.store.markFileDirtyOrInsert({
-            path: file,
-            sessionId: info.sessionId,
-            projectId: info.projectId,
-            parentPath: info.parentPath,
-            isSubagent: false,
-          });
+        } else if (info.kind === "parent") {
+          // 回填标脏:信号(3 天窗口,当日 /report 可用)或 AI 行集合(90 天窗口,行数/占比历史完整找回)
+          const needSignals =
+            mtimeMs >= Date.now() - SIGNALS_BACKFILL_WINDOW_MS &&
+            this.signals.needsConsume({ sessionId: info.sessionId, projectId: info.projectId, transcriptMtimeMs: mtimeMs });
+          const needAiLines =
+            mtimeMs >= Date.now() - AILINES_BACKFILL_WINDOW_MS &&
+            this.ailines.needsConsume({ sessionId: info.sessionId, projectId: info.projectId, transcriptMtimeMs: mtimeMs });
+          if (needSignals || needAiLines) {
+            this.store.markFileDirtyOrInsert({
+              path: file,
+              sessionId: info.sessionId,
+              projectId: info.projectId,
+              parentPath: info.parentPath,
+              isSubagent: false,
+            });
+          }
         }
       }
     }

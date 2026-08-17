@@ -11,6 +11,7 @@ export const SPOOL_DIR = join(DATA_DIR, "spool");
 export const LOG_DIR = join(DATA_DIR, "log");
 export const DB_DIR = join(DATA_DIR, "db");
 export const SIGNALS_DIR = join(DATA_DIR, "signals"); // transcript 关键信号:<编码项目>/<日期>/<sessionId>.json(daemon 消费者写,/api/signals 读)
+export const AILINES_DIR = join(DATA_DIR, "ailines"); // AI 行集合+会话行数(换源 transcript):<编码项目>/<日期>/<sessionId>.json(行数统计与 AI 占比数据源,events 表已停用)
 
 export const PID_FILE = join(DATA_DIR, "daemon.pid");
 export const TOKEN_FILE = join(DATA_DIR, "daemon.token"); // 持久 token：daemon 重启/自动升级复用，dashboard 链接不变
@@ -19,7 +20,7 @@ export const DB_FILE = join(DB_DIR, "events.sqlite");
 
 /** 创建所有需要的目录。Daemon 与 Hook 启动时各调一次幂等。 */
 export function ensureDirs(): void {
-  for (const d of [DATA_DIR, SPOOL_DIR, LOG_DIR, DB_DIR, SIGNALS_DIR]) {
+  for (const d of [DATA_DIR, SPOOL_DIR, LOG_DIR, DB_DIR, SIGNALS_DIR, AILINES_DIR]) {
     mkdirSync(d, { recursive: true });
   }
 }

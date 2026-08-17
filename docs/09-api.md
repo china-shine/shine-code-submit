@@ -12,7 +12,7 @@
 |---|---|---|
 | GET | /api/health | {service,pid,version,uptime};service 必须 === "shine-worklog"(探活认自己人) |
 | GET | /api/stats | 统计窗口聚合(dashboard 概览) |
-| GET | /api/events | hook 事件分页(dashboard 调试;cwd/type/since 过滤;仅近 7 天,超出被滚动修剪) |
+| GET | /api/events | ⚠️ events 表已彻底停用(2026-08-17,行数/AI 占比换源 ailines 文件)——恒返回空 |
 | GET | /api/transcript?session= | 会话 transcript 明细(dashboard 会话详情) |
 | GET | /api/commits | 提交列表(dashboard) |
 | GET | /api/sessions | `?since=<ms>`(全部会话 limit 10000)或 `?cwd=<path>`(项目会话分页富化) |
@@ -30,7 +30,7 @@
 | POST | /api/zentao-cache/refresh | spawn zentao.ts refresh;in-flight 锁;120s 超时 |
 | POST | /api/report/upload | 手动上报;`?full=1` 全量;失败 {status:"skipped"} 水位不推进 |
 | POST | /api/update | 手动检查更新(dashboard 按钮) |
-| POST | /api/hook/<type> | hook 事件入口(响应含 version 供版本同步) |
+| POST | /api/hook/<type> | hook 事件入口(⚠️ 2026-08-17 起不再入库,仅回 200+version——版本同步依赖该响应) |
 | POST | /api/shutdown | 优雅停止 |
 
 ### 报表与 UI

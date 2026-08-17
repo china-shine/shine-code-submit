@@ -413,13 +413,16 @@ export function startServer(deps: ServerDeps) {
         }
         const event = normalizeEvent(type, body);
         if (!event) return json({ error: "missing required fields (cwd, sessionId)" }, 400);
-        const inserted = store.insert(event);
-        if (inserted) {
-          bus.emit(event);
-          stats.recordEvent();
-          log.info(`ingest http ${event.type}`);
-        }
-        return json({ status: "ok", inserted, version: SERVICE_VERSION });
+        // 2026-08-17 终局:events 表彻底停用——行数统计与 AI 占比已换源 ailines 文件(transcript 提取,
+        // 见 ailines.ts/ailines-store.ts),events 无任何消费方。仍返回 200+version——hook↔daemon 版本同步
+        // 依赖本响应,断掉会升级死循环;hook 收 200 也不再产生 spool。恢复记录时取消下方注释:
+        // const inserted = store.insert(event);
+        // if (inserted) {
+        //   bus.emit(event);
+        //   stats.recordEvent();
+        //   log.info(`ingest http ${event.type}`);
+        // }
+        return json({ status: "ok", inserted: false, version: SERVICE_VERSION });
       }
 
       if (path === "/api/stats" && req.method === "GET") {
@@ -676,13 +679,8 @@ function num(v: string | null): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
-/** 从某 session 的事件 payload 里找 transcript_path（取最近 50 条里第一个带值的）。 */
+/** 从 sessions 表拿该会话的父 transcript 路径(events 停用后唯一来源;消费者发现即有,冷启动未扫完时 null,前端重试)。 */
 function findTranscriptPath(store: Store, sessionId: string): string | null {
-  for (const e of store.query({ sessionId, limit: 50 })) {
-    const p = e.payload as Record<string, unknown> | null;
-    if (p && typeof p.transcript_path === "string") return p.transcript_path;
-  }
-  // hook 未提供 transcript_path 时查 SQLite(消费者已发现);冷启动消费者未跑完 fullScanBackstop 时可能 null,前端重试即可
   return store.getTranscriptSession(sessionId)?.parent_path ?? null;
 }
 

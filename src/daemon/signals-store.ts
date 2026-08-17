@@ -26,7 +26,7 @@ export interface ApiSignalSession {
   linesRemoved: number;
 }
 
-function safeRead(p: string): string | null {
+export function safeRead(p: string): string | null {
   try {
     return readFileSync(p, "utf8");
   } catch {
@@ -34,7 +34,7 @@ function safeRead(p: string): string | null {
   }
 }
 
-function mtimeOf(p: string): number | null {
+export function mtimeOf(p: string): number | null {
   try {
     return statSync(p).mtimeMs;
   } catch {
@@ -66,7 +66,7 @@ function findSignalsFile(baseDir: string, projectId: string, sessionId: string):
 }
 
 /** 原子写(tmp+rename,同 spool.ts 风格):读者永不读半截 JSON。 */
-function atomicWrite(p: string, content: string): void {
+export function atomicWrite(p: string, content: string): void {
   mkdirSync(join(p, ".."), { recursive: true });
   const tmp = p + ".tmp";
   writeFileSync(tmp, content, "utf8");
