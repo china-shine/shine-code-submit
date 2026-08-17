@@ -188,9 +188,10 @@ export class TranscriptConsumer {
         } else if (
           info.kind === "parent" &&
           mtimeMs >= Date.now() - SIGNALS_BACKFILL_WINDOW_MS &&
-          !this.signals.has({ sessionId: info.sessionId, projectId: info.projectId })
+          this.signals.needsConsume({ sessionId: info.sessionId, projectId: info.projectId, transcriptMtimeMs: mtimeMs })
         ) {
-          // 近期活跃但无信号文件(升级前已消费完的会话)→ 标脏回填,当日 /report 也有信号可用
+          // 近期活跃但无信号文件(升级前已消费完),或信号落后于 transcript(写库后写信号前被杀/旧版
+          // daemon 消费过)→ 标脏让消费者回填/全量重建自愈,当日 /report 也有信号可用
           this.store.markFileDirtyOrInsert({
             path: file,
             sessionId: info.sessionId,

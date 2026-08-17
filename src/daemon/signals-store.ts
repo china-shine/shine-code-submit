@@ -34,6 +34,17 @@ function safeRead(p: string): string | null {
   }
 }
 
+function mtimeOf(p: string): number | null {
+  try {
+    return statSync(p).mtimeMs;
+  } catch {
+    return null;
+  }
+}
+
+/** 信号落后判定余量:正常链路 5s tick 内信号必然写到 ≥ transcript mtime-5s,超出即异常落后。 */
+const STALE_SLACK_MS = 5_000;
+
 function projectDir(baseDir: string, projectId: string): string {
   return join(baseDir, projectId);
 }
@@ -69,13 +80,23 @@ export class SignalsStore {
 
   constructor(private baseDir: string = SIGNALS_DIR) {}
 
-  /** 该会话是否已有信号文件(路径缓存优先,查过即缓存)。兜底全扫判断"要不要标脏回填"用。 */
+  /** 该会话是否已有信号文件(路径缓存优先,查过即缓存)。 */
   has(info: { sessionId: string; projectId: string }): boolean {
     const cached = this.pathCache.has(info.sessionId)
       ? this.pathCache.get(info.sessionId)!
       : findSignalsFile(this.baseDir, info.projectId, info.sessionId);
     this.pathCache.set(info.sessionId, cached);
     return cached !== null;
+  }
+
+  /** 兜底全扫判断"要不要标脏":无信号文件,或信号文件落后于 transcript(consumeFile 先写库后写信号,
+   *  两步之间 daemon 被杀 → offset 已推进/不脏/has 为 true,永不再消费;或被旧版无信号逻辑的
+   *  daemon 消费过)→ 需要标脏让消费者全量重建自愈。 */
+  needsConsume(info: { sessionId: string; projectId: string; transcriptMtimeMs: number }): boolean {
+    if (!this.has(info)) return true;
+    const cached = this.pathCache.get(info.sessionId)!;
+    const sigM = mtimeOf(cached);
+    return sigM === null || sigM < info.transcriptMtimeMs - STALE_SLACK_MS;
   }
 
   /** 无已有文件/损坏/截断 → 整文件回填一次(覆盖升级前的历史);否则增量合并新行。
@@ -87,16 +108,26 @@ export class SignalsStore {
     this.pathCache.set(info.sessionId, cached);
 
     let state: SessionSignals | null = cached ? parseSignalsBlob(safeRead(cached)) : null;
-    if (!state || truncated) {
-      // 回填:必须从空状态整文件重建——不能把旧 state 传进来(truncated 时旧状态与全量叠加会翻倍)
+    // 回填:必须从空状态整文件重建——不能把旧 state 传进来(truncated 时旧状态与全量叠加会翻倍)
+    const rebuild = (): boolean => {
       const raw = safeRead(info.path);
-      if (raw === null) return; // transcript 读不出:无旧状态不写空文件;有旧状态保留原样不动
+      if (raw === null) return false; // transcript 读不出:无旧状态不写空文件;有旧状态保留原样不动
       state = parseSignalEvents(raw, emptySignals());
+      return true;
+    };
+    if (!state || truncated) {
+      if (!rebuild()) return;
     } else if (newLines) {
       parseSignalEvents(newLines, state);
     } else {
-      return; // 无新完整行(半写行等),状态不变,跳过重写
+      // 无新完整行:若信号文件落后于 transcript(上次消费在写库后、写信号前被杀 → 标脏自愈入口;
+      // 半写行等正常场景信号与 transcript 同龄)→ 全量重建;否则状态未变,跳过重写
+      const sigM = mtimeOf(cached!);
+      const srcM = mtimeOf(info.path);
+      if (sigM === null || srcM === null || sigM >= srcM - STALE_SLACK_MS) return;
+      if (!rebuild()) return;
     }
+    if (!state) return; // 上面三支要么 return 要么 state 已赋值,此行同时供 TS 收窄
 
     // 全空状态不落盘:0 字节 transcript(会话刚建文件)写空文件到"今天"目录,日后内容 firstAt 赋值
     // 落到真实日期目录 → 旧空文件残留,sessionId 精查会返回同 id 两条。空 → 等有内容再建。

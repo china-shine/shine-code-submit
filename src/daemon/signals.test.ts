@@ -1,5 +1,5 @@
 import { describe, test, expect, afterAll } from "bun:test";
-import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, readFileSync, existsSync, mkdirSync, utimesSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -239,5 +239,28 @@ describe("SignalsStore + readSignalsForApi(文件存储)", () => {
     const r = readSignalsForApi({ cwd, sessionId: "drift" }, base);
     expect(r.total).toBe(1); // 只有一份(2026-08-17 目录)
     expect(r.sessions[0]!.turns.length).toBe(3); // 旧 turn + fixture 2 turn
+  });
+
+  test("信号落后于 transcript(消费中途被杀/旧版消费过)→ 无新行也全量重建自愈", () => {
+    writeFileSync(transcript, fixtureSession(), "utf8");
+    const store = new SignalsStore(base);
+    store.update({ path: transcript, sessionId: "heal", projectId }, fixtureSession(), false);
+    // 模拟:transcript 又长了一段(如被旧版 daemon 消费,新代码拿不到 newLines),信号文件 mtime 落后 >5s
+    const tail = line({ type: "assistant", timestamp: T2, message: { role: "assistant", content: [{ type: "text", text: "被杀前丢失的结论" }] } }) + "\n" +
+      line({ type: "system", subtype: "turn_duration", timestamp: T2 });
+    writeFileSync(transcript, fixtureSession() + "\n" + tail, "utf8");
+    const sigFile = join(base, projectId, "2026-08-17", "heal.json");
+    const past = new Date(Date.now() - 10_000);
+    utimesSync(sigFile, past, past);
+    const srcM = statSync(transcript).mtimeMs;
+    // needsConsume 应报告落后(兜底全扫据此标脏)
+    expect(store.needsConsume({ sessionId: "heal", projectId, transcriptMtimeMs: srcM })).toBe(true);
+    // 消费者路径:update 无新行 → 落后重建
+    store.update({ path: transcript, sessionId: "heal", projectId }, "", false);
+    const s = readSignalsForApi({ cwd, sessionId: "heal" }, base).sessions[0]!;
+    expect(s.turns.length).toBe(3); // 丢失的 turn 补回
+    expect(s.turns[2]!.conclusion).toBe("被杀前丢失的结论");
+    // 自愈后不再落后
+    expect(store.needsConsume({ sessionId: "heal", projectId, transcriptMtimeMs: srcM })).toBe(false);
   });
 });
