@@ -36,6 +36,8 @@ cd tokenserver && bun run scripts/build.ts
 
 生产部署:scp 到生产机替换 → nohup 重启。⚠️ daemon 侧新上报兼容旧二进制(extra 字段被忽略,不崩),但**占比口径修复需重新部署才生效**。
 
+⚠️ **部署时序铁律(2026-08-17)**:daemon 侧 events 表已改 7 天滚动修剪,超窗老会话行数上报 **NULL**——**旧二进制会把 NULL 洗成 0**,全量校准时清零平台 `sessions` 行数历史。**必须先部署含 COALESCE 的新二进制**(`sessions` upsert 行数三列 `COALESCE(excluded.x, sessions.x)`,接收侧 `l?.added ?? null` 透传),再恢复 daemon 对本服务的自动上报。git_changes 的 aiAdded 用 MAX 天然防降级,不受此约束。
+
 ## ⚠️ 已知安全待办(见记忆 tokenserver-auth-todo)
 
 全接口无鉴权绑 0.0.0.0(局域网可 GET 数据、可伪造 POST 覆盖);daemon 默认公网 10min 自动上报。修复方向:共享 token / 限源 / reportUrl 默认空。**接手者优先评估此项**。
