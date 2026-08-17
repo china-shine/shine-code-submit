@@ -2,6 +2,22 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.47 — 2026-08-17
+
+transcript 关键信号预提取:daemon 后台持续把会话日志提炼成"每轮结论 + commits + 任务清单",`/report` 的 AI 填空不再现场解析完整日志(1~11MB → 几十 KB,压缩比 ~90x),填报从"干等 AI 啃日志"变秒级读现成素材。
+
+### 变更(daemon)
+- **信号提取挂进现有消费链**:consumer 每 5s 增量消费 transcript 时顺带按结构标识提取(turn_duration 切轮、每轮末条 assistant 文本为结论、git commit -m 首行、TaskCreate/TodoWrite subject、Edit/Write 文件与行数、away_summary、ai-title),纯规则零 LLM,不碰 token/工时计算链路(ccusage 对齐回归通过)。
+- **按项目按日期落文件** `DATA_DIR/signals/<编码项目>/<日期>/<sessionId>.json`(不入 SQLite,原子写,可整目录删重建);近 3 天活跃但无信号的会话由兜底全扫自动回填,更早的走 skills 层直读 transcript 退化兜底。
+- **新增 `GET /api/signals`**(cwd+since/sessionId,Bearer 鉴权):读信号文件,上限 200 会话,同 sessionId 双文件取新鲜者。
+- **鲁棒性(六轮复查)**:无信号/损坏/截断→整文件回填且恒从空状态重建(不翻倍);cwd 取首条(会话中 cd 子目录不覆盖,否则按项目过滤会查不到);信号落后于 transcript(消费中途被杀/旧版消费过)→ 兜底全扫标脏全量重建自愈;空状态不落盘防残留重复文件;目录漂移迁移删旧文件。
+
+### 变更(skills)
+- `prepare` 优先读 daemon `/api/signals`(秒回),daemon 不可达/老会话无预提取时退化原直读;`/report` AI 归纳 work 的素材指引同步为"逐轮结论为主料、commits/任务清单佐证、prompts 补意图"。
+
+### 升级说明
+老版本 autoUpdate(默认 60min 一查)发现新版即静默安装并自动重启 daemon,信号提取随即开始运行;近 3 天活跃会话自动回填,无需任何手动操作。
+
 ## 1.3.46 — 2026-08-15
 
 缓存自动刷新重构为报表侧按需方案(修复 1.3.45 在 Windows 上不生效的问题)。
