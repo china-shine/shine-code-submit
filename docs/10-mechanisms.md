@@ -39,6 +39,7 @@ flowchart LR
 ```
 
 「与近 20 天工时关联的都拉」;更早历史/已关闭执行 → 禅道实时源兜底(靠 submitted.json 收集任务 id)。
+报表聚合任务集合 = submitted.json ∪ cache.tasks(未完成)∪ cache.taskDetails(已完成)——任务转 done 只是换库不丢工时(#78363 修:曾因聚合集合漏 taskDetails,任务当天完成后其当日工时从日报 cache/zentao 两源同时消失)。
 
 ## ④ 报表侧按需刷新(1.3.46)
 

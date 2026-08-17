@@ -11,7 +11,7 @@
 | health 报新版本但改动没生效 | version 运行时读 package.json 会伪装 | 验证重启看 **pid+uptime**;改 daemon 代码必须重启 |
 | EADDRINUSE 36666 | 残留 bun 进程(git-bash taskkill 无效) | PowerShell `Get-NetTCPConnection -LocalPort 36666` → Stop-Process |
 | 日报/周报「少了刚提交的一笔」 | 缓存旧于提交 | 1.3.46 起自动刷新;老版本选「先刷新缓存」或 `/refresh` |
-| 报表缺已完成任务的工时 | 任务完成超 20 天(窗口外)或已关闭执行 | 用「禅道实时」源 |
+| 报表缺已完成任务的工时 | 近 20 天内已并入聚合(taskDetails);仍缺 = 超 20 天窗口外/已关闭执行/不指派给我 | 用「禅道实时」源 |
 | Windows curl 发中文变 GBK 污染 JSON | git-bash 编码 | 用 `bun -e fetch` 或 `curl -d @file.json` |
 | bun -e 内联 JS 写文案出现真换行 | JS 单引号 `\n` 是转义 | 走 `note` 命令传参(bash 不转义)或写 `\\n` |
 | 后台 spawn 的子进程不执行 | Bun.spawn + unref + ignore stdio 随父进程死 | 用 node:child_process 的 detached:true |

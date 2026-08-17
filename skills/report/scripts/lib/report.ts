@@ -55,6 +55,16 @@ function collectTaskIds(from: string, to: string): number[] {
   return [...ids];
 }
 
+/** 报表聚合的任务 id 集合:本地提交过的(submitted.json)∪ cache.tasks(未完成)∪ cache.taskDetails(已完成)。
+ *  已完成任务必须并入——任务转 done 后移出 cache.tasks、只剩 taskDetails,若聚合集合漏了它,
+ *  窗口内工时就从日报/周报消失(#78363:上午手填 0.5h,下午任务转 done,daily 两源都拉不到)。 */
+export function reportTaskIds(cache: any, from: string, to: string): Set<number> {
+  const ids = new Set<number>(collectTaskIds(from, to));
+  for (const t of cache.tasks ?? []) ids.add(t.id);
+  for (const k of Object.keys(cache.taskDetails ?? {})) ids.add(Number(k));
+  return ids;
+}
+
 /** 任务名 + 项目名(优先 cache,缺则 GET /tasks/{id}) */
 async function taskNameInfo(client: Client, cache: any, taskId: number): Promise<{ taskName: string; projectName: string }> {
   const taskById: any = {};
@@ -97,9 +107,7 @@ type ReportData = {
 /** 装配日报/周报数据:从禅道 efforts 汇总日期范围内的提交记录(纯数据,不含渲染)。 */
 async function gatherReport(client: Client, cfg: Record<string, any>, from: string, to: string, kind?: "daily" | "weekly", source: "zentao" | "cache" = "zentao"): Promise<ReportData> {
   const cache = await getCache(client, cfg);
-  const ids = new Set<number>(collectTaskIds(from, to));
-  for (const t of cache.tasks) ids.add(t.id);
-  const idList = [...ids];
+  const idList = [...reportTaskIds(cache, from, to)];
 
   // 拉每个任务的 efforts。source=cache 读本地 efforts/ 目录(0 网络,refresh 快照,含已完成任务工时——
   // refresh 拉全状态任务);source=zentao 实时拉 client.myEfforts(准,联网)。

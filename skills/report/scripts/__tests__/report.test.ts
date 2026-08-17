@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { renderReportHtml, renderReportText, reportFilename, lastWeekRange } from "../lib/report";
+import { renderReportHtml, renderReportText, reportFilename, lastWeekRange, reportTaskIds } from "../lib/report";
 // renumberWorks 已删(9b4b559 起 work 排版移到 AI,该函数成死代码,连同其测试一并移除)。
 
 const mkDaily = (over: Record<string, unknown> = {}): any => ({
@@ -123,6 +123,21 @@ describe("reportFilename", () => {
   });
   test("kind=weekly 强制周报(即便 from===to,复现周一 /weekly 误判)", () => {
     expect(reportFilename("2026-08-10", "2026-08-10", "任桂峰", "weekly")).toBe("周报-2026-08-10~2026-08-10-任桂峰.html");
+  });
+});
+
+describe("reportTaskIds", () => {
+  test("已完成任务(taskDetails)也进聚合集合——转 done 后工时不消失(#78363)", () => {
+    const ids = reportTaskIds(
+      { tasks: [{ id: 77563 }], taskDetails: { "78363": { name: "为门诊部门搭建dify环境", project: 6924 } } },
+      "2026-08-17", "2026-08-17",
+    );
+    expect(ids.has(77563)).toBe(true); // 未完成(cache.tasks)
+    expect(ids.has(78363)).toBe(true); // 当天转 done,已移出 cache.tasks、只剩 taskDetails
+  });
+  test("taskDetails 缺省不炸(老缓存无该字段)", () => {
+    const ids = reportTaskIds({ tasks: [] }, "2026-08-17", "2026-08-17");
+    expect(ids.size).toBeGreaterThanOrEqual(0);
   });
 });
 

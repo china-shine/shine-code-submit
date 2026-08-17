@@ -120,7 +120,7 @@ ls <DATA_DIR>/zenpilot/efforts/                                # 应只有近 20
 |---|---|
 | 「配置文件不存在」 | `zenpilot/config.json` 缺失 → 走 `/setup`(提示语里的 config.example.json 实际不存在,按 {url,account,password} 创建) |
 | 日报缺刚提交的一笔 | 1.3.46+ 自动刷新;老版本手动 refresh 或选「先刷新缓存」源 |
-| 缺已完成任务的工时 | 任务完成超 20 天/已关闭执行 → 用禅道实时源 |
+| 缺已完成任务的工时 | 近 20 天内已并入聚合;超 20 天/已关闭执行 → 用禅道实时源 |
 | 文案出现奇怪换行 | 曾用内联脚本写 work 触发 `\n` 转义(见 [10-mechanisms](10-mechanisms.md) ④ 附教训) |
 
 ### ③ 上报与 tokenserver 层
