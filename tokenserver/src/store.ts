@@ -151,7 +151,6 @@ db.exec(`
 }
 
 const ZERO: TokenUsage = { input: 0, output: 0, cacheCreation: 0, cacheRead: 0 };
-const ZERO_LINES: LinesStat = { added: 0, deleted: 0, modified: 0 };
 interface SessionRow {
   sessionId: string;
   gitUser: string;
@@ -189,14 +188,16 @@ const upsertSession = db.query(`
     output = excluded.output,
     cacheCreation = excluded.cacheCreation,
     cacheRead = excluded.cacheRead,
-    added = excluded.added,
-    deleted = excluded.deleted,
-    modified = excluded.modified,
+    added = COALESCE(excluded.added, sessions.added),
+    deleted = COALESCE(excluded.deleted, sessions.deleted),
+    modified = COALESCE(excluded.modified, sessions.modified),
     activeMs = excluded.activeMs,
     title = excluded.title,
     updatedAt = excluded.updatedAt
   WHERE excluded.lastActive >= sessions.lastActive OR excluded.cwd IS NOT sessions.cwd
 `);
+// 行数三列 COALESCE(2026-08-17):daemon 侧 events 7 天滚动修剪后,老会话行数上报 null(无数据≠零行),
+// null 时保留平台旧值,防全量校准把历史行数清零;git_changes 用 MAX 天然防降级无需处理。
 const upsertGitChange = db.query(`
   INSERT INTO git_changes (hash, gitUser, cwd, ts, added, deleted, aiAdded, aiDeleted)
   VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -239,11 +240,13 @@ export function saveReport(raw: ReportResponse): void {
       upsertProject.run(gitUser, p.cwd, p.name ?? null, p.gitRemote ?? null, projLastActive, now, raw.version ?? null);
       for (const s of p.sessions ?? []) {
         const t = s.tokenTotal ?? ZERO;
-        const l = s.linesTotal ?? ZERO_LINES;
+        // linesTotal 为 null(无数据≠零行)时三列传 null → upsert COALESCE 保留旧值
+        // (daemon events 7 天修剪后老会话行数报 null,防全量校准清零平台历史)。
+        const l = s.linesTotal;
         upsertSession.run(
           s.sessionId, gitUser, p.cwd, s.lastActive,
           t.input, t.output, t.cacheCreation, t.cacheRead,
-          l.added, l.deleted, l.modified, s.activeMs ?? 0, s.title ?? null, now,
+          l?.added ?? null, l?.deleted ?? null, l?.modified ?? null, s.activeMs ?? 0, s.title ?? null, now,
         );
       }
       // 该项目该窗口所有 commit 的代码变化行(AI 占比分母);hash 幂等,全量重扫不重

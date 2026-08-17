@@ -42,13 +42,16 @@ const cache = new Map<string, CacheEntry>();
 /**
  * 返回某 session 的代码变更行数(带 lastActive 缓存)。
  * 查 PostToolUse 事件,遍历 payload.tool_response.structuredPatch 累加(仅 Edit/Write/MultiEdit/NotebookEdit)。
- * 新建文件(structuredPatch 空)回退 tool_input.content 行数。无事件/解析失败返回 null。
+ * 新建文件(structuredPatch 空)回退 tool_input.content 行数。
+ * 查不到事件(被 7 天修剪的老会话/纯沟通会话)返回 **null**——"无数据"≠"零行",
+ * 上报 null 让 tokenserver COALESCE 保留旧值,防全量校准清零历史(2026-08-17)。
  */
 export function getSessionLines(store: Store, sessionId: string, lastActive: number): LinesStat | null {
   const hit = cache.get(sessionId);
   if (hit && hit.lastActive === lastActive) return hit.stat;
   try {
     const events = store.query({ sessionId, type: "PostToolUse", limit: 2000 });
+    if (events.length === 0) return null; // 无事件=无数据,不计为零
     const total: LinesStat = { added: 0, deleted: 0, modified: 0 };
     for (const ev of events) {
       const p = ev.payload as Record<string, unknown> | null;

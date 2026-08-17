@@ -55,7 +55,7 @@ consumer 消费父 transcript 时顺带提取「决定性内容」(每行已读�
 
 | 表 | 主键 | 内容 |
 |---|---|---|
-| events | (session_id, event_id) | **已停用(2026-08-17 用户决策)**:hook 事件不再入库(server.ts/spool-consumer.ts 注释掉 insert,原为库体积大头),表已清空。/api/hook 仍收请求并回 200+version(hook↔daemon 版本同步依赖);/api/events 恒空 |
+| events | (session_id, event_id) | hook 事件;eventId 由内容派生 → INSERT OR IGNORE 幂等(多 hook 重复采集自动去重)。**7 天滚动修剪**(启动+每 24h DELETE+VACUUM,EVENTS_RETENTION_MS)控体积;行数/AI 占比靠 PostToolUse 的 structuredPatch,老会话被修剪后行数报 null(≠零行) |
 | transcript_files | path | 每个 transcript jsonl 一行:offset/entries_blob/dirty(增量读取游标) |
 | transcript_sessions | session_id | 会话聚合结果:token 四项/active_ms/last_activity/title/cwd/dirty |
 

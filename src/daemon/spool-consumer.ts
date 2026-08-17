@@ -14,35 +14,29 @@ export class SpoolConsumer {
     private log: Logger,
   ) {}
 
-  /** 扫描并清掉全部 spool。返回本次处理条数。
-   *  2026-08-17 用户决策:events 停用后不再入库,扫到即确认删除(正常路径 hook 都收到 200,不会有新 spool;
-   *  这里只兜底清掉停用前可能残留的旧文件)。恢复记录时还原下方注释块。 */
+  /** 扫描并消费全部 spool。返回本次新入库条数。 */
   drain(): number {
     const entries = listSpool((name, err) =>
       this.log.warn(`spool corrupt, skipping ${name}`, err),
     );
-    // let n = 0;
-    // for (const { name, event } of entries) {
-    //   try {
-    //     if (this.store.insert(event)) {
-    //       this.bus.emit(event);
-    //       this.stats.recordEvent();
-    //       n++;
-    //       this.log.info(`ingest spool ${event.type} ${name}`);
-    //     } else {
-    //       this.log.debug(`dedup spool ${name}`);
-    //     }
-    //   } catch (err) {
-    //     this.stats.recordError(`spool ingest failed: ${name}`);
-    //     this.log.error(`spool ingest failed ${name}`, err);
-    //   }
-    //   removeSpoolFile(name); // 无论新插入还是去重，都已确认
-    // }
-    // return n;
-    for (const { name } of entries) {
-      removeSpoolFile(name);
+    let n = 0;
+    for (const { name, event } of entries) {
+      try {
+        if (this.store.insert(event)) {
+          this.bus.emit(event);
+          this.stats.recordEvent();
+          n++;
+          this.log.info(`ingest spool ${event.type} ${name}`);
+        } else {
+          this.log.debug(`dedup spool ${name}`);
+        }
+      } catch (err) {
+        this.stats.recordError(`spool ingest failed: ${name}`);
+        this.log.error(`spool ingest failed ${name}`, err);
+      }
+      removeSpoolFile(name); // 无论新插入还是去重，都已确认
     }
-    return entries.length;
+    return n;
   }
 
   start(intervalMs: number): void {

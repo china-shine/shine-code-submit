@@ -81,3 +81,11 @@ export const GIT_CACHE_TTL_MS = 300_000; // 5 分钟
 
 // /api/sessions enrich tokenTotal 时，最多对最近多少个 session 读 transcript 汇总（控 2s 轮询成本）。
 export const SESSION_TOKEN_ENRICH_LIMIT = 50;
+
+// events 表保留窗口:超过此时长的事件每日自动修剪(DELETE+VACUUM)。
+// 行数/AI 占比查询(近端 git/会话视图)只需近期数据;tokenserver 侧 git_changes 用 MAX 天然防降级,
+// sessions 行数依赖 daemon 侧"无事件→null+服务端 COALESCE 保留旧值"(2026-08-17)。
+export const EVENTS_RETENTION_MS = 7 * 86_400_000;
+
+// events 修剪周期:启动后首跑一次 + 每 24h 一轮。
+export const EVENTS_PRUNE_INTERVAL_MS = 24 * 3_600_000;

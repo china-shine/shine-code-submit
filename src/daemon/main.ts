@@ -1,7 +1,7 @@
 // Daemon 入口：组装 store/bus/stats/logger/spool/ws/server，写 pid 文件，启动并回捞一次。
 import { ensureDirs } from "../shared/paths";
 import { writePidFile, readPidFile, removePidFile, readOrCreateToken } from "../shared/pidfile";
-import { SERVICE_NAME, SERVICE_VERSION, PORT, SPOOL_SCAN_INTERVAL_MS, LISTEN_HOST } from "../shared/config";
+import { SERVICE_NAME, SERVICE_VERSION, PORT, SPOOL_SCAN_INTERVAL_MS, LISTEN_HOST, EVENTS_RETENTION_MS, EVENTS_PRUNE_INTERVAL_MS } from "../shared/config";
 import { isOursAlive } from "../shared/daemonctl";
 import { Store } from "./store";
 import { EventBus } from "./bus";
@@ -105,6 +105,20 @@ async function main(): Promise<void> {
   // SQLite 数据中枢启动:watcher 监听文件变化标 dirty,消费者 2s tick 增量算 + 5min 兜底全扫。
   watcher.start();
   consumer.start();
+
+  // events 滚动修剪:启动 60s 后首跑一次(避开启动高峰),此后每 24h 一轮(DELETE+VACUUM,详见 store.pruneEvents)。
+  {
+    const prune = () => {
+      try {
+        const n = store.pruneEvents(EVENTS_RETENTION_MS);
+        if (n > 0) log.info(`pruned ${n} events older than ${Math.round(EVENTS_RETENTION_MS / 86_400_000)}d`);
+      } catch (e) {
+        log.info("prune events failed", e);
+      }
+    };
+    setTimeout(prune, 60_000);
+    setInterval(prune, EVENTS_PRUNE_INTERVAL_MS);
+  }
 
   log.info(`${SERVICE_NAME} v${SERVICE_VERSION} listening http://${LISTEN_HOST}:${PORT} pid=${process.pid} token=${pid.token}`);
 }

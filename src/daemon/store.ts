@@ -190,6 +190,14 @@ export class Store {
     return row.n;
   }
 
+  /** 修剪 events:删除 timestamp 早于 now-retentionMs 的行并 VACUUM 回收体积(daemon 独占库,自身 VACUUM 安全)。返回删除行数。 */
+  pruneEvents(retentionMs: number): number {
+    const cutoff = Date.now() - retentionMs;
+    const r = this.db.prepare("DELETE FROM events WHERE timestamp < ?").run(cutoff);
+    if (r.changes > 0) this.db.exec("VACUUM");
+    return r.changes;
+  }
+
   // ---- transcript 文件级(watcher 写 dirty,消费者读消费) ----
 
   /** watcher 发现/变更:不存在则插(脏,offset=0,entries='[]'),存在则标 dirty=1。幂等(ON CONFLICT 只更 dirty)。 */

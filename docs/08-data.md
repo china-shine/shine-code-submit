@@ -12,7 +12,7 @@ DATA_DIR/
 ├─ daemon.token               # 持久 token(重启/升级复用,dashboard 链接不失效)
 ├─ settings.json              # 行为开关:reportUrl/reportIntervalMin/autoUpdate/
 │                             #   zentaoCacheTtlMin/aiSubmitMark 等(与 config.json 分离)
-├─ db/events.sqlite           # daemon 主库:transcript 会话统计(见 05-daemon);events 表 2026-08-17 起停用清空
+├─ db/events.sqlite           # daemon 主库:hook 事件(7 天滚动修剪)+ transcript 会话统计(见 05-daemon)
 ├─ log/daemon.log             # 运行日志(5MB 轮换)
 ├─ spool/                     # hook 发送失败的事件暂存(daemon 1s 回捞)
 ├─ signals/                   # ★transcript 关键信号(/report AI 填空素材,consumer 后台增量提取):
