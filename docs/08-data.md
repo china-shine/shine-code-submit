@@ -63,3 +63,15 @@ worklogs     (gitUser,date,sessionId,taskId,subId PK)
 - 换机迁移:拷贝整个 `DATA_DIR/`(config.json 含禅道密码,注意保密);
 - events.sqlite 可删(daemon 会重建重扫,历史 transcript 全量回扫耗时 10-30s);
 - tokenserver 侧 worklogs **只增不删**——禅道侧删改的记录在平台永久残留(已知设计缺口)。
+
+## 库体积增长(封顶分析,2026-08-17)
+
+**events.sqlite 总体积 ≈ 30MB 封顶,不会无限增长**——三张表全有天然上限:
+
+| 表 | 封顶机制 | 稳态体积 |
+|---|---|---|
+| events | 7 天滚动修剪(EVENTS_RETENTION_MS,启动+每 24h DELETE+VACUUM) | ~20MB |
+| transcript_sessions | Claude 30 天清理 transcript → watcher 收到删除事件 → consumer ENOENT → **级联删行** | ~150 行,<1MB |
+| transcript_files | 同上级联;entries_blob(~30KB/会话)是唯一真增长点,同样被 30 天清理封顶 | ~300 行,~10MB |
+
+变数:将来若设 `~/.claude/settings.json` 的 `cleanupPeriodDays: 365`(保留 transcript),后两表随会话数涨至 ~100-150MB/年,仍可控。已知缝隙:daemon 停机期间 Claude 清理文件 → 无删除事件 → 少量僵尸行残留(无碍体积;彻底闭合=fullScanBackstop 加"文件不存在的行直接清",待办)。
