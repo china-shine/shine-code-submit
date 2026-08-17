@@ -49,7 +49,7 @@ consumer 消费父 transcript 时顺带提取「决定性内容」(每行已读�
 | 会话标题 | `ai-title` 行,最后一条胜出(比 first-user-text 标题质量高) |
 | 报表类标记 | assistant 行 `attributionSkill`(识别 /report /daily 等自身操作) |
 
-无已有文件/损坏/截断 → 整文件回填一次(覆盖升级前历史);此后每 tick 增量合并新行。**落后自愈**:consumeFile 先写库后写信号,两步之间 daemon 被杀(或被旧版无信号逻辑的 daemon 消费过)→ 信号文件 mtime 落后于 transcript——兜底全扫按 `needsConsume`(无信号文件,或信号 mtime < transcript mtime-5s)标脏,消费者全量重建。子代理文件不提取(与 skills 层 extractTranscriptSignals 同口径)。上限:turns 300/会话、conclusion 800 字等(防文件膨胀)。信号里的 cwd 取**首条**(first-wins,对齐 readFirstCwdFromText)——行内 cwd 是"当时"目录,会话中 cd 子目录不能覆盖,否则 /api/signals 按项目 cwd 过滤会查不到。
+无已有文件/损坏/截断 → 整文件回填一次(覆盖升级前历史);此后每 tick 增量合并新行。**落后自愈**:consumeFile 先写库后写信号,两步之间 daemon 被杀(或被旧版无信号逻辑的 daemon 消费过)→ 信号文件 mtime 落后于 transcript——兜底全扫按 `needsConsume`(无信号文件,或信号 mtime < transcript mtime-5s)标脏,消费者全量重建。子代理文件不提取(与 skills 层 extractTranscriptSignals 同口径)。上限:turns 300/会话等;**conclusion 不截断**(2026-08-17 实测 120 轮全存 67KB vs 截断 61KB,代价 10%,保留全量细节;极端膨胀再收)。信号里的 cwd 取**首条**(first-wins,对齐 readFirstCwdFromText)——行内 cwd 是"当时"目录,会话中 cd 子目录不能覆盖,否则 /api/signals 按项目 cwd 过滤会查不到。
 
 ## events.sqlite 三表(store.ts)
 

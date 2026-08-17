@@ -112,6 +112,17 @@ describe("parseSignalEvents(逐行提取)", () => {
     expect(st.open?.conclusion).toBe("进行中");
   });
 
+  test("超长结论全量保存不截断(2026-08-17 决策)", () => {
+    const long = "长结论开头。".repeat(400); // 2400 字,超旧 800 上限
+    const st = parseSignalEvents(
+      line({ type: "user", timestamp: T0, message: { role: "user", content: "做某事" } }) + "\n" +
+      line({ type: "assistant", timestamp: T0, message: { role: "assistant", content: [{ type: "text", text: long }] } }) + "\n" +
+      line({ type: "system", subtype: "turn_duration", timestamp: T0 }),
+      emptySignals(),
+    );
+    expect(st.turns[0]!.conclusion).toBe(long); // 有多少存多少
+  });
+
   test("空 turn(仅 turn_duration)不入列", () => {
     const st = parseSignalEvents(line({ type: "system", subtype: "turn_duration", timestamp: T0 }), emptySignals());
     expect(st.turns.length).toBe(0);

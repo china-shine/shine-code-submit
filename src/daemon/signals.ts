@@ -7,7 +7,9 @@
 // 纯结构化规则、零 LLM;逐行独立判定 → 可随 transcript-consumer 增量追加(blob 状态 + 新行)。
 // 只处理父 transcript(与 skills 侧 extractTranscriptSignals 同口径);不影响 token/activeMs 计算链。
 
-/** 上限:防信号文件无界膨胀(DATA_DIR/signals 每会话一个 json)。 */
+/** 上限:防信号文件无界膨胀(DATA_DIR/signals 每会话一个 json)。
+ *  conclusion 刻意不设上限(2026-08-17 实测:153 轮 4 会话单轮最长 2316 字;120 轮全存 67KB vs 800 截断 61KB,
+ *  代价仅 10%、为原始日志 0.7%)——截断省的体积无意义还丢细节,极端膨胀再收(用户决策,详见系统记忆)。 */
 const MAX_TURNS = 300;
 const MAX_PROMPTS_PER_TURN = 5;
 const MAX_COMMITS_PER_TURN = 10;
@@ -17,7 +19,6 @@ const MAX_FILES_SESSION = 50;
 const MAX_SKILLS_PER_TURN = 5;
 const MAX_AWAY = 20;
 const PROMPT_MAX_CHARS = 200;
-const CONCLUSION_MAX_CHARS = 800;
 const AWAY_MAX_CHARS = 600;
 const TASK_MAX_CHARS = 120;
 const COMMIT_MAX_CHARS = 200;
@@ -206,7 +207,7 @@ export function parseSignalEvents(raw: string, state: SessionSignals): SessionSi
       const block = b as Record<string, unknown>;
       if (!block) continue;
       if (block.type === "text" && typeof block.text === "string" && block.text.trim()) {
-        openRef().conclusion = block.text.trim().slice(0, CONCLUSION_MAX_CHARS); // 最后一条胜出=结论
+        openRef().conclusion = block.text.trim(); // 最后一条胜出=结论;全量保存不截断
         touched = true;
       } else if (block.type === "tool_use") {
         const name = typeof block.name === "string" ? block.name : "unknown";
