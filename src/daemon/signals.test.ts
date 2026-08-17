@@ -212,6 +212,18 @@ describe("SignalsStore + readSignalsForApi(文件存储)", () => {
     expect(s.turns.length).toBe(2); // 旧文件原样保留
   });
 
+  test("同 sessionId 双文件(备份恢复等外部来源)→ API 只返回新鲜者", () => {
+    // 手造同 session 两份:旧(2026-01-01,turns 少)与新(2026-08-17,已有 sess1 是新鲜范例)——直接造两个
+    const oldDir = join(base, projectId, "2026-01-01");
+    mkdirSync(oldDir, { recursive: true });
+    const stale = { ...emptySignals(), cwd, firstAt: 1, lastAt: 1, turns: [{ startMs: 1, endMs: 1, prompts: ["旧"], conclusion: "旧结论", commits: [], taskSubjects: [], files: [], added: 0, removed: 0, skills: [] }] };
+    writeFileSync(join(oldDir, "sess1.json"), JSON.stringify(stale), "utf8"); // 与已建的 sess1 同 id
+    const r = readSignalsForApi({ cwd, sessionId: "sess1" }, base);
+    expect(r.total).toBe(1);
+    expect(r.sessions[0]!.turns.length).toBeGreaterThanOrEqual(2); // 新鲜者(原 sess1 的内容)
+    rmSync(join(oldDir, "sess1.json")); // 清理,不影响后续断言
+  });
+
   test("空 transcript(0字节)不写空信号文件", () => {
     const empty = join(base, "empty.jsonl");
     writeFileSync(empty, "", "utf8");

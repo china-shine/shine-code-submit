@@ -16,7 +16,7 @@
 | GET | /api/transcript?session= | 会话 transcript 明细(dashboard 会话详情) |
 | GET | /api/commits | 提交列表(dashboard) |
 | GET | /api/sessions | `?since=<ms>`(全部会话 limit 10000)或 `?cwd=<path>`(项目会话分页富化) |
-| GET | /api/signals | `?cwd=<path>`(必填)+`&since=<ms>`/`&sessionId=<id>`:transcript 关键信号(/report AI 填空素材)。读 `DATA_DIR/signals` 文件不查 SQLite;返回 `{sessions:[{sessionId,turns[{conclusion,prompts,commits,taskSubjects,files,added,removed,skills}],commits,taskSubjects,filesChanged,toolUseCounts,awaySummaries,aiTitle,...}]}`;老会话未提取→查不到,调用方退化直读 transcript |
+| GET | /api/signals | `?cwd=<path>`(必填)+`&since=<ms>`/`&sessionId=<id>`:transcript 关键信号(/report AI 填空素材)。读 `DATA_DIR/signals` 文件不查 SQLite;返回 `{sessions:[{sessionId,turns[{conclusion,prompts,commits,taskSubjects,files,added,removed,skills}],commits,taskSubjects,filesChanged,toolUseCounts,awaySummaries,aiTitle,...}]}`(上限 200 会话,按 lastAt 取最近;同 sessionId 双文件取新鲜者);老会话未提取→查不到,调用方退化直读 transcript |
 | GET | /api/projects | 项目列表(L1 分页) |
 | GET | /api/report | `?since=` 自构建报表(上报同源,调试用) |
 

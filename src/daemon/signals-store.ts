@@ -171,7 +171,7 @@ export function readSignalsForApi(
   } catch {
     return { sessions: [], total: 0 }; // 项目无信号目录(从未提取)
   }
-  const out: ApiSignalSession[] = [];
+  const byId = new Map<string, ApiSignalSession>(); // sessionId→最新者:双文件(备份恢复/手工拷贝等外部来源)防重复返回
   for (const sub of subs) {
     let names: string[] = [];
     try {
@@ -198,7 +198,7 @@ export function readSignalsForApi(
       const lastAt = lastAtOf(st);
       if (opts.since && !opts.sessionId && lastAt < opts.since) continue;
       const turns = st.open ? [...st.turns, st.open] : st.turns;
-      out.push({
+      const entry: ApiSignalSession = {
         sessionId,
         cwd: st.cwd,
         date: sub,
@@ -213,9 +213,12 @@ export function readSignalsForApi(
         toolUseCounts: st.toolUseCounts,
         linesAdded: turns.reduce((a, t) => a + t.added, 0),
         linesRemoved: turns.reduce((a, t) => a + t.removed, 0),
-      });
+      };
+      const prev = byId.get(sessionId);
+      if (!prev || entry.lastAt >= prev.lastAt) byId.set(sessionId, entry); // 双文件取新鲜者
     }
   }
+  const out = [...byId.values()];
   out.sort((a, b) => b.lastAt - a.lastAt);
   if (out.length > MAX_API_SESSIONS) out.length = MAX_API_SESSIONS;
   return { sessions: out, total: out.length };
