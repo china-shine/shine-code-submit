@@ -2,6 +2,21 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.48 — 2026-08-17
+
+signals 结论全量保存 + events 表 7 天滚动修剪(控体积)+ 行数 NULL 语义防护链。⚠️ 本版含 tokenserver 后端变更,**生产 tokenserver 需重新部署新二进制**(旧版会把 NULL 洗成 0,全量校准时清零平台行数历史)。
+
+### 变更(daemon)
+- **signals 结论不截断**:去掉每轮结论 800 字上限,有多少存多少(保真度审计实测:4 会话 153 轮单轮最长 2316 字,120 轮全存 67KB vs 截断 61KB,代价仅 +10%、为原始日志 0.7%——截断省的体积无意义还丢细节)。
+- **events 表 7 天滚动修剪**:启动 60s 后首跑 + 每 24h 一轮 DELETE+VACUUM(EVENTS_RETENTION_MS),体积稳态 ~20MB(原 6.5 周积到 145MB)。行数/AI 占比数据源仍是 events 的 PostToolUse structuredPatch。
+- **行数 NULL 语义**:getSessionLines 查不到事件(被修剪的老会话/纯沟通会话)返回 null 而非 0——"无数据"≠"零行",上报后由 tokenserver COALESCE 保留平台旧值,防 24h 全量校准清零历史。
+
+### 变更(tokenserver,需重新部署)
+- **sessions upsert 行数三列 COALESCE**(added/deleted/modified:NULL 时保留旧值)+ 接收侧 null 透传(原 `?? ZERO_LINES` 会把 null 洗成 0)。git_changes 的 aiAdded 用 MAX 天然防降级,不受影响。数据说明页(/docs)与 07-tokenserver 文档同步补 NULL 语义与部署时序铁律。
+
+### 已知边界
+- daemon events 修剪窗口(7 天)之前的会话,行数上报 null(平台保留旧值);AI 行集合超期不可回溯——平台历史靠 MAX/COALESCE 双防护,实测全量校准后零损失(39 老会话行数完好、AI 占比 85.6% 不变)。
+
 ## 1.3.47 — 2026-08-17
 
 transcript 关键信号预提取:daemon 后台持续把会话日志提炼成"每轮结论 + commits + 任务清单",`/report` 的 AI 填空不再现场解析完整日志(1~11MB → 几十 KB,压缩比 ~90x),填报从"干等 AI 啃日志"变秒级读现成素材。
