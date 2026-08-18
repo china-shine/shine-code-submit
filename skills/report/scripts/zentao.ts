@@ -317,6 +317,7 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>, source
             increment: true,
             task: taskId,
             hours: hoursFromMinutes(delta),
+            deltaMinutes: delta, // 增量原始分钟:render 显示「新增 Nmin」消歧(时间窗仍是全会话,工时只算增量)
             confidence: 95,
             reason: "已提交会话的增量补报,沿用原任务",
             work: incCapped.length ? incCapped.join("\n") : null,
@@ -517,6 +518,9 @@ function cmdRender(): string {
   for (const i of items) {
     if (i.status !== "resolved") continue;
     n++;
+    // 增量条目:时间窗是全会话(11:33—13:16)、工时只算水位后增量(0.5h),补「新增 Nmin」消歧
+    //(2026-08-18 实测:103min 窗口配 0.5h,核对时误以为算错)。老 plan.json 无 deltaMinutes 则维持原样。
+    const incMin = i.increment && Number.isFinite(Number(i.deltaMinutes)) ? `,新增 ${i.deltaMinutes}min` : "";
     const inc = i.increment ? "(增量)" : "";
     const merged = Array.isArray(i.sourceSessions) && i.sourceSessions.length > 1 ? `(${i.sourceSessions.length} 会话合并)` : "";
     // 内容逐条一行(确认展示对齐日报/周报):work 内以 ;/；分隔的多条记录拆行编号;
@@ -527,7 +531,7 @@ function cmdRender(): string {
       : [`    内容:${i.work}`];
     lines.push(
       `[${n}] ${i.projectName || i.repo}(项目#${i.project}) / ${i.taskName || "?"}(任务#${i.task})`,
-      `    ${dateTag(i)}${i.start}—${i.end},${fmtHours(i.hours)}小时${inc}${merged}`,
+      `    ${dateTag(i)}${i.start}—${i.end}${incMin},${fmtHours(i.hours)}小时${inc}${merged}`,
       ...workLines,
       `    置信度:${i.confidence}%`,
       `    理由:${i.reason ?? null}`,
@@ -923,8 +927,9 @@ export function dedupLines(lines: string[]): string[] {
  *  ——它们是回复的开场白不是工作结论,当 work 会明显异常、诱发 AI 提交时再修(2026-08-18 实测踩坑)。
  *  <10 字(如「好的」)返回 null——无信息量不记。 */
 const LEADIN_RE = /[:：]\s*$|(如下|请核对|请确认|请查收|请查阅)[。!?]?\s*$/;
-// 流程状态语开头(/report 交互轮的 conclusion 常见):描述流程本身而非工作成果
-const STATUS_RE = /^(已取消|已提交|已渲染|草稿已|工时草稿|好的[,，])/;
+// 流程状态语开头(/report 交互轮的 conclusion 常见):描述流程本身而非工作成果;
+// 「周报已生成完毕…」这类报表完成播报同理(2026-08-18 五次踩坑:weekly 会话的 auto note 记成状态汇报句)
+const STATUS_RE = /^(已取消|已提交|已渲染|草稿已|工时草稿|好的[,，]|(周报|日报|报告|报表)已)/;
 // API 错误残行(turn 中途断线时 transcript 的 conclusion 就是错误文案,不是工作成果)
 const ERROR_RE = /^(api error|error:|connection (lost|reset|refused)|network error|timeout)/i;
 // 草稿标签行(render 草稿的元数据行,被整段回显时会成为 conclusion 候选)

@@ -260,6 +260,18 @@ describe("render 命令", () => {
     expect(r.stdout.trimEnd().endsWith("状态:未提交")).toBe(true);
   }, 20000);
 
+  test("增量条目显示「新增 Nmin」消歧(时间窗=全会话,工时只算增量;老 plan 无 deltaMinutes 维持原样)", async () => {
+    const s = sandbox();
+    s.write("plan", { date: "2026-08-06", draftSeq: 0, items: [
+      resolvedItem({ start: "11:33", end: "13:16", minutes: 103, hours: 0.5, increment: true, deltaMinutes: 32 }),
+      resolvedItem({ session: "s2", start: "09:00", end: "10:00", hours: 0.5, increment: true }), // 老 plan 无 deltaMinutes
+    ] });
+    const r = await s.run(["render"]);
+    expect(r.code).toBe(0);
+    expect(r.stdout).toContain("11:33—13:16,新增 32min,0.5小时(增量)");
+    expect(r.stdout).toContain("09:00—10:00,0.5小时(增量)"); // 无 deltaMinutes 不拼「新增」,不炸
+  }, 20000);
+
   test("items 为空(全已提交)→ 本次无可提交条目,仍正常渲染", async () => {
     const s = sandbox();
     s.write("plan", { date: "2026-08-06", draftSeq: 0, items: [] });

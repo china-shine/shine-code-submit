@@ -76,6 +76,7 @@ describe("cmdPlan — 已提交会话", () => {
     expect(items[0].increment).toBe(true);
     expect(items[0].task).toBe(100);
     expect(items[0].hours).toBe(1); // hoursFromMinutes(120-60=60)=1
+    expect(items[0].deltaMinutes).toBe(60); // 增量原始分钟(render 显示「新增 Nmin」用)
     expect(items[0].work).toBe("增量工作");
     expect(items[0].reason).toContain("增量补报");
   });

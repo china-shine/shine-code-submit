@@ -36,7 +36,7 @@
 | `prepare` | 读 transcript 信号供 AI 归纳 | prompts/files/recent |
 | `plan [--source zentao]` | ★ 生成 plan.json(读 sessions+summary+submitted,防重+冷却预判;条目带 `date`=会话归属日,多天补报按此提交;填报流程元会话同日自动聚合一条、时间轴去重;**已提交(delta<15)条目不进 items,仅 alreadyCount 计数**——流程任何环节不复述已提交) | items+alreadyCount+cooldown |
 | `note --session --work --task` | ★ 写 summary(work+task+水位) | — |
-| `render` | ★ 工时草稿文本(逐条分行编号;有 pending/缺 work 会 die;无可提交条目时输出提示行) | 草稿 |
+| `render` | ★ 工时草稿文本(逐条分行编号;增量条目显示「新增 Nmin」消歧——时间窗为全会话、工时只算水位后增量;有 pending/缺 work 会 die;无可提交条目时输出提示行) | 草稿 |
 | `commit [--dry-run]` | ★ 逐条提交禅道+写水位+流水镜像 | results+mappings |
 | `amend` | 修正最后一次提交(禅道只能追加,补差额;独立命令) | — |
 | `submit --task --date --hours --work` | 手工单条提交(计划外修正) | — |
