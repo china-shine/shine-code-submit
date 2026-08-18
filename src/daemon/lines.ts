@@ -113,7 +113,9 @@ export function isTrivialLine(l: string): boolean {
 }
 
 /** 提取某项目"AI 写过的所有行内容"(按规范化文件路径分组),供 buildProjectDetail 行级匹配 commit added 行。
- *  全量扫描该 cwd 的 PostToolUse(Edit/Write/MultiEdit/NotebookEdit):取 structuredPatch 的 + 行(去前缀);
+ *  全量扫描 PostToolUse(Edit/Write/MultiEdit/NotebookEdit),**不限事件 cwd**——会话在子目录里跑时 hook
+ *  记录的 cwd 是子目录,按项目 cwd 精确等值查会整段漏掉这些编辑(2026-08-18 实测吃掉 ~40 个百分点占比);
+ *  改为按 file_path 是否落在项目内(normRelPath 不逃逸 ../)判定归属。取 structuredPatch 的 + 行(去前缀);
  *  Write 新建文件(patch 空)fallback tool_input.content 全文行。分页突破 query 的 2000 cap。
  *  项目级 TTL 缓存(GIT_CACHE_TTL_MS)。 */
 export function getProjectAILines(store: Store, cwd: string): Map<string, Set<string>> {
@@ -123,7 +125,7 @@ export function getProjectAILines(store: Store, cwd: string): Map<string, Set<st
   const PAGE = 2000;
   let offset = 0;
   for (;;) {
-    const events = store.query({ cwd, type: "PostToolUse", limit: PAGE, offset });
+    const events = store.query({ type: "PostToolUse", limit: PAGE, offset });
     if (events.length === 0) break;
     for (const ev of events) {
       const p = ev.payload as Record<string, unknown> | null;
@@ -134,6 +136,7 @@ export function getProjectAILines(store: Store, cwd: string): Map<string, Set<st
       const fp = input?.file_path ?? input?.notebook_path;
       if (typeof fp !== "string" || !fp) continue;
       const np = normRelPath(cwd, fp);
+      if (np === ".." || np.startsWith("../")) continue; // file_path 在项目外(其它仓库/无关目录),不入集合
       let set = aiLines.get(np);
       if (!set) {
         set = new Set();

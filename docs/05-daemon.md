@@ -75,7 +75,7 @@ WAL 模式;查询 `store.query({cwd, sessionId, type, since, limit≤2000, offse
 - `aggregate.ts`:/api/report、/api/projects、/api/sessions 三接口共享口径——cwd 分组用 `normCwd`(Windows 大小写/斜杠归一,**显示保留原始**)、hook 上报的 cwd 优先于项目名解码(`decodeProjectCwd` 有连字符误还原的已知缺陷);
 - `signals.ts`/`signals-store.ts`:transcript 关键信号(见上文「关键信号提取」);/api/signals 与 skills prepare 消费,**不进 token/activeMs 计算链路**(ccusage 对齐零影响);
 - `git.ts`:`git -C <cwd> log`(quotepath=false 保中文路径);`getCommitsInRange`(带 --since/--until,AI 占比分母)、`getAICommitHashes`(grep "Co-Authored-By: Claude");
-- `lines.ts`:PostToolUse 的 structuredPatch 数行;`getProjectAILines` 构建「AI 编辑过的行集合」(分页翻页突破 2000 cap;**isTrivialLine 过滤空行/纯括号**,防 aiAdded 虚高——1.3.44);
+- `lines.ts`:PostToolUse 的 structuredPatch 数行;`getProjectAILines` 构建「AI 编辑过的行集合」(分页翻页突破 2000 cap;**isTrivialLine 过滤空行/纯括号**,防 aiAdded 虚高——1.3.44;**不限事件 cwd**,按 file_path 落在项目内(normRelPath 不逃逸 `../`)判定归属——子目录 cwd 会话纳入,2026-08-18 修,防占比被吃 ~40pp、顺带治大小写盘符查空);
 - `worklog.ts`:读 `zenpilot/submitted/*.jsonl` 提交流水,上报时逐笔镜像给 tokenserver。
 
 ## 修改注意
