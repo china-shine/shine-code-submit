@@ -65,6 +65,12 @@ describe("simplifyConclusion(conclusion → 一句话 work)", () => {
     expect(simplifyConclusion("[1] 日常工作/AI智能体(项目#6924) / AI提效工具开发(任务#77563)\n    09:45—12:11,2.0小时\n\n实现草稿引用行过滤,补齐回归用例。")).toBe("实现草稿引用行过滤,补齐回归用例。");
     expect(simplifyConclusion("[1] 日常工作/AI智能体(项目#6924) / AI提效工具开发(任务#77563)")).toBeNull();
   });
+  test("API 错误残行/草稿标签行跳过(2026-08-18 四次踩坑:错误 turn 的 conclusion 即错误文案;render 草稿元数据行被回显)", () => {
+    expect(simplifyConclusion("API Error: Connection lost mid-response.")).toBeNull();
+    expect(simplifyConclusion("API Error: Connection lost mid-response.\n实现 API 错误残行过滤,补齐回归用例。")).toBe("实现 API 错误残行过滤,补齐回归用例。");
+    expect(simplifyConclusion("理由:开发时 summary 记录(多 note 合并,避免拆段工时膨胀)")).toBeNull();
+    expect(simplifyConclusion("置信度:100%\n实现草稿标签行过滤,补齐回归用例。")).toBe("实现草稿标签行过滤,补齐回归用例。");
+  });
 });
 
 describe("buildAutoWork(水位后新 turns → work)", () => {
