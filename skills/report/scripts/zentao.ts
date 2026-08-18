@@ -17,9 +17,9 @@
  *   会话采集+transcript → ./lib/transcript;日报/周报 → ./lib/report。本文件只留命令实现 + 入口分发。 */
 import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
-import { Args, die, loadJSON, writeJSON, roundPy, todayISO, nowISOSeconds, minutesSinceISO, hoursFromMinutes, fmtHours, isObj, loadConfig, loadMarkSetting, applyMark, requireStr, requireInt, summaryPathFor, CONFIG_PATH, CACHE_PATH, MAPPINGS_PATH, SETTINGS_PATH, SESSIONS_PATH, SUBMITTED_PATH, PLAN_PATH, PROJECT_DIR, PROJECT_CWD, SUBMITTED_LOG_DIR, COMMIT_COOLDOWN_MINUTES, lastSubmitSinceEpoch } from "./lib/shared";
+import { Args, die, loadJSON, writeJSON, roundPy, todayISO, nowISOSeconds, minutesSinceISO, hoursFromMinutes, fmtHours, isObj, loadConfig, loadMarkSetting, applyMark, requireStr, requireInt, summaryPathFor, CONFIG_PATH, CACHE_PATH, MAPPINGS_PATH, SETTINGS_PATH, SESSIONS_PATH, SUBMITTED_PATH, PLAN_PATH, PROJECT_DIR, PROJECT_CWD, SUBMITTED_LOG_DIR, COMMIT_COOLDOWN_MINUTES, lastSubmitSinceEpoch, num } from "./lib/shared";
 import { Client, getCache, getCacheLocal } from "./lib/client";
-import { cmdCollect, extractTranscriptSignals, fetchDaemonSignalsMap } from "./lib/transcript";
+import { cmdCollect, extractTranscriptSignals, fetchDaemonSignalsMap, fetchDaemonSignals } from "./lib/transcript";
 import { writeReport, weekStart, lastWeekRange } from "./lib/report";
 
 // ---------- 命令实现 ----------
@@ -65,8 +65,7 @@ function cmdMark(a: Args): any {
 }
 
 /** 有 notedActiveMinutes 水位的新式 note,按水位升序。
- *  cmdPlan summary 拆段 + increment 过滤共用(同文件真共享,消除水位 filter 散落)。
- *  detectAndRemind 在 main.ts 因零依赖隔离,内联同款 filter + 注释关联此处。 */
+ *  cmdPlan summary 拆段 + increment 过滤共用(同文件真共享,消除水位 filter 散落)。 */
 function waterNotes(notes: any[]): any[] {
   return notes
     .filter((n: any) => n && typeof n.notedActiveMinutes === "number")
@@ -682,31 +681,10 @@ function inferProjectTask(session: string | null | undefined): number {
   return -1;
 }
 
-/** 开发时记一条功能总结到 summary-YYYY-MM-DD.json(按项目+日期)。
- *  work=功能点编号文案, task=禅道任务ID, session 未传则取当天最新活跃会话。
- *  自动从 cache.json 补 taskName/project/projectName。/report plan 直读省 AI 填空。 */
-function cmdNote(a: Args): any {
-  const work = requireStr(a, "work");
-  let session: string | null | undefined = a.session !== undefined ? String(a.session) : undefined;
-  if (!session) {
-    const data = loadJSON<{ sessions: any[]; date?: string }>(SESSIONS_PATH, { sessions: [] });
-    const sessions = Array.isArray(data.sessions) ? data.sessions : [];
-    if (sessions.length > 0) {
-      // 取 end 最晚的(最新活跃);end 是 "HH:MM" 字符串,字符串排序即时间序。
-      // 多天补报时 sessions 含历史日(end 无日期,全局取最晚会把昨天 22:00 当最新)→
-      // 与 cmdPlan fallbackSid 同口径:优先今天(date===采集日)里 end 最晚,今天没有才退全局。
-      const byEnd = (arr: any[]) => [...arr].sort((x, y) => String(y.end ?? "").localeCompare(String(x.end ?? "")));
-      const todays = sessions.filter((x: any) => !x.date || x.date === data.date);
-      session = byEnd(todays.length ? todays : sessions)[0]?.id;
-    }
-    // 新项目第一次:sessions.json 未采集(Stop 在响应结束才采集)+ 无 CLAUDE_SESSION_ID env
-    // → 记 session=null,/report 时 plan 把 session=null 的 note 归到当天最新 session(那时 Stop 已采集)
-    if (!session) session = process.env.CLAUDE_SESSION_ID || null;
-  }
-  // task:显式传 > 项目历史关联任务(防 AI 偷懒传 -1 丢失已关联项目归属)> -1
-  const taskRaw = a.task !== undefined ? parseInt(String(a.task), 10) : -1;
-  let task = Number.isNaN(taskRaw) ? -1 : taskRaw;
-  if (task <= 0) task = inferProjectTask(session);
+/** note 落盘共用:taskName/project/projectName 从 cache 补全 + notedActiveMinutes 水位快照 +
+ *  写 summary-<sessions.json.date>.json。cmdNote(手动/AI)与 autoNote(Stop 自动)共用。
+ *  extra 追加字段(auto:true / sigLastMs,auto-note 用)。返回文件路径。 */
+function appendNote(session: string | null, work: string, task: number, extra?: Record<string, unknown>): string {
   let taskName: string | null = null;
   let project: number | null = null;
   let projectName: string | null = null;
@@ -733,9 +711,124 @@ function cmdNote(a: Args): any {
   }
   const smp = summaryPathFor(summaryDate);
   const list = loadJSON<any[]>(smp, []);
-  list.push({ session, ts: nowISOSeconds(), work, task, taskName, project, projectName, notedActiveMinutes });
+  list.push({ session, ts: nowISOSeconds(), work, task, taskName, project, projectName, notedActiveMinutes, ...extra });
   writeJSON(smp, list);
-  return { ok: true, file: smp, session, entries: list.length, work };
+  return smp;
+}
+
+/** 开发时记一条功能总结到 summary-YYYY-MM-DD.json(按项目+日期)。
+ *  work=功能点编号文案, task=禅道任务ID, session 未传则取当天最新活跃会话。
+ *  自动从 cache.json 补 taskName/project/projectName。/report plan 直读省 AI 填空。 */
+function cmdNote(a: Args): any {
+  const work = requireStr(a, "work");
+  let session: string | null | undefined = a.session !== undefined ? String(a.session) : undefined;
+  if (!session) {
+    const data = loadJSON<{ sessions: any[]; date?: string }>(SESSIONS_PATH, { sessions: [] });
+    const sessions = Array.isArray(data.sessions) ? data.sessions : [];
+    if (sessions.length > 0) {
+      // 取 end 最晚的(最新活跃);end 是 "HH:MM" 字符串,字符串排序即时间序。
+      // 多天补报时 sessions 含历史日(end 无日期,全局取最晚会把昨天 22:00 当最新)→
+      // 与 cmdPlan fallbackSid 同口径:优先今天(date===采集日)里 end 最晚,今天没有才退全局。
+      const byEnd = (arr: any[]) => [...arr].sort((x, y) => String(y.end ?? "").localeCompare(String(x.end ?? "")));
+      const todays = sessions.filter((x: any) => !x.date || x.date === data.date);
+      session = byEnd(todays.length ? todays : sessions)[0]?.id;
+    }
+    // 新项目第一次:sessions.json 未采集(Stop 在响应结束才采集)+ 无 CLAUDE_SESSION_ID env
+    // → 记 session=null,/report 时 plan 把 session=null 的 note 归到当天最新 session(那时 Stop 已采集)
+    if (!session) session = process.env.CLAUDE_SESSION_ID || null;
+  }
+  // task:显式传 > 项目历史关联任务(防 AI 偷懒传 -1 丢失已关联项目归属)> -1
+  const taskRaw = a.task !== undefined ? parseInt(String(a.task), 10) : -1;
+  let task = Number.isNaN(taskRaw) ? -1 : taskRaw;
+  if (task <= 0) task = inferProjectTask(session);
+  const smp = appendNote(session, work, task);
+  const entries = loadJSON<any[]>(smp, []).length;
+  return { ok: true, file: smp, session, entries, work };
+}
+
+// ---------- auto-note:Stop 时自动归纳 work+task 写 summary(零 LLM,无感) ----------
+// 素料 = daemon 预提取的 signals.turns[].conclusion(Claude 本轮结论文本,已是自然语言汇报),
+// 取「水位之后最新非空 conclusion」精简成一句话当 work;task 走 inferProjectTask 历史回退。
+// 由 collect 命令尾部(Stop hook detached fork)触发,全程静默失败不出声。
+
+/** 同会话两次 auto-note 最短间隔:防快速连续 Stop 刷碎条(拆段语义不受影响,下次 note 段=上条水位起)。 */
+export const AUTO_NOTE_MIN_INTERVAL_MS = 10 * 60_000;
+
+/** conclusion 原文 → 一句话 work:找首个非标题/非列表行 → 去行内 markdown → 取首句(≤120 字)。
+ *  <10 字(如「好的」)返回 null——无信息量不记。 */
+export function simplifyConclusion(text: string): string | null {
+  const lines = text.split("\n").map((l) => l.trim());
+  const body = lines.find((l) => l && !/^(#{1,6}\s|>|[-*+]\s|\d+[.、]\s)/.test(l)) ?? "";
+  let s = body.replace(/[*`#>]/g, "").replace(/\s+/g, " ").trim();
+  const m = /^(.{2,120}?[。;;.!?])/.exec(s);
+  s = m ? m[1]! : s.length > 100 ? s.slice(0, 100) + "…" : s;
+  return s.length >= 10 ? s : null;
+}
+
+/** 新 turns(水位后)→ {work, lastMs}。最新非空 conclusion 优先;全空回退 commits subjects(≤3);
+ *  都无 → null(调用方不推进水位,下次 Stop 自愈——如 daemon 消费 tick 还没跑完最新 turn)。 */
+export function buildAutoWork(turns: any[], sinceMs: number): { work: string; lastMs: number } | null {
+  const fresh = (Array.isArray(turns) ? turns : []).filter((t) => t && num(t.endMs) > sinceMs);
+  if (fresh.length === 0) return null;
+  const lastMs = Math.max(...fresh.map((t) => num(t.endMs)));
+  for (let i = fresh.length - 1; i >= 0; i--) {
+    const c = typeof fresh[i]!.conclusion === "string" ? fresh[i]!.conclusion.trim() : "";
+    if (!c) continue;
+    const work = simplifyConclusion(c);
+    if (work) return { work, lastMs };
+  }
+  const subjects = fresh
+    .flatMap((t) => (Array.isArray(t.commits) ? t.commits.map(String) : []))
+    .filter(Boolean)
+    .slice(-3)
+    .reverse(); // 新 commit 在前
+  if (subjects.length) return { work: subjects.join(";"), lastMs };
+  return null;
+}
+
+/** 该 session 的 auto-note 水位:扫全部 summary-*.json 取 max(sigLastMs, 手动 note.ts 的 epoch)。
+ *  手动 note(无精确 turn 水位)按「记的时刻覆盖之前所有工作」计入 ts——AI 刚记过(质量更高)auto 不再重复记;
+ *  auto note 只用自己的 sigLastMs(turn 精确结束时刻),ts 不计入——否则水位被推到写入时刻,
+ *  会跳过 endMs 落在「turn 结束~写入」之间的 turn(daemon 消费 tick 滞后场景漏记)。
+ *  lastNoteAt = 最后一条 note(任意来源)的 ts,供节流判断。 */
+export function noteWatermark(sessionId: string): { sinceMs: number; lastNoteAt: number } {
+  let sinceMs = 0;
+  let lastNoteAt = 0;
+  try {
+    for (const fn of readdirSync(PROJECT_DIR)) {
+      if (!/^summary-\d{4}-\d{2}-\d{2}\.json$/.test(fn)) continue;
+      for (const n of loadJSON<any[]>(path.join(PROJECT_DIR, fn), [])) {
+        if (!n || n.session !== sessionId) continue;
+        sinceMs = Math.max(sinceMs, num(n.sigLastMs));
+        const t = new Date(String(n.ts)).getTime();
+        if (Number.isFinite(t)) lastNoteAt = Math.max(lastNoteAt, t);
+        if (n.auto !== true && Number.isFinite(t)) sinceMs = Math.max(sinceMs, t); // 仅手动 note 的 ts 计入
+      }
+    }
+  } catch {
+    /* 读不到按 0 */
+  }
+  return { sinceMs, lastNoteAt };
+}
+
+/** Stop hook 触发的自动归纳:精查该会话 signals → 水位后新 turns 取 conclusion 精简 → 写 note。
+ *  开关 settings.autoNote(默认开,false 关);task=inferProjectTask 回退(-1 留 /report 问)。
+ *  sigIn:测试注入信号(生产 undefined 走 daemon 精查)。
+ *  任何失败静默返回——后台自动动作,绝不出声、绝不阻塞(collect 已 detached)。 */
+export async function autoNote(sessionId: string | null, sigIn?: any | null): Promise<void> {
+  try {
+    if (!sessionId) return;
+    if (loadJSON<any>(SETTINGS_PATH, {}).autoNote === false) return;
+    const sig = sigIn !== undefined ? sigIn : await fetchDaemonSignals(PROJECT_CWD, sessionId);
+    if (!sig || !Array.isArray(sig.turns) || sig.turns.length === 0) return;
+    const wm = noteWatermark(sessionId);
+    if (wm.lastNoteAt && Date.now() - wm.lastNoteAt < AUTO_NOTE_MIN_INTERVAL_MS) return; // 节流
+    const built = buildAutoWork(sig.turns, wm.sinceMs);
+    if (!built) return; // 无可用素材:不推进水位,下次 Stop 自愈
+    appendNote(sessionId, built.work, inferProjectTask(sessionId), { auto: true, sigLastMs: built.lastMs });
+  } catch {
+    /* 静默 */
+  }
 }
 
 /** 提前准备:collect→plan(本地)→挑 pending→附 transcript 信号。把 /report 最慢的 AI 填空前置到这里。
@@ -873,7 +966,14 @@ async function main(): Promise<void> {
     return;
   }
   if (cmd === "collect") {
-    console.log(JSON.stringify(await cmdCollect(), null, 2));
+    const collected = await cmdCollect();
+    console.log(JSON.stringify(collected, null, 2));
+    // auto-note 挂点:hook 模式(Stop/SubagentStop/SessionStart 的 detached fork)、collect 成功、
+    // stdin 带 session_id 时,顺带自动归纳该会话(纯本地+一次 daemon 精查,毫秒级;失败静默)。
+    // SessionStart 早采集:新会话无 turn 天然无操作;resume 场景补记 resume 前漏的 turns。
+    if (collected.mode === "hook" && collected.hookSessionId && !collected.skipped) {
+      await autoNote(collected.hookSessionId);
+    }
     return;
   }
   if (cmd === "config") {

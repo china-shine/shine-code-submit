@@ -91,3 +91,28 @@ daemon 定期查 npm latest → spawn detached `npx shine-worklog@latest install
 方案:consumer 每次增量消费父 transcript 时**顺带**按结构标识提取关键内容(每行本就已读已 parse,边际成本≈0),写 `DATA_DIR/signals/<编码项目>/<日期>/<sessionId>.json`(详见 05-daemon「关键信号提取」);`prepare` 优先读 daemon `/api/signals`(秒回),老会话未提取/daemon 不可达时退化原直读。AI 拿到的是「逐 turn 结论 + commits + 任务清单 + 用户意图」(压缩比 ~100-1000x),归纳 work 的素材更全更小。
 
 边界:只取父文件(子代理不提取);turn 上限 300;conclusion 不截断全量保存(实测全存代价仅 +10%);不上报 tokenserver(含用户 prompt/assistant 文本,仅本地);不碰 token/activeMs 计算链路(ccusage 对齐零影响)。
+
+## ⑪ auto-note:Stop 自动归纳 work+task(零 LLM)
+
+问题:归纳 work+task 原本靠 AI(/prepare 手动或 /report 现场补,一次约 1m48s 且大头是 AI 思考)——能不能每轮对话结束自动完成、无感?
+
+方案:**conclusion 即 work**——daemon 预提取的 `signals.turns[].conclusion`(Claude 本轮结论文本)已是自然语言汇报,零 LLM 取用:
+
+```text
+Stop/SubagentStop → hook detached fork zentao.ts collect(现有,不阻塞无输出)
+ → collect 尾部 autoNote(session_id 取自 stdin payload):
+    GET /api/signals?sessionId= 精查(不受 since/200 上限影响,open turn 也并入)
+    → 水位后新 turns 取最新非空 conclusion
+    → simplifyConclusion:跳过标题/列表行取正文首句(≤120字,去 markdown,<10字丢弃)
+    → conclusion 全空回退 commits subjects(≤3);仍无 → 不记且不推进水位(下次 Stop 自愈)
+    → task = inferProjectTask(该会话历史 → 项目最近 → -1 留 /report 问)
+    → appendNote 写 summary(auto:true + sigLastMs=最新 turn endMs)
+```
+
+- **水位**(zentao.ts `noteWatermark`):扫 summary 取 max(sigLastMs, **手动** note 的 ts)——手动 note 覆盖「记的时刻之前」故 ts 计入;auto note 只用精确 sigLastMs,ts 不计入(否则水位被推到写入时刻,跳过 daemon 消费 tick 滞后产生的 turn 漏记);
+- **节流** `AUTO_NOTE_MIN_INTERVAL_MS=10min`:距上一条 note(任意来源)<10min 跳过——防快速连续 Stop 刷碎条;拆段语义不受影响(下次 note 的段=上条水位起);
+- **与手动 note 共存**:AI 顺手 note 质量更高且 ts 计入水位,刚记过 auto 不重复;同段双记由 plan 拆段膨胀合并兜底(工时正确);
+- **开关** settings.autoNote(默认开);daemon 不可达/提取滞后 → 静默跳过,绝不出声;
+- 时序:Stop 瞬间 conclusion 最坏落后 ~250ms+5s 消费 tick → 表现为「最新 turn 没记上」,下次 Stop 自愈(水位未推进)。
+
+效果:/report 时 summary 已就绪 → 全 resolved → auto 一键秒级;`/prepare` 退化为补漏/重归纳工具。

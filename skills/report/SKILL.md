@@ -17,9 +17,11 @@ description: 汇总当天及上次提交以来未提交的 Claude Code 会话统
 
 **读缓存 → 自动汇总日志 → 提交**:plan 读 summary(已有的 work+task 记录)+ 算增量工时 + 防重 + cooldown 预判;有 needs_semantic/缺 work 的会话读 transcript 自动归纳 work+task;render 确认后 commit。流程顺序 **plan → 自动汇总日志 → render → 确认 → commit**。`plan.cooldown` 非空时告知用户等待(不 commit);全 already 时无需提交。
 
-### 准备阶段(建议先跑 /prepare,让本流程秒级)
+### 准备阶段(auto-note 已自动完成大半)
 
-`/shine-worklog:prepare` 提前把今天(及待补报历史日)会话的 work+task 算好写入 summary(本 skill 的 plan 直读为 resolved)。**先跑 prepare,下面的 auto 就能跳过最耗时的日志汇总、全 resolved 秒级提交**。开工/工作中/收工前任意时机跑一次即可;uncertain(多任务判不准)的会留到 /report 用 AskUserQuestion 问。
+**auto-note**:每轮对话结束(Stop hook)自动把该会话最新 turn 的结论精简成 work+推断 task 写入 summary(零 LLM、后台静默、10min 节流;`settings.json` 的 `autoNote:false` 可关)——大多数会话无需任何手动准备,`/report` 时已是 resolved。
+
+**`/prepare`(补漏/重归纳)**:对 auto-note 没覆盖的会话(新项目首会话 task=-1、想要比 conclusion 更精炼的总结性文案、老会话无信号)手动前置归纳,同样写 summary 让 plan 直读。开工/工作中/收工前任意时机可跑;uncertain(多任务判不准)的留到 /report 用 AskUserQuestion 问。
 
 ### auto 一键(追求速度、work 不归纳)
 

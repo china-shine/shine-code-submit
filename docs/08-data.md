@@ -11,7 +11,7 @@ DATA_DIR/
 ├─ daemon.pid                 # {pid, port, token, startedAt}:进程标识 + Bearer 鉴权
 ├─ daemon.token               # 持久 token(重启/升级复用,dashboard 链接不失效)
 ├─ settings.json              # 行为开关:reportUrl/reportIntervalMin/autoUpdate/
-│                             #   zentaoCacheTtlMin/aiSubmitMark 等(与 config.json 分离)
+│                             #   zentaoCacheTtlMin/aiSubmitMark/autoNote(Stop 自动归纳,默认开,false 关)等(与 config.json 分离)
 ├─ db/events.sqlite           # daemon 主库:hook 事件(7 天滚动修剪)+ transcript 会话统计(见 05-daemon)
 ├─ log/daemon.log             # 运行日志(5MB 轮换)
 ├─ spool/                     # hook 发送失败的事件暂存(daemon 1s 回捞)
@@ -33,7 +33,8 @@ DATA_DIR/
       ├─ sessions.json        # 会话(Stop hook collect 写,daemon /api/sessions 供数;范围=自上次
       │                       #   提交日以来含今天,LOOKBACK_MAX_DAYS=14 上限;date=采集日、
       │                       #   sinceDate=起点、每会话带 date=归属日)
-      ├─ summary-<date>.json  # note 记录的 work+task(带 notedActiveMinutes 水位)
+      ├─ summary-<date>.json  # note 记录的 work+task(带 notedActiveMinutes 水位;
+      │                       #   auto-note 条目另有 auto:true + sigLastMs=覆盖到的最新 turn endMs)
       ├─ plan.json            # /report 草稿(draftSeq 同日递增、跨日归零;条目含 date=归属日)
       └─ submitted.json       # 防重水位:{date:{session:{tasks,hours,minutes,_meta.lastCommit}}};
                               #   _meta 按条目归属日分组写——同一次 commit 的各日期 key 盖同一

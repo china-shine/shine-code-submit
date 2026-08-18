@@ -29,7 +29,7 @@
 | `executions` | 进行中执行 | 供 create-task 选 |
 | `create-task --execution --name --estimate --desc` | 建任务并指派自己 | 自动进缓存 |
 | `refresh` | 全量刷缓存(20 天窗口,进度走 stderr) | {fetchedAt,projects,tasks} |
-| `collect [--session]` | 从 daemon 拉会话写 sessions.json(范围=自上次提交日以来含今天,上限 14 天) | 会话数 |
+| `collect [--session]` | 从 daemon 拉会话写 sessions.json(范围=自上次提交日以来含今天,上限 14 天);hook 模式尾部顺带 **auto-note** 自动归纳(见 10-mechanisms ⑪,零 LLM) | 会话数 |
 | `config` | 写禅道连接配置(url/account/password) | — |
 | `mark` | AI 提交标识配置(开关/文案,等同 /mark skill) | — |
 | `efforts` | 查某任务工时记录 | 记录列表 |

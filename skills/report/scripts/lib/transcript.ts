@@ -51,6 +51,25 @@ export async function fetchDaemonSignalsMap(cwd: string, sinceMs: number): Promi
   }
 }
 
+/** 精查单个会话的信号(?sessionId=,daemon 端不受 since 过滤/200 上限影响,open 未闭合 turn 也并入)。
+ *  auto-note 的取料口;daemon 不可达/无该会话返回 null(调用方静默跳过)。 */
+export async function fetchDaemonSignals(cwd: string, sessionId: string): Promise<any | null> {
+  const token = readDaemonToken();
+  if (!token) return null;
+  try {
+    const res = await fetch(`${DAEMON_BASE}/api/signals?cwd=${encodeURIComponent(cwd)}&sessionId=${encodeURIComponent(sessionId)}`, {
+      headers: { authorization: `Bearer ${token}` },
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!res.ok) return null;
+    const data = (await res.json()) as { sessions?: any[] };
+    const hit = (data.sessions ?? []).find((s: any) => s && s.sessionId === sessionId);
+    return hit ?? null;
+  } catch {
+    return null;
+  }
+}
+
 /** 查 daemon 自 sinceMs 以来本项目 sessions(GET /api/sessions?cwd=&since=,daemon 按 last_activity 过滤)。 */
 async function fetchDaemonSessions(
   cwd: string,
