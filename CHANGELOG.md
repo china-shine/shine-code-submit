@@ -2,6 +2,18 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.3.50 — 2026-08-18
+
+/report 提速与全覆盖:auto-note 零 LLM 自动归纳 + 多天补报 + 增量 work 全覆盖——填报从「现场啃日志归纳」变秒级直提,且草稿自动覆盖自上次提交以来的全部关键改动。
+
+### 变更(skills)
+- **多天补报**:`/report` 范围扩为「自上次提交以来(≤14 天)」——某天忘了提交、或提交后还有增量,之后任意一次 /report 自动补上,补报条目按会话实际日期提交禅道;冷却全局化。
+- **auto-note(零 LLM 无感)**:每轮对话结束 Stop hook 自动把该轮结论精简成 work+推断 task 写入 summary(daemon 预提取 signals,10min 节流,`settings.autoNote:false` 可关)——/report 时大多已 resolved 秒级;`/prepare` 退化为补漏/重归纳工具。
+- **元会话聚合**:跑 /report /prepare /amend 产生的 skill 会话(标题含 `skills\report|prepare|amend` 且活跃<45min)同日合并为一条「执行 shine-worklog 工时填报流程」,工时按时间轴并集去重,消重复标题与工时繁殖。
+- **全 resolved 直提**:plan 返回的 work 原样提交不再归纳(auto-note 文案即总结),严禁为写文案考古;work 异常走快修通道(凭上下文直改 plan.json)。
+- **增量补报 work 全覆盖**:增量条目 work=水位后全部 note 按时间合并(归一化去重、≤10 行),auto-note 每条 note=水位窗内全部 turn 结论逐条一行(空结论 turn 回退 commit subject,≤4 行)——修复「只取最新一条」丢增量区间关键改动(08-18 实测 4 条 note 丢 3 条);多行为预期产物,render/numberWork 天然分行编号。
+- **auto-note 垃圾文案过滤(七类)**:引导语(「草稿如下:」)/流程状态语(「已取消…」)/markdown 表格行/草稿引用行(「[1] 日常工作/…」)/时钟时间行(「09:45—12:11,2.0小时」)/API 错误残行(API Error: Connection lost…)/草稿标签行(「理由:」「置信度:」);commit subject 回退剥 conventional-commit 类型前缀。已知残留:回声行(回复里引用的正文当选)靠 /report 快修兜底。
+
 ## 1.3.49 — 2026-08-17
 
 日报/周报聚合修复:任务转「已完成」后,当天工时不再从报表消失。
