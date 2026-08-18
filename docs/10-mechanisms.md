@@ -104,7 +104,7 @@ Stop/SubagentStop → hook detached fork zentao.ts collect(现有,不阻塞无�
  → collect 尾部 autoNote(session_id 取自 stdin payload):
     GET /api/signals?sessionId= 精查(不受 since/200 上限影响,open turn 也并入)
     → 水位后新 turns 取最新非空 conclusion
-    → simplifyConclusion:跳过标题/列表行取正文首句(≤120字,去 markdown,<10字丢弃)
+    → simplifyConclusion:行级跳过(标题/列表/引用/代码围栏/**markdown 表格行**/**引导语**「草稿如下:」「请核对:」等以冒号或「如下」收尾的开场白/**流程状态语**「已取消,本次不提交」「工时草稿 ZR-…」/<10 字短行——2026-08-18 三类垃圾文案实测各堵一轮)→ 取正文首句(≤120 字,去行内 markdown);全跳过 → null 不记(下次自愈)
     → conclusion 全空回退 commits subjects(≤3);仍无 → 不记且不推进水位(下次 Stop 自愈)
     → task = inferProjectTask(该会话历史 → 项目最近 → -1 留 /report 问)
     → appendNote 写 summary(auto:true + sigLastMs=最新 turn endMs)

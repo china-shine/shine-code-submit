@@ -30,7 +30,7 @@
 
 ## 测试资产
 
-- `skills/report/scripts/__tests__/`:161 用例(plan 增量/水位/拆段/多天补报/元会话聚合、commit 流水/numberWork、mark 幂等、client REST、auto-note 归纳/水位/节流);
+- `skills/report/scripts/__tests__/`:163 用例(plan 增量/水位/拆段/多天补报/元会话聚合、commit 流水/numberWork、mark 幂等、client REST、auto-note 归纳/水位/节流/垃圾文案过滤);
 - runner 子进程模式(plan-runner/commit-runner):env LOCALAPPDATA 指临时目录真隔离;
 - tokenserver 功能测试:TOKENSERVER_DATA_DIR 指临时目录 + 造数据断言(store.ts 全链路);**不用 tsc**(基线噪音),验证靠 build:ui + HTTP。
 
