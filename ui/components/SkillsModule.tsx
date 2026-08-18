@@ -1,7 +1,7 @@
 // 「Skills」模块:编辑当前生效插件根 skills/ 下的 Markdown 文档(各 skill 的 SKILL.md)。
 // skill 文件是命令触发时从磁盘读 → 保存即生效,无需重启 Claude Code 或 daemon;
-// 保存同时备份到 DATA_DIR/skills-edits/,autoUpdate 升级整目录覆盖后磁盘与备份分叉 → stale 提示手动恢复。
-// 只开放 .md:.ts 是代码,不在 dashboard 动,走源码仓库改。
+// 保存同时备份到 DATA_DIR/skills-edits/(含 history 快照)。双视图:实时=纯净编辑器(以磁盘为准,
+// 无 stale 提示);修改后=备份浏览/对比/按保存点恢复。只开放 .md:.ts 走源码仓库改。
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useApi } from "../hooks/useApi";
 import { useApp } from "../state/AppContext";
@@ -65,10 +65,6 @@ const SAVE_BTN: React.CSSProperties = {
   fontWeight: 600,
   cursor: "pointer",
 };
-
-function fmtSize(n: number): string {
-  return n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} B`;
-}
 
 function fmtTime(ms: number): string {
   const d = new Date(ms);
@@ -261,6 +257,7 @@ export function SkillsModule() {
       const j = (await res.json()) as { mtimeMs: number; version: string };
       setLoaded(content);
       setFileMtime(j.mtimeMs);
+      setDisk(null); // 磁盘已变,edits 视图 diff 的右侧缓存作废(下次对比重新拉)
       setMsg({ kind: "ok", text: `已保存,下次执行命令即生效(v${j.version} 目录)` });
       setTimeout(() => setMsg(null), 2500);
       void reload(); // edited 圆点亮起
@@ -325,6 +322,7 @@ export function SkillsModule() {
       setContent(f.content);
       setLoaded(f.content);
       setFileMtime(f.mtimeMs);
+      setDisk(null); // 磁盘已变,diff 右侧缓存作废
       setMsg({ kind: "ok", text: "已重置到首次编辑前的原始内容" });
       setTimeout(() => setMsg(null), 2500);
       void reload();
@@ -428,6 +426,8 @@ export function SkillsModule() {
       setLoaded(f.content);
       setFileMtime(f.mtimeMs);
       setPreview(false);
+      setDisk(null); // 磁盘已变,diff 右侧缓存作废
+      setDiffMode(false);
       setView("live");
       setMsg({ kind: "ok", text: `已把 v${j.restoredFrom ?? editVersion} 的备份写回 ${editSelected},立即生效` });
       setTimeout(() => setMsg(null), 3500);

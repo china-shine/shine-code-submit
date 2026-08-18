@@ -305,7 +305,8 @@ export interface EditContent {
   content: string;
 }
 
-/** 解析一份快照:默认最新(顶层);version 过滤版本;savedAt 精确定位某次保存(顶层命中直读,否则读 history 归档)。 */
+/** 解析一份快照:默认最新(顶层);version 过滤版本;savedAt 精确定位某次保存(顶层命中直读,否则读 history 归档)。
+ *  只给 savedAt 不给 version 时,快照可能在任意版本的 history 目录(跨版本升级留痕),依次扫各候选目录。 */
 function resolveSnapshot(rel: string, version?: string, savedAt?: number): { version: string; blob: EditBackup } | null {
   const all = listEdits().filter((e) => e.rel === rel && (!version || e.version === version));
   if (!all.length) return null;
@@ -315,12 +316,16 @@ function resolveSnapshot(rel: string, version?: string, savedAt?: number): { ver
     const blob = readBackup(meta.version, rel);
     return blob ? { version: meta.version, blob } : null;
   }
-  try {
-    const blob = JSON.parse(readFileSync(historyFile(version ?? meta.version, rel, savedAt), "utf8")) as EditBackup;
-    return typeof blob.content === "string" ? { version: version ?? meta.version, blob } : null;
-  } catch {
-    return null;
+  const candidates = version ? [version] : [...new Set(all.map((e) => e.version))];
+  for (const v of candidates) {
+    try {
+      const blob = JSON.parse(readFileSync(historyFile(v, rel, savedAt), "utf8")) as EditBackup;
+      if (typeof blob.content === "string") return { version: v, blob };
+    } catch {
+      /* 该版本目录无此快照,继续 */
+    }
   }
+  return null;
 }
 
 /** 读某 rel 的备份内容:默认最新,version/savedAt 可定位任意一次保存;无备份/损坏/缺 content → null。 */
