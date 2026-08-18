@@ -53,6 +53,14 @@ describe("simplifyConclusion(conclusion → 一句话 work)", () => {
     expect(simplifyConclusion("草稿已渲染，请核对：")).toBeNull(); // 全是引导语 → null(不记,下次自愈)
     expect(simplifyConclusion("完整内容如下:")).toBeNull();
   });
+  test("markdown 表格行/流程状态语跳过(2026-08-18 二次踩坑)", () => {
+    // 表格表头「| 修复 | 效果 |」曾成为 increment work
+    expect(simplifyConclusion("| 修复 | 效果 |\n|---|---|\n| 引导语过滤 | 消垃圾 |\n\n实现 auto-note 引导语过滤,补齐回归测试。")).toBe("实现 auto-note 引导语过滤,补齐回归测试。");
+    expect(simplifyConclusion("| 修复 | 效果 |")).toBeNull();
+    // 流程状态语(填报交互轮的 conclusion)
+    expect(simplifyConclusion("已取消，本次不提交。")).toBeNull();
+    expect(simplifyConclusion("工时草稿 ZR-20260818-017")).toBeNull();
+  });
 });
 
 describe("buildAutoWork(水位后新 turns → work)", () => {

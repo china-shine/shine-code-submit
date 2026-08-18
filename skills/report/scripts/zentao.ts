@@ -892,11 +892,13 @@ export const AUTO_NOTE_MIN_INTERVAL_MS = 10 * 60_000;
  *  ——它们是回复的开场白不是工作结论,当 work 会明显异常、诱发 AI 提交时再修(2026-08-18 实测踩坑)。
  *  <10 字(如「好的」)返回 null——无信息量不记。 */
 const LEADIN_RE = /[:：]\s*$|(如下|请核对|请确认|请查收|请查阅)[。!?]?\s*$/;
+// 流程状态语开头(/report 交互轮的 conclusion 常见):描述流程本身而非工作成果
+const STATUS_RE = /^(已取消|已提交|已渲染|草稿已|工时草稿|好的[,，])/;
 export function simplifyConclusion(text: string): string | null {
   const lines = text.split("\n").map((l) => l.trim());
-  // 行级跳过:空/太短(<10 字提不出合格首句,代码围栏短行同理)/标题列表/代码围栏/引导语
+  // 行级跳过:空/太短(<10 字提不出合格首句,代码围栏短行同理)/标题列表/代码围栏/引导语/markdown 表格行/流程状态语
   const skip = (l: string) =>
-    !l || l.length < 10 || /^(#{1,6}\s|>|[-*+]\s|\d+[.、]\s|```)/.test(l) || LEADIN_RE.test(l);
+    !l || l.length < 10 || /^(#{1,6}\s|>|[-*+]\s|\d+[.、]\s|```|\|)/.test(l) || LEADIN_RE.test(l) || STATUS_RE.test(l);
   const body = lines.find((l) => !skip(l)) ?? "";
   let s = body.replace(/[*`#>]/g, "").replace(/\s+/g, " ").trim();
   const m = /^(.{2,120}?[。;;.!?])/.exec(s);
