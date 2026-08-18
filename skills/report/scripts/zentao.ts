@@ -946,11 +946,14 @@ const LABEL_RE = /^(理由|置信度|内容|状态|汇总|说明|修法|根因|�
 // 加粗行首:修复报告的开场标题「**1. auto-note 拦报表状态语** — …」——行级 skip 在 markdown 剥离前做,
 // 原始行以 ** 开头不匹配 \d+[.、]/[-*+]\s(数字/星号列表都要求行首裸字符),剥掉 * 后才现出「1. 」已晚(七次踩坑)
 const BOLD_RE = /^\*\*/;
+// 对话残留:AI 回复用户提问的建议/解释/预告段被当 conclusion 候选(十一次踩坑,wm=107 三行实测)
+// ——「的话/说一声/要不要/介意」劝导语气;「「X」是/指」名词解释开场;「后续自动发生/待办」预告
+const CHAT_RE = /(的话|说一声|要不要|介意)|^「[^」]+」(是|指)|^后续(自动发生|待办)/;
 export function simplifyConclusion(text: string): string | null {
   const lines = text.split("\n").map((l) => l.trim());
   // 行级跳过:空/太短(<10 字提不出合格首句,代码围栏短行同理)/标题列表/代码围栏/引导语/markdown 表格行/流程状态语/草稿引用行/时钟时间行(「09:45—12:11,2.0小时」)/API 错误残行/草稿标签行
   const skip = (l: string) =>
-    !l || l.length < 10 || BOLD_RE.test(l) || /^(#{1,6}\s|>|[-*+]\s|\d+[.、]\s|\[\d+\]\s?|\d{1,2}:\d{2}|```|\|)/.test(l) || LEADIN_RE.test(l) || STATUS_RE.test(l) || ERROR_RE.test(l) || LABEL_RE.test(l);
+    !l || l.length < 10 || BOLD_RE.test(l) || CHAT_RE.test(l) || /^(#{1,6}\s|>|[-*+]\s|\d+[.、]\s|\[\d+\]\s?|\d{1,2}:\d{2}|```|\|)/.test(l) || LEADIN_RE.test(l) || STATUS_RE.test(l) || ERROR_RE.test(l) || LABEL_RE.test(l);
   // 代码围栏状态机:``` 开关,围栏**内部行**一律跳过——旧实现只拦 ``` 标记行,修复回复里代码块中的
   // 正则原文(/^(.{2,120}?…)/)曾整体漏过、还被首句正则截在自身内嵌 。 上成残片(八次踩坑);
   // 早先靠半角句点把代码行截到 <10 字侥幸不漏,词边界修复后长代码行存活才暴露。

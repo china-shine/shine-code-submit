@@ -106,6 +106,14 @@ describe("simplifyConclusion(conclusion → 一句话 work)", () => {
     expect(simplifyConclusion("```bash\nbun run zentao.ts plan --cwd /tmp/proj --dry-run\n```")).toBeNull(); // 全是代码块 → null
     expect(simplifyConclusion("```text\n(未闭合围栏,后续行都是代码\nconst x = 1;")).toBeNull(); // 未闭合 → 之后全跳过
   });
+  test("对话残留行跳过(2026-08-18 十一次踩坑:回复用户提问的建议/名词解释/预告段被当 work)", () => {
+    expect(simplifyConclusion("介意文案完整的话：等 10 分钟再跑一次 /report 再提交即可；不介意就直接确认这版。")).toBeNull();
+    expect(simplifyConclusion("「理由」是 plan 给每条条目自动生成的归属依据说明——解释这条工时为什么归到这个任务。")).toBeNull();
+    expect(simplifyConclusion("后续自动发生：daemon autoUpdate 会自动把缓存版本切到 1.3.52；npmmirror 约 10 分钟同步。")).toBeNull();
+    expect(simplifyConclusion("要现在就发个 1.3.53 的话说一声。")).toBeNull();
+    // 正常工作行不误伤(不含劝导/解释/预告标记)
+    expect(simplifyConclusion("实现多 note 合并的行级去重并补齐跨 note 回声行回归测试。")).toBe("实现多 note 合并的行级去重并补齐跨 note 回声行回归测试。");
+  });
 });
 
 describe("buildAutoWork(水位后新 turns → work)", () => {
