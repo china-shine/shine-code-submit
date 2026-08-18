@@ -70,6 +70,7 @@ describe("simplifyConclusion(conclusion → 一句话 work)", () => {
     expect(simplifyConclusion("API Error: Connection lost mid-response.\n实现 API 错误残行过滤,补齐回归用例。")).toBe("实现 API 错误残行过滤,补齐回归用例。");
     expect(simplifyConclusion("理由:开发时 summary 记录(多 note 合并,避免拆段工时膨胀)")).toBeNull();
     expect(simplifyConclusion("置信度:100%\n实现草稿标签行过滤,补齐回归用例。")).toBe("实现草稿标签行过滤,补齐回归用例。");
+    expect(simplifyConclusion("说明:条目 2 原文中夹了一行正则残片,已在 plan.json 里删掉。")).toBeNull(); // 「说明:」叙述行(八次踩坑余波)
   });
   test("报表状态语跳过(2026-08-18 五次踩坑:weekly 会话的 auto note 记成「周报已生成完毕…」状态播报)", () => {
     expect(simplifyConclusion("周报已生成完毕，AI 周总结已写入 HTML 底部。")).toBeNull();
@@ -95,6 +96,13 @@ describe("simplifyConclusion(conclusion → 一句话 work)", () => {
       .toBe("实现状态语过滤加固并补齐回归用例。");
     expect(simplifyConclusion("**修复说明**\n实现了句点词边界判定,标识符不再被截断。")).toBe("实现了句点词边界判定,标识符不再被截断。");
     expect(simplifyConclusion("**1. auto-note 拦报表状态语** — `STATUS_RE` 增补 `(周报|日报|报告|报表)已`")).toBeNull(); // 全是标题 → null
+  });
+  test("代码围栏内部行跳过(2026-08-18 八次踩坑:修复回复里代码块中的正则原文漏过,还被首句正则截在自身内嵌 。 上成残片)", () => {
+    // 围栏内是代码不是结论;闭合围栏后的正文行照常取
+    expect(simplifyConclusion("修复说明:\n```ts\n/^(.{2,120}?(?:[。;;]|[.!?;](?=\\s|$)))/\n```\n实现句点词边界判定并补齐回归用例。"))
+      .toBe("实现句点词边界判定并补齐回归用例。");
+    expect(simplifyConclusion("```bash\nbun run zentao.ts plan --cwd /tmp/proj --dry-run\n```")).toBeNull(); // 全是代码块 → null
+    expect(simplifyConclusion("```text\n(未闭合围栏,后续行都是代码\nconst x = 1;")).toBeNull(); // 未闭合 → 之后全跳过
   });
 });
 

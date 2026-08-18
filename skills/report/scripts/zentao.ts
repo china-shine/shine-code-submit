@@ -933,8 +933,9 @@ const LEADIN_RE = /[:：]\s*$|(如下|请核对|请确认|请查收|请查阅)[�
 const STATUS_RE = /^(已取消|已提交|已渲染|草稿已|工时草稿|好的[,，]|(周报|日报|报告|报表)已|plan 已)/;
 // API 错误残行(turn 中途断线时 transcript 的 conclusion 就是错误文案,不是工作成果)
 const ERROR_RE = /^(api error|error:|connection (lost|reset|refused)|network error|timeout)/i;
-// 草稿标签行(render 草稿的元数据行,被整段回显时会成为 conclusion 候选)
-const LABEL_RE = /^(理由|置信度|内容|状态|汇总)[:：]/;
+// 草稿标签行(render 草稿的元数据行,被整段回显时会成为 conclusion 候选);
+// 「说明:」是 /report 轮草稿解说叙述的开头(八次踩坑余波:引用残片原文也被截断记下)
+const LABEL_RE = /^(理由|置信度|内容|状态|汇总|说明)[:：]/;
 // 加粗行首:修复报告的开场标题「**1. auto-note 拦报表状态语** — …」——行级 skip 在 markdown 剥离前做,
 // 原始行以 ** 开头不匹配 \d+[.、]/[-*+]\s(数字/星号列表都要求行首裸字符),剥掉 * 后才现出「1. 」已晚(七次踩坑)
 const BOLD_RE = /^\*\*/;
@@ -943,7 +944,18 @@ export function simplifyConclusion(text: string): string | null {
   // 行级跳过:空/太短(<10 字提不出合格首句,代码围栏短行同理)/标题列表/代码围栏/引导语/markdown 表格行/流程状态语/草稿引用行/时钟时间行(「09:45—12:11,2.0小时」)/API 错误残行/草稿标签行
   const skip = (l: string) =>
     !l || l.length < 10 || BOLD_RE.test(l) || /^(#{1,6}\s|>|[-*+]\s|\d+[.、]\s|\[\d+\]\s?|\d{1,2}:\d{2}|```|\|)/.test(l) || LEADIN_RE.test(l) || STATUS_RE.test(l) || ERROR_RE.test(l) || LABEL_RE.test(l);
-  const body = lines.find((l) => !skip(l)) ?? "";
+  // 代码围栏状态机:``` 开关,围栏**内部行**一律跳过——旧实现只拦 ``` 标记行,修复回复里代码块中的
+  // 正则原文(/^(.{2,120}?…)/)曾整体漏过、还被首句正则截在自身内嵌 。 上成残片(八次踩坑);
+  // 早先靠半角句点把代码行截到 <10 字侥幸不漏,词边界修复后长代码行存活才暴露。
+  let inFence = false;
+  const skipWithFence = (l: string): boolean => {
+    if (l.startsWith("```")) {
+      inFence = !inFence;
+      return true;
+    }
+    return inFence || skip(l);
+  };
+  const body = lines.find((l) => !skipWithFence(l)) ?? "";
   let s = body.replace(/[*`#>]/g, "").replace(/\s+/g, " ").trim();
   // 半角 . ! ? ; 仅在词边界(后跟空白/行尾)才算句末——config.json / 1.3.51 / 域名 里的点
   // 不当句终(六次踩坑同轮:「把真实 config.」「核对完真实数据(plan.」两行残句);全角标点照旧直配。
