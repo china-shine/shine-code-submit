@@ -490,9 +490,6 @@ export function SkillsModule() {
 
           {view === "edits" ? (
           <>
-            <div className="field-hint" style={{ padding: 0 }}>
-              备份 = 每次保存留痕(按插件版本);● = 执行目录与最新备份不一致(可能被升级覆盖)。可查看旧内容、复制片段回「实时 skills」粘贴,或一键「恢复到实时」。
-            </div>
             <div className="skill-tabs">
               <div className="skill-tab-scroll">
                 {edits == null ? null : edits.map((g) => (
