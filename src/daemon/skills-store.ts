@@ -165,7 +165,7 @@ function readBackup(version: string, rel: string): EditBackup | null {
 // 留最近 MAX_HISTORY 份,「修改后的 skills」下拉可按 savedAt 取任意一次保存点。b64url 无 ".",
 // 文件名按 "." 拆出 {rel, savedAt} 无歧义。
 
-const MAX_HISTORY = 10;
+const MAX_HISTORY = 20;
 
 function historyFile(version: string, rel: string, savedAt: number): string {
   return join(EDITS_DIR, version, "history", Buffer.from(rel, "utf8").toString("base64url") + "." + savedAt + ".json");

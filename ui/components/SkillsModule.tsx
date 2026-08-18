@@ -111,7 +111,7 @@ function SnapshotMenu({
         type="button"
         className="tool-btn"
         onClick={() => setOpen(!open)}
-        title="切换保存点(同版本留最近 10 次快照)"
+        title="切换保存点(同版本留最近 20 次快照)"
         style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
       >
         <span style={{ fontSize: "var(--fs-xs)" }}>🕘</span>
