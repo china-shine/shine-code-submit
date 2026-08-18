@@ -101,4 +101,29 @@ describe("cmdCommit 多天补报(按条目归属日)", () => {
       lastCommitAtOffsetMin: -10,
     })).rejects.toThrow();
   });
+
+  test("元会话合并条:各源会话逐个记防重水位(hours=0/minutes 各自),防填报工时繁殖", async () => {
+    const r = await runCommit({
+      plan: PLAN([{
+        status: "resolved", session: "m2", date: "2026-08-06", repo: "r1", branch: "main",
+        start: "09:45", end: "10:41", minutes: 15, hours: 0.5, task: 100, taskName: "T100", project: 1, projectName: "P1",
+        work: "执行 shine-worklog 工时填报流程",
+        sourceSessions: [
+          { session: "m1", minutes: 12 },
+          { session: "m2", minutes: 15 },
+          { session: "m3", minutes: 12 },
+        ],
+      }]),
+    });
+    expect(r.ok).toBe(true);
+    expect(r.calls.length).toBe(1); // 禅道只提交 1 条(合并条)
+    // 防重:各源会话都有水位(hours=0=工时在合并条)→ 下次 plan 各源 delta=0 → already
+    const day = r.submittedJson["2026-08-06"];
+    expect(day.m1).toMatchObject({ tasks: [100], hours: 0, minutes: 12 });
+    expect(day.m2).toMatchObject({ tasks: [100], hours: 0, minutes: 15 });
+    expect(day.m3).toMatchObject({ tasks: [100], hours: 0, minutes: 12 });
+    // 流水只落合并条一条
+    expect(r.worklogs.length).toBe(1);
+    expect(r.worklogs[0]).toMatchObject({ sessionId: "m2", hours: 0.5 });
+  });
 });

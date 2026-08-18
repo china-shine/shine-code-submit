@@ -34,7 +34,7 @@
 | `mark` | AI 提交标识配置(开关/文案,等同 /mark skill) | — |
 | `efforts` | 查某任务工时记录 | 记录列表 |
 | `prepare` | 读 transcript 信号供 AI 归纳 | prompts/files/recent |
-| `plan [--source zentao]` | ★ 生成 plan.json(读 sessions+summary+submitted,防重+冷却预判;条目带 `date`=会话归属日,多天补报按此提交) | items+cooldown |
+| `plan [--source zentao]` | ★ 生成 plan.json(读 sessions+summary+submitted,防重+冷却预判;条目带 `date`=会话归属日,多天补报按此提交;填报流程元会话同日自动聚合一条、时间轴去重) | items+cooldown |
 | `note --session --work --task` | ★ 写 summary(work+task+水位) | — |
 | `render` | ★ 工时草稿文本(逐条分行编号;有 pending/缺 work 会 die) | 草稿 |
 | `commit [--dry-run]` | ★ 逐条提交禅道+写水位+流水镜像 | results+mappings |

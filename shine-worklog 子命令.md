@@ -40,6 +40,7 @@
 
 > 已提交会话又活跃 → 自动增量补报;work 按功能点编号。
 > **auto-note**(1.3.50):每轮对话结束 Stop hook 后台自动把最新结论精简成 work+task 写 summary(零 LLM、无感、10min 节流;`settings.json` 的 `autoNote:false` 关)——`needs_semantic` 越来越少,`/report` 大多秒级。
+> **元会话聚合**:跑 /report//prepare//amend 本身产生的会话同日自动合并为一条「执行工时填报流程」(时间区间并集去重,防填报工时自我繁殖与重复标题)。
 
 ---
 

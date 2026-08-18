@@ -81,6 +81,109 @@ function candidatesFor(repo: string, mappings: any, tasks: any[], projectNames: 
     .map((t: any) => ({ id: t.id, name: t.name, project: t.project, projectName: projectNames[t.project] ?? null }));
 }
 
+// ---------- 元会话聚合(跑 /report//prepare//amend 本身产生的会话合并为一条工时) ----------
+// 每次填报会新开 1-2 个 skill 调用会话,若逐条报(各 0.5h 下限)填报工时自我繁殖且时间段常重叠 →
+// 按「同日同任务」聚合成一条:固定文案(消重复标题)+ 时间区间并集去重工时;commit 对各源会话记防重水位。
+
+/** 填报系 skill 的路径段(daemon title=首条 user 消息含 skill 展开路径)。weekly/daily 报表会话不算(是正常工作)。 */
+const META_SKILL_RE = /skills[\\/](report|prepare|amend)\b/;
+/** 活跃超过此分钟数的会话不并入聚合:可能在 skill 会话里干了真开发(如 weekly 开头的主开发会话),双保险。 */
+const META_MAX_MINUTES = 45;
+const META_WORK = "执行 shine-worklog 工时填报流程";
+
+function isMetaSkillSession(s: any): boolean {
+  return META_SKILL_RE.test(String(s?.summary ?? "")) && num(s?.activeMinutes) < META_MAX_MINUTES;
+}
+
+/** "HH:MM" → 当日分钟数;不合法 → NaN。 */
+export function hhmmToMin(v: unknown): number {
+  const m = /^(\d{1,2}):(\d{2})$/.exec(String(v ?? ""));
+  return m ? Number(m[1]) * 60 + Number(m[2]) : NaN;
+}
+
+export function minToHHMM(v: number): string {
+  if (!Number.isFinite(v) || v < 0) return String(v);
+  const h = Math.floor(v / 60);
+  const m = Math.round(v % 60);
+  return `${h < 10 ? "0" + h : h}:${m < 10 ? "0" + m : m}`;
+}
+
+/** 多个 [起,止] 分钟区间求并集:重叠/相邻段合并。返回 {total 总时长, first 最早起, last 最晚止}。 */
+export function unionMinutes(spans: Array<[number, number]>): { total: number; first: number; last: number } {
+  const sorted = spans.filter(([s, e]) => Number.isFinite(s) && Number.isFinite(e)).sort((a, b) => a[0] - b[0]);
+  if (sorted.length === 0) return { total: 0, first: NaN, last: NaN };
+  let total = 0;
+  let curEnd = -1; // -1 起步:首段也走「新段」分支正确累计(初始化为首段 end 会把首段时长丢掉)
+  for (const [s, e] of sorted) {
+    if (s > curEnd) {
+      total += e - s; // 新段
+      curEnd = e;
+    } else if (e > curEnd) {
+      total += e - curEnd; // 延伸既有段(重叠部分不重复计)
+      curEnd = e;
+    }
+  }
+  return { total, first: sorted[0]![0]!, last: Math.max(...sorted.map((x) => x[1]!)) };
+}
+
+/** 聚合 items 里的 meta 条目(非 already,含 needs_semantic——元会话无需 AI 归纳):同日同任务一组 →
+ *  一条(固定文案/并集工时/sourceSessions 防重清单),插入组内首个成员的原位置、其余删除。
+ *  already 的 meta 不动(已提交过);单个 meta 条目也规范化(统一文案+sourceSessions),保证文案稳定。 */
+function aggregateMetaItems(items: any[]): any[] {
+  const groupOf = new Map<any, string>(); // item 引用 → 组 key(成员摘出标记)
+  const groups = new Map<string, any[]>();
+  for (const it of items) {
+    // already(已提交)/increment(增量,并集会把已提交时段重复计入)的 meta 不并入,保持原条目语义。
+    // 组 key 只按日期(不含 task):同日元会话归属可能不同(有/无历史回退),分开会再裂成多条。
+    if (!it.meta || it.status === "already" || it.increment) continue;
+    const key = String(it.date);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(it);
+    groupOf.set(it, key);
+  }
+  if (groups.size === 0) return items.slice(); // 副本:调用方会 items.length=0 重填,不能返回原引用
+  const mergedByKey = new Map<string, any>();
+  for (const [key, list] of groups) {
+    const u = unionMinutes(list.map((it) => [hhmmToMin(it.start), hhmmToMin(it.end)]));
+    const byEnd = [...list].sort((x, y) => String(y.end ?? "").localeCompare(String(x.end ?? "")));
+    const latest = byEnd[0]!;
+    // 组归属:最新会话的 task 优先,无效(-1)则组内任一有效 task(有历史回退的成员兜底),全无 → -1
+    const groupTask =
+      Number(latest.task) > 0 ? Number(latest.task) : (Number(list.find((it) => Number(it.task) > 0)?.task) || -1);
+    mergedByKey.set(key, {
+      ...list[0]!,
+      session: latest.session, // 代表会话取组内最新(展示/流水)
+      start: Number.isFinite(u.first) ? minToHHMM(u.first) : list[0]!.start,
+      end: Number.isFinite(u.last) ? minToHHMM(u.last) : list[0]!.end,
+      minutes: Math.max(...list.map((it) => num(it.minutes))), // 水位取组内最大
+      hours: hoursFromMinutes(Math.max(u.total, 1)), // 并集去重后的真实活跃时长(≥1min 保 0.5h 下限)
+      work: META_WORK,
+      status: groupTask > 0 ? "resolved" : "unmatched", // 无历史归属的新项目:聚合后仍留 /report 问一次
+      task: groupTask,
+      increment: false,
+      confidence: groupTask > 0 ? 100 : 0,
+      reason: `填报流程会话自动聚合(${list.length} 会话,时间轴去重)`,
+      sourceSessions: list.map((it) => ({ session: it.session, minutes: num(it.minutes) })),
+      // 组归属可能取自非首条成员:taskName 等元数据不匹配时置空,防展示误导
+      ...(groupTask > 0 && Number(list[0]!.task) !== groupTask ? { taskName: null, project: null, projectName: null } : {}),
+      ...(groupTask > 0 ? {} : { candidates: list[0]!.candidates ?? [] }),
+    });
+  }
+  const out: any[] = [];
+  const emitted = new Set<string>();
+  for (const it of items) {
+    const key = groupOf.get(it);
+    if (!key) {
+      out.push(it); // 非 meta / already 保留原位
+      continue;
+    }
+    if (emitted.has(key)) continue; // 组内第 2+ 成员:已由合并条取代
+    emitted.add(key);
+    out.push(mergedByKey.get(key)!); // 组内首个成员位置 → 合并条
+  }
+  return out;
+}
+
 export async function cmdPlan(client?: Client, cfg?: Record<string, any>, source: "cache" | "zentao" = "cache"): Promise<any> {
   const data = loadJSON<any>(SESSIONS_PATH, null);
   if (data === null) die(`会话数据不存在: ${SESSIONS_PATH}`);
@@ -176,6 +279,7 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>, source
       end: s.end,
       minutes: s.activeMinutes,
       summary: s.summary ?? "",
+      meta: isMetaSkillSession(s), // 填报流程元会话(见 aggregateMetaItems):聚合用
       increment: false,
       work: null,
     };
@@ -321,6 +425,24 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>, source
     items.push(item);
   }
 
+  // 元会话(填报流程会话)不需要 AI 归纳:needs_semantic 的直接按历史归属定 task——
+  // 有历史(inferProjectTask>0)→ resolved;无(新项目首跑)→ unmatched 留 /report 问一次。再交聚合统一。
+  for (const it of items) {
+    if (!it.meta || it.status !== "needs_semantic") continue;
+    const t = inferProjectTask(it.session);
+    if (t > 0) {
+      Object.assign(it, { status: "resolved", task: t, confidence: 90, reason: "填报流程元会话,按项目历史归属" }, await taskInfo(t));
+    } else {
+      Object.assign(it, { status: "unmatched", task: -1, confidence: 0, reason: "填报流程元会话,新项目无历史归属,待 /report 匹配" });
+    }
+  }
+
+  // 元会话聚合:填报流程会话(report/prepare/amend skill 调用产生)同日同任务合并一条,
+  // 时间区间并集去重工时——防填报工时自我繁殖 + 消禅道重复标题。AI 无需再手动合并同类条目。
+  const aggregated = aggregateMetaItems(items);
+  items.length = 0;
+  items.push(...aggregated);
+
   // 顺手刷新本地项目名缓存,供 mappings 离线查看
   mappings.projectNames = {};
   for (const [k, v] of Object.entries(projectNames)) mappings.projectNames[String(k)] = v;
@@ -383,6 +505,7 @@ function cmdRender(): string {
     if (i.status !== "resolved") continue;
     n++;
     const inc = i.increment ? "(增量)" : "";
+    const merged = Array.isArray(i.sourceSessions) && i.sourceSessions.length > 1 ? `(${i.sourceSessions.length} 会话合并)` : "";
     // 内容逐条一行(确认展示对齐日报/周报):work 内以 ;/；分隔的多条记录拆行编号;
     // 仅改草稿显示,plan.json 的 work 原样不动(提交禅道的文案不受影响)。
     const parts = String(i.work).split(/[;；\n]/).map((s) => s.trim().replace(LEADING_INDEX_RE, "")).filter(Boolean);
@@ -391,7 +514,7 @@ function cmdRender(): string {
       : [`    内容:${i.work}`];
     lines.push(
       `[${n}] ${i.projectName || i.repo}(项目#${i.project}) / ${i.taskName || "?"}(任务#${i.task})`,
-      `    ${dateTag(i)}${i.start}—${i.end},${fmtHours(i.hours)}小时${inc}`,
+      `    ${dateTag(i)}${i.start}—${i.end},${fmtHours(i.hours)}小时${inc}${merged}`,
       ...workLines,
       `    置信度:${i.confidence}%`,
       `    理由:${i.reason ?? null}`,
@@ -547,7 +670,15 @@ export async function cmdCommit(client: Client, opts: { dryRun?: boolean; amend?
       out = { submitted: false, error: e instanceof Error ? e.message : String(e) }; // 单条失败不崩,继续其他条目
     }
     if (out.submitted) {
-      recordSubmission(itemDate, i.session, i.task, i.hours, i.minutes);
+      // 合并条(元会话聚合):对每个源会话记防重水位(hours=0=工时在合并条、minutes=各源 activeMinutes)
+      // → 下次 plan 各源 delta=0 → already,填报流程会话不再繁殖。
+      if (Array.isArray(i.sourceSessions) && i.sourceSessions.length) {
+        for (const src of i.sourceSessions) {
+          recordSubmission(itemDate, src.session, i.task, 0, src.minutes ?? null);
+        }
+      } else {
+        recordSubmission(itemDate, i.session, i.task, i.hours, i.minutes);
+      }
       appendSubmittedLog({
         date: itemDate,
         session: i.session,

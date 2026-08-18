@@ -2,6 +2,27 @@ import { describe, test, expect, afterAll } from "bun:test";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
+import { unionMinutes, hhmmToMin, minToHHMM } from "../zentao";
+
+describe("unionMinutes(时间区间并集,元会话聚合用)", () => {
+  test("重叠区间去重", () => {
+    expect(unionMinutes([[585, 597], [594, 606], [626, 641]])).toEqual({ total: 36, first: 585, last: 641 });
+  });
+  test("完全包含/相邻段", () => {
+    expect(unionMinutes([[600, 660], [610, 620]]).total).toBe(60); // 包含
+    expect(unionMinutes([[600, 630], [630, 660]]).total).toBe(60); // 相接
+    expect(unionMinutes([[600, 630], [700, 720]]).total).toBe(50); // 分离
+  });
+  test("非法区间忽略/空", () => {
+    expect(unionMinutes([]).total).toBe(0);
+    expect(unionMinutes([[NaN, 10]]).total).toBe(0);
+  });
+  test("hhmmToMin/minToHHMM 互转", () => {
+    expect(hhmmToMin("09:45")).toBe(585);
+    expect(hhmmToMin("bad")).toBeNaN();
+    expect(minToHHMM(641)).toBe("10:41");
+  });
+});
 
 // 主进程绝不 import shared/zentao(杜绝模块缓存污染)。每个测试起独立子进程跑 cmdPlan。
 const RUNNER = path.join(import.meta.dir, "plan-runner.ts");
@@ -247,6 +268,82 @@ describe("cmdPlan — 多天补报(自上次提交以来)", () => {
     // 最后提交 3 个月前 → clamp 到 14 天前
     const c = await runPlanFull({ date: "2026-08-06", sessions: [], submitted: { "2026-05-01": { x: { tasks: [1], hours: 1, minutes: 60 } } } });
     expect(c.sinceEpoch).toBe(c.midnightEpoch - 14 * 86400_000);
+  });
+});
+
+describe("cmdPlan — 元会话聚合(填报流程会话合并)", () => {
+  // 元会话 fixture:daemon title(skill 展开路径)+ 小活跃时长
+  const metaS = (id: string, start: string, end: string, activeMinutes: number, extra: any = {}) => ({
+    id, repo: "r", branch: "main", date: "2026-08-06", start, end, activeMinutes,
+    summary: `Base directory for this skill: C:\\x\\shine-worklog\\1.3.50\\skills\\report # 工时填报 ${id}`, ...extra,
+  });
+
+  test("3 个重叠 meta 会话 → 1 条 resolved,工时=时间轴并集,sourceSessions 保留", async () => {
+    const items = await runPlan({
+      date: "2026-08-06",
+      sessions: [
+        metaS("m1", "09:45", "09:57", 12),
+        metaS("m2", "09:54", "10:06", 12),
+        metaS("m3", "10:26", "10:41", 15),
+      ],
+      submitted: {},
+      summaries: { "2026-08-06": [
+        { session: "m1", work: "执行填报A", task: 100, notedActiveMinutes: 10 },
+        { session: "m2", work: "执行填报B", task: 100, notedActiveMinutes: 10 },
+      ] },
+      cache: { projects: [{ id: 1, name: "P1" }], tasks: [{ id: 100, name: "T1", project: 1 }], executions: [], taskDetails: {} },
+    });
+    expect(items.length).toBe(1); // 聚合成一条
+    const m = items[0];
+    expect(m.status).toBe("resolved");
+    expect(m.task).toBe(100);
+    expect(m.work).toBe("执行 shine-worklog 工时填报流程"); // 固定文案,消重复标题
+    expect(m.hours).toBe(0.5); // 并集 12+9+15=36min?→ [09:45-10:06]=21 + [10:26-10:41]=15 → 36min → 0.5h
+    expect(m.start).toBe("09:45"); // 并集首尾
+    expect(m.end).toBe("10:41");
+    expect(m.sourceSessions.map((x: any) => x.session).sort()).toEqual(["m1", "m2", "m3"]); // m3 无 note 也并入
+    expect(m.reason).toContain("3 会话");
+  });
+
+  test("不误伤:weekly 会话、≥45min 的 report 会话、already/increment meta 均不并入", async () => {
+    const items = await runPlan({
+      date: "2026-08-06",
+      sessions: [
+        // weekly 开头(报表会话=正常工作,不 meta)
+        { id: "w1", repo: "r", branch: "main", date: "2026-08-06", start: "08:00", end: "08:20", activeMinutes: 18, summary: "Base directory ... skills\\weekly # 周报" },
+        // report 开头但活跃 50min(可能干了真开发,双保险不并入)
+        metaS("big1", "09:00", "10:00", 50),
+        // 已提交过水位的 meta(delta<15 → already,不并入)
+        metaS("a1", "11:00", "11:12", 12),
+        // 普通可聚合 meta
+        metaS("m1", "13:00", "13:12", 12),
+      ],
+      submitted: { "2026-08-06": { a1: { tasks: [100], hours: 0.5, minutes: 12 } } },
+      summaries: { "2026-08-06": [{ session: "w1", work: "生成周报", task: 100, notedActiveMinutes: 15 }] },
+      cache: { projects: [{ id: 1, name: "P1" }], tasks: [{ id: 100, name: "T1", project: 1 }], executions: [], taskDetails: {} },
+    });
+    const ids = items.map((i: any) => i.session);
+    expect(ids).toContain("w1"); // weekly 独立
+    expect(ids).toContain("big1"); // 50min 不并入
+    expect(items.find((i: any) => i.session === "a1").status).toBe("already"); // 已提交不并入
+    const m = items.find((i: any) => Array.isArray(i.sourceSessions));
+    expect(m).toBeDefined();
+    expect(m.sourceSessions.length).toBe(1); // 只有 m1
+    expect(m.work).toBe("执行 shine-worklog 工时填报流程"); // 单条也规范化文案
+  });
+
+  test("needs_semantic 的 meta:有历史 → resolved 按历史归属;无历史 → unmatched 留问", async () => {
+    const items = await runPlan({
+      date: "2026-08-06",
+      sessions: [metaS("n1", "09:00", "09:12", 12)],
+      submitted: { "2026-08-06": { other: { tasks: [100], hours: 1, minutes: 60 } } }, // 项目历史 → 77563 场景
+      mappings: { repoToProject: { r: 1 }, branchToTask: {} },
+      cache: { projects: [{ id: 1, name: "P1" }], tasks: [{ id: 100, name: "T1", project: 1 }], executions: [], taskDetails: {} },
+    });
+    expect(items.length).toBe(1);
+    expect(items[0].status).toBe("resolved"); // inferProjectTask 项目级回退取 100
+    expect(items[0].task).toBe(100);
+    expect(items[0].reason).toContain("自动聚合"); // 归属语义体现在 task,reason 是聚合的
   });
 });
 

@@ -56,7 +56,7 @@ bun "<Base directory>/scripts/zentao.ts" plan [--source zentao]
 ```
 (选"先刷新"则先跑 `bun "<Base directory>/scripts/zentao.ts" refresh`,再 plan)
 
-一步读 `sessions.json`(Stop hook 每轮自动 collect 写入,范围=**自上次提交日以来**含今天,上限 14 天,**不需主动 collect**)+ summary + submitted,输出 `plan.json` + 返回 `cooldown`。按返回分三个分支:
+一步读 `sessions.json`(Stop hook 每轮自动 collect 写入,范围=**自上次提交日以来**含今天,上限 14 天,**不需主动 collect**)+ summary + submitted,输出 `plan.json` + 返回 `cooldown`。**填报流程会话已自动聚合**:跑 /report//prepare//amend 产生的 skill 会话(识别:标题含 `skills\report|prepare|amend` 且活跃<45min)同日合并为一条「执行 shine-worklog 工时填报流程」,工时按时间区间并集去重——**AI 无需再手动合并同类条目**。按返回分三个分支:
 
 - **`cooldown` 非空**(距上次提交<30min):告知用户"距上次提交需等 `waitMinutes` 分钟",**停止,不 render/commit**。
 - **全 `already`**(已提交且增量<15min):无需提交,render 空草稿说明本次无需。
@@ -91,7 +91,7 @@ bun "<Base directory>/scripts/zentao.ts" render
 把 render 输出**原样**放进代码块展示给用户,随后立刻用 AskUserQuestion 请用户确认整批提交(提交 / 调整 / 取消)。**未经确认绝不 commit**。
 
 - 用户要求调整(改归属/改工时/改文案/按比例拆分/剔除)→ 改 plan.json 对应字段 → 重新 render → 再确认。拆分 = 复制条目,同 session 不同 task,工时按比例分
-- ⚠️ 改 work 文案**优先走 `note --session <id> --work <文案> --task <task>` 命令**(bash 传参不转义);若用内联脚本直改 plan.json,JS 单引号字符串里的 `\n` 会被解析成**真换行**——要字面 `\n` 必须写 `\\n`(render 显示莫名断行 = 文案被转义污染,重写即可,草稿未提交无污染)
+- ⚠️ 改**已 resolved 条目**的 work 文案:**直接用 Edit 工具改 plan.json 对应条目的 work 字段**——render 只在还有 pending 时才重 plan,全 resolved 时直改不会被覆盖。**不要用 `note` 改文案**:note 是**追加**语义(会多出一条,plan 把新旧 join 成两行),只适合给缺素材的会话补记录;用内联脚本(bun -e)直改 plan.json 也要避免——JS 单引号里的 `\n` 是真换行,要字面 `\n` 须写 `\\n`
 - 即使没有任何可提交条目(全部 already/skipped),也照常 render 展示草稿,并说明本次无需提交
 
 ### 4. 提交与汇报
