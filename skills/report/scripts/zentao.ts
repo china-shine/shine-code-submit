@@ -126,14 +126,15 @@ export function unionMinutes(spans: Array<[number, number]>): { total: number; f
   return { total, first: sorted[0]![0]!, last: Math.max(...sorted.map((x) => x[1]!)) };
 }
 
-/** 聚合 items 里的 meta 条目(非 already,含 needs_semantic——元会话无需 AI 归纳):同日同任务一组 →
+/** 聚合 items 里的 meta 条目(含 needs_semantic——元会话无需 AI 归纳):同日同任务一组 →
  *  一条(固定文案/并集工时/sourceSessions 防重清单),插入组内首个成员的原位置、其余删除。
- *  already 的 meta 不动(已提交过);单个 meta 条目也规范化(统一文案+sourceSessions),保证文案稳定。 */
+ *  单个 meta 条目也规范化(统一文案+sourceSessions),保证文案稳定。 */
 function aggregateMetaItems(items: any[]): any[] {
   const groupOf = new Map<any, string>(); // item 引用 → 组 key(成员摘出标记)
   const groups = new Map<string, any[]>();
   for (const it of items) {
-    // already(已提交)/increment(增量,并集会把已提交时段重复计入)的 meta 不并入,保持原条目语义。
+    // increment(增量)的 meta 不并入(并集会把已提交时段重复计入),保持原条目语义。
+    // 已提交(delta<15)的会话在 cmdPlan 就不进 items,这里无需再挡(留 already 判断防御旧 plan.json)。
     // 组 key 只按日期(不含 task):同日元会话归属可能不同(有/无历史回退),分开会再裂成多条。
     if (!it.meta || it.status === "already" || it.increment) continue;
     const key = String(it.date);
@@ -269,6 +270,7 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>, source
       notesBySession.set(sid, arr);
     }
   }
+  let alreadyCount = 0; // 已提交且无增量(delta<15)的会话数:不进 items,仅计数(08-18 用户定:流程任何环节不复述已提交条目)
   for (const s of data.sessions) {
     const item: any = {
       session: s.id,
@@ -289,7 +291,9 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>, source
       const taskId = tasksList[tasksList.length - 1];
       const delta = s.activeMinutes - (rec.minutes ?? 0);
       if (delta < 15) {
-        Object.assign(item, { status: "already", task: taskId, submittedHours: rec.hours ?? null }, await taskInfo(taskId));
+        // 已提交且增量<15min:不进 items(render/汇报/AI 复述都不再出现),防重由 submitted 分钟水位保证
+        alreadyCount++;
+        continue;
       } else {
         // 增量补报:已提交会话已归属,增量沿用原 task(note 的 task=-1 表示"不确定",用会话已知归属)。
         // 水位严格大于:note 水位 == 提交水位 的 note 已随上次提交(单条路径 minutes=会话全量、
@@ -477,7 +481,7 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>, source
   // render 内部自动重 plan 也走这里——若每次重置,调整→重 render 会一直显示 #001,编号失去「第几版」意义。
   const prevPlan = loadJSON<any>(PLAN_PATH, null);
   const draftSeq = prevPlan?.date === date && Number.isFinite(Number(prevPlan.draftSeq)) ? Number(prevPlan.draftSeq) : 0;
-  const plan = { date, draftSeq, items };
+  const plan = { date, draftSeq, items, alreadyCount };
   writeJSON(PLAN_PATH, plan);
   // cooldown 预判:返回给调用方(SKILL 据此决定是否 render/commit,避免 commit 失败再查)。
   // 全局取最近 lastCommitAt(跨所有日期 key):补报场景最后提交可能落在历史日 key 下。
@@ -540,12 +544,8 @@ function cmdRender(): string {
     }
     lines.push("");
   }
-  const already = items.filter((i: any) => i.status === "already");
-  if (already.length) {
-    // 已提交条目折叠为一行:提交后 sessions 仍在窗口内,逐条展开会刷屏——元会话聚合的防重
-    // 是逐源会话记录的,提交后摊回 N 行「0.0小时」纯噪音(08-18 用户实测吐槽);分钟水位防重不受影响。
-    lines.push(`已提交(本次不再提交):${already.length} 条会话,防重跳过`);
-    lines.push("");
+  if (n === 0) {
+    lines.push("本次无可提交条目——窗口内会话均已提交或跳过,无需操作", "");
   }
   lines.push("状态:未提交");
   return lines.join("\n");

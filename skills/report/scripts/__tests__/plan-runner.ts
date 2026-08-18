@@ -28,6 +28,7 @@ try {
   console.log(JSON.stringify({
     ok: true,
     items: plan.items,
+    alreadyCount: plan.alreadyCount,
     sinceEpoch: shared.lastSubmitSinceEpoch(),
     sinceISO: shared.localDateISO(shared.lastSubmitSinceEpoch()), // 日期转换在 runner 侧(真本地)做完再传
     midnightEpoch: shared.localMidnightEpoch(),

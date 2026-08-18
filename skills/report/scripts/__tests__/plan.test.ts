@@ -55,16 +55,14 @@ const runPlanFull = async (fixtures: any): Promise<any> => {
 const runPlan = async (fixtures: any) => (await runPlanFull(fixtures)).items as any[];
 
 describe("cmdPlan — 已提交会话", () => {
-  test("delta<15 → already", async () => {
-    const items = await runPlan({
+  test("delta<15 → 已提交条目不进 items,仅 alreadyCount 计数(08-18 用户定:流程不复述已提交)", async () => {
+    const r = await runPlanFull({
       sessions: [{ id: "s1", repo: "r", branch: "main", activeMinutes: 60, start: "09:00", end: "10:00" }],
       submitted: { "2026-08-06": { s1: { tasks: [100], hours: 1, minutes: 55 } } },
       cache: { projects: [{ id: 1, name: "P1" }], tasks: [{ id: 100, name: "T1", project: 1 }], executions: [], taskDetails: {} },
     });
-    expect(items[0].status).toBe("already");
-    expect(items[0].task).toBe(100);
-    expect(items[0].submittedHours).toBe(1);
-    expect(items[0].taskName).toBe("T1");
+    expect(r.items.length).toBe(0); // 不出现在草稿/汇报的任何环节
+    expect(r.alreadyCount).toBe(1); // 仅计数留排查
   });
 
   test("delta≥15 + 有新 note → increment resolved", async () => {
@@ -334,8 +332,8 @@ describe("cmdPlan — 元会话聚合(填报流程会话合并)", () => {
     expect(m.reason).toContain("3 会话");
   });
 
-  test("不误伤:weekly 会话、≥45min 的 report 会话、already/increment meta 均不并入", async () => {
-    const items = await runPlan({
+  test("不误伤:weekly 会话、≥45min 的 report 会话、已提交 meta 均不并入", async () => {
+    const r = await runPlanFull({
       date: "2026-08-06",
       sessions: [
         // weekly 开头(报表会话=正常工作,不 meta)
@@ -351,10 +349,12 @@ describe("cmdPlan — 元会话聚合(填报流程会话合并)", () => {
       summaries: { "2026-08-06": [{ session: "w1", work: "生成周报", task: 100, notedActiveMinutes: 15 }] },
       cache: { projects: [{ id: 1, name: "P1" }], tasks: [{ id: 100, name: "T1", project: 1 }], executions: [], taskDetails: {} },
     });
+    const items = r.items;
     const ids = items.map((i: any) => i.session);
     expect(ids).toContain("w1"); // weekly 独立
     expect(ids).toContain("big1"); // 50min 不并入
-    expect(items.find((i: any) => i.session === "a1").status).toBe("already"); // 已提交不并入
+    expect(ids).not.toContain("a1"); // 已提交(delta<15)不进 items
+    expect(r.alreadyCount).toBe(1);
     const m = items.find((i: any) => Array.isArray(i.sourceSessions));
     expect(m).toBeDefined();
     expect(m.sourceSessions.length).toBe(1); // 只有 m1

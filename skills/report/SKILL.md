@@ -15,7 +15,7 @@ description: 汇总当天及上次提交以来未提交的 Claude Code 会话统
 
 ## 流程
 
-**读缓存 → 自动汇总日志 → 提交**:plan 读 summary(已有的 work+task 记录)+ 算增量工时 + 防重 + cooldown 预判;有 needs_semantic/缺 work 的会话读 transcript 自动归纳 work+task;render 确认后 commit。流程顺序 **plan → 自动汇总日志 → render → 确认 → commit**。`plan.cooldown` 非空时告知用户等待(不 commit);全 already 时无需提交。
+**读缓存 → 自动汇总日志 → 提交**:plan 读 summary(已有的 work+task 记录)+ 算增量工时 + 防重 + cooldown 预判;有 needs_semantic/缺 work 的会话读 transcript 自动归纳 work+task;render 确认后 commit。流程顺序 **plan → 自动汇总日志 → render → 确认 → commit**。`plan.cooldown` 非空时告知用户等待(不 commit);items 为空(全部已提交)时无需提交、不复述已提交明细。
 
 ### 准备阶段(auto-note 已自动完成大半)
 
@@ -38,7 +38,7 @@ auto 内部 collect → plan →(全 resolved)→ commit 一次跑完,**默认�
 - `committed` — 已提交:用 `result`(成功/跳过条数、每条任务) + `draft`(草稿文本)直接汇报,本次只 1 次工具调用。
 - `needs_review` — 有 `pending`(needs_semantic / **unmatched** 即 task=-1)或 `noWork`(resolved 缺 work):只对这些条目走下面的「自动汇总日志」,note 写齐 summary 后直接 `render` → 确认 → `commit`(**render 会自动本地重 plan**,note 后无需手动重跑 plan)。**下次可先跑 `/shine-worklog:prepare` 把日志汇总前置,本动作即变秒级**。
 - `cooldown` — 距上次提交 < 30 分钟:告知用户需等待 `waitMinutes` 分钟。
-- `nothing` — 全 already/skipped,无可提交:说明本次无需提交。
+- `nothing` — 无可提交条目(已提交不进计划):说明本次无需提交,不复述已提交明细。
 - `abort` — collect 失败(通常 daemon 未启动):提示用户启 daemon 或走分步 collect 排查。
 
 > auto 只在「全 resolved」时自动提交;只要有一条 needs_semantic 或缺 work,就停在 `needs_review` 让 AI 处理——不会盲目提交归属未定的工时。
@@ -59,7 +59,7 @@ bun "<Base directory>/scripts/zentao.ts" plan [--source zentao]
 一步读 `sessions.json`(Stop hook 每轮自动 collect 写入,范围=**自上次提交日以来**含今天,上限 14 天,**不需主动 collect**)+ summary + submitted,输出 `plan.json` + 返回 `cooldown`。**填报流程会话已自动聚合**:跑 /report//prepare//amend 产生的 skill 会话(识别:标题含 `skills\report|prepare|amend` 且活跃<45min)同日合并为一条「执行 shine-worklog 工时填报流程」,工时按时间区间并集去重——**AI 无需再手动合并同类条目**。按返回分三个分支:
 
 - **`cooldown` 非空**(距上次提交<30min):告知用户"距上次提交需等 `waitMinutes` 分钟",**停止,不 render/commit**。
-- **全 `already`**(已提交且增量<15min):无需提交,render 空草稿说明本次无需。
+- **`items` 为空**(全部已提交,增量均<15min):plan **不含已提交条目**(仅 `alreadyCount` 计数),render 会提示"本次无可提交条目"——无需提交,**也不要向用户复述已提交明细/条数**。
 - **有 `resolved` 或 `needs_semantic`**:进第 2 步(自动汇总日志)。`resolved` = 分支名含任务号 / 已提交增量补报 / summary 记录(work+task 已就绪);`needs_semantic`(无 summary,附 candidates)走第 2 步读 transcript 自动归纳。
 
 > 防 `work=null`:已提交会话的增量补报,work 优先取 summary 已有记录;若为 null,走第 2 步读 transcript 自动归纳写 plan.json。
@@ -99,7 +99,7 @@ bun "<Base directory>/scripts/zentao.ts" render
 
 - 用户要求调整(改归属/改工时/改文案/按比例拆分/剔除)→ 改 plan.json 对应字段 → 重新 render → 再确认。拆分 = 复制条目,同 session 不同 task,工时按比例分
 - ⚠️ 改**已 resolved 条目**的 work 文案:**直接用 Edit 工具改 plan.json 对应条目的 work 字段**——render 只在还有 pending 时才重 plan,全 resolved 时直改不会被覆盖。**不要用 `note` 改文案**:note 是**追加**语义(会多出一条,plan 把新旧 join 成两行),只适合给缺素材的会话补记录;用内联脚本(bun -e)直改 plan.json 也要避免——JS 单引号里的 `\n` 是真换行,要字面 `\n` 须写 `\\n`
-- 即使没有任何可提交条目(全部 already/skipped),也照常 render 展示草稿,并说明本次无需提交
+- 即使没有任何可提交条目(全部已提交/跳过——已提交条目不进计划),也照常 render 展示提示,并说明本次无需提交
 
 ### 4. 提交与汇报
 
