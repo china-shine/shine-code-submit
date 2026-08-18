@@ -111,6 +111,9 @@ describe("simplifyConclusion(conclusion → 一句话 work)", () => {
     expect(simplifyConclusion("「理由」是 plan 给每条条目自动生成的归属依据说明——解释这条工时为什么归到这个任务。")).toBeNull();
     expect(simplifyConclusion("后续自动发生：daemon autoUpdate 会自动把缓存版本切到 1.3.52；npmmirror 约 10 分钟同步。")).toBeNull();
     expect(simplifyConclusion("要现在就发个 1.3.53 的话说一声。")).toBeNull();
+    expect(simplifyConclusion("这轮 AI 的快修过程本身没问题：Edit 失配后按记忆里的方法用 bun 取文件精确原文再改，正确。")).toBeNull();
+    expect(simplifyConclusion("所以你现在跑 /report 就是最新逻辑：回声行由 join 层自动去重、对账行显示改写后的文案。")).toBeNull();
+    expect(simplifyConclusion("十一类变体至此全部有过滤或快修规则覆盖。")).toBeNull();
     // 正常工作行不误伤(不含劝导/解释/预告标记)
     expect(simplifyConclusion("实现多 note 合并的行级去重并补齐跨 note 回声行回归测试。")).toBe("实现多 note 合并的行级去重并补齐跨 note 回声行回归测试。");
   });
