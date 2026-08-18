@@ -646,10 +646,11 @@ export function startServer(deps: ServerDeps) {
         return r.ok ? json(r) : json({ error: r.error }, 400);
       }
       if (path === "/api/skills/restore" && req.method === "POST") {
-        const body = (await req.json().catch(() => null)) as { path?: unknown; version?: unknown } | null;
+        const body = (await req.json().catch(() => null)) as { path?: unknown; version?: unknown; savedAt?: unknown } | null;
         const rel = typeof body?.path === "string" ? body.path : "";
         const version = typeof body?.version === "string" && body.version ? body.version : undefined;
-        const r = restoreEdit(rel, version);
+        const savedAt = typeof body?.savedAt === "number" ? body.savedAt : undefined;
+        const r = restoreEdit(rel, version, savedAt);
         return r.ok ? json(r) : json({ error: r.error }, 400);
       }
       if (path === "/api/skills/reset" && req.method === "POST") {
@@ -666,7 +667,8 @@ export function startServer(deps: ServerDeps) {
         const rel = url.searchParams.get("rel") ?? "";
         const err = validateRelPath(rel);
         if (err) return json({ error: err }, 400);
-        const c = getEditContent(rel, url.searchParams.get("version") ?? undefined);
+        const savedAt = num(url.searchParams.get("savedAt")) ?? undefined;
+        const c = getEditContent(rel, url.searchParams.get("version") ?? undefined, savedAt);
         if (!c) return json({ error: "not found" }, 404);
         return json(c);
       }

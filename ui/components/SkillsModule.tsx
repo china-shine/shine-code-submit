@@ -6,7 +6,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useApi } from "../hooks/useApi";
 import { useApp } from "../state/AppContext";
 import { Markdown } from "./Markdown";
-import { CodeEditor } from "./CodeEditor";
+import { CodeEditor, DiffEditor } from "./CodeEditor";
 
 interface SkillFile {
   rel: string;
@@ -101,6 +101,9 @@ export function SkillsModule() {
   const [editContent, setEditContent] = useState("");
   const [restoringEdit, setRestoringEdit] = useState(false);
   const [confirmReq, setConfirmReq] = useState<ConfirmReq | null>(null);
+  // 对比模式:拉执行目录实时内容,与选中备份并排 diff(左=备份 右=实时)
+  const [diffMode, setDiffMode] = useState(false);
+  const [disk, setDisk] = useState<{ rel: string; content: string } | null>(null);
   const [editMsg, setEditMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   const reload = useCallback(() => {
@@ -222,7 +225,8 @@ export function SkillsModule() {
     }
   };
 
-  const copyText = async (text: string, ok: string, err: string) => {
+  // to:提示写哪个视图的消息状态——live 工具栏渲染 msg、edits 工具栏渲染 editMsg,写错对象=无反馈
+  const copyText = async (text: string, ok: string, err: string, to: "live" | "edits" = "live") => {
     // 局域网 IP 访问(非 localhost/非 https)时 navigator.clipboard 不可用 → 回退 textarea+execCommand
     try {
       if (navigator.clipboard?.writeText) {
@@ -238,10 +242,11 @@ export function SkillsModule() {
         document.body.removeChild(ta);
         if (!okc) throw new Error("execCommand copy failed");
       }
-      setMsg({ kind: "ok", text: ok });
-      setTimeout(() => setMsg(null), 2500);
+      const set = to === "edits" ? setEditMsg : setMsg;
+      set({ kind: "ok", text: ok });
+      setTimeout(() => set(null), 2500);
     } catch {
-      setMsg({ kind: "err", text: err });
+      (to === "edits" ? setEditMsg : setMsg)({ kind: "err", text: err });
     }
   };
 
@@ -302,26 +307,56 @@ export function SkillsModule() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [view, edits]);
 
-  const openEdit = async (rel: string, version?: string) => {
+  const openEdit = async (rel: string, version?: string, savedAt?: number) => {
     setEditMsg(null);
     try {
-      const q = `rel=${encodeURIComponent(rel)}` + (version ? `&version=${encodeURIComponent(version)}` : "");
+      const q =
+        `rel=${encodeURIComponent(rel)}` +
+        (version ? `&version=${encodeURIComponent(version)}` : "") +
+        (savedAt ? `&savedAt=${savedAt}` : "");
       const c = await api<EditContent>(`/api/skills/edit?${q}`);
       setEditSelected(rel);
       setEditVersion(c.version);
       setEditSavedAt(c.savedAt);
       setEditContent(c.content);
+      // 对比模式下切文件:同步换右侧实时内容
+      if (diffMode && disk?.rel !== rel) void loadDisk(rel);
     } catch {
       setEditMsg({ kind: "err", text: "读取备份失败" });
     }
   };
 
-  // 恢复到实时:先弹通用确认框,确认后 restoreNow 执行
+  const loadDisk = async (rel: string): Promise<boolean> => {
+    try {
+      const f = await api<FileResponse>(`/api/skills/file?path=${encodeURIComponent(rel)}`);
+      setDisk({ rel, content: f.content });
+      return true;
+    } catch {
+      setEditMsg({ kind: "err", text: "实时目录中已无此文件(新版已删除?),无法对比" });
+      return false;
+    }
+  };
+
+  const toggleDiff = async () => {
+    if (editSelected == null) return;
+    if (diffMode) {
+      setDiffMode(false);
+      return;
+    }
+    if (!disk || disk.rel !== editSelected) {
+      if (!(await loadDisk(editSelected))) return;
+    }
+    setDiffMode(true);
+  };
+
+  // 恢复到实时:先弹通用确认框,确认后 restoreNow 执行;实时视图有未保存修改时在文案里警示(会被丢弃)
   const restoreToLive = () => {
     if (editSelected == null || editVersion == null) return;
     setConfirmReq({
       title: "确认恢复到实时?",
-      body: `将把「${editSelected.split("/")[0]}」v${editVersion} 的备份写回执行目录,立即生效。当前磁盘内容(可能是升级后的新版)会被覆盖;恢复本身也会落一条新备份,可再次「重置」。`,
+      body:
+        `将把「${editSelected.split("/")[0]}」v${editVersion}${editSavedAt ? ` · ${fmtTime(editSavedAt)}` : ""} 的快照写回执行目录,立即生效。当前磁盘内容(可能是升级后的新版)会被覆盖;恢复本身也会落一条新备份,可再次「重置」。` +
+        (dirty ? "⚠ 实时视图当前有未保存的修改,恢复后将被丢弃。" : ""),
       okText: "恢复",
       onOk: () => void restoreNow(),
     });
@@ -335,7 +370,7 @@ export function SkillsModule() {
       const res = await fetch(base + "/api/skills/restore", {
         method: "POST",
         headers: { Authorization: "Bearer " + token, "content-type": "application/json" },
-        body: JSON.stringify({ path: editSelected, version: editVersion }),
+        body: JSON.stringify({ path: editSelected, version: editVersion, savedAt: editSavedAt || undefined }),
       });
       const j = (await res.json().catch(() => ({}))) as { error?: string; restoredFrom?: string };
       if (!res.ok) throw new Error(j.error ?? String(res.status));
@@ -357,20 +392,20 @@ export function SkillsModule() {
     }
   };
 
-  const copyEdit = () => copyText(editContent, "已复制备份内容", "复制失败,请手动全选复制");
+  const copyEdit = () => copyText(editContent, "已复制备份内容", "复制失败,请手动全选复制", "edits");
 
-  // Ctrl+S / Cmd+S 保存(有未保存修改且非保存中才触发)
+  // Ctrl+S / Cmd+S 保存(仅实时视图:edits 视图编辑器只读,保存不可见的实时文件会让人懵)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "s") {
         e.preventDefault();
-        if (selected && dirty && !saving) void doSave(false);
+        if (view === "live" && selected && dirty && !saving) void doSave(false);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selected, dirty, saving, content, fileMtime]);
+  }, [view, selected, dirty, saving, content, fileMtime]);
 
   const downloadText = (text: string, rel: string) => {
     const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
@@ -479,20 +514,29 @@ export function SkillsModule() {
                   {editMsg && <span className={editMsg.kind === "ok" ? "field-ok" : "field-err"} style={{ fontSize: "var(--fs-xs)" }}>{editMsg.text}</span>}
                   {selGroup != null && selGroup.versions.length > 1 && (
                     <select
-                      value={editVersion ?? ""}
-                      onChange={(e) => void openEdit(editSelected, e.target.value)}
+                      value={editVersion && editSavedAt ? `${editVersion}@${editSavedAt}` : ""}
+                      onChange={(e) => {
+                        const at = e.target.value.split("@");
+                        void openEdit(editSelected, at[0], at[1] ? Number(at[1]) : undefined);
+                      }}
                       className="field-input"
                       style={{ padding: "0.15rem 0.4rem", fontSize: "var(--fs-xs)", width: "auto" }}
-                      title="切换备份版本"
+                      title="切换保存点(同版本留最近 10 次快照)"
                     >
                       {selGroup.versions.map((v) => (
-                        <option key={v.version} value={v.version}>v{v.version} · {fmtTime(v.savedAt)}</option>
+                        <option key={`${v.version}@${v.savedAt}`} value={`${v.version}@${v.savedAt}`}>v{v.version} · {fmtTime(v.savedAt)}</option>
                       ))}
                     </select>
                   )}
                   <span className="field-hint" style={{ padding: 0 }}>
-                    v{editVersion ?? "?"} · {fmtTime(editSavedAt)} · {selGroup?.stale ? "已被覆盖(未生效)" : "与磁盘一致"}
+                    v{editVersion ?? "?"} · {fmtTime(editSavedAt)} ·{" "}
+                    {selGroup?.versions[0] && selGroup.versions[0].version === editVersion && selGroup.versions[0].savedAt === editSavedAt
+                      ? (selGroup.stale ? "已被覆盖(未生效)" : "与磁盘一致")
+                      : "历史快照"}
                   </span>
+                  <button type="button" className="tool-btn" onClick={() => void toggleDiff()} title="左=此备份,右=执行目录实时内容,差异高亮——升级后搬改动用">
+                    {diffMode ? "退出对比" : "⇄ 对比实时"}
+                  </button>
                   <button type="button" className="tool-btn" onClick={() => void copyEdit()} title="复制备份全文,可切回「实时 skills」粘贴">
                     复制
                   </button>
@@ -520,6 +564,15 @@ export function SkillsModule() {
               </div>
             ) : editSelected == null ? (
               <div className="sum-empty" style={{ flex: 1 }}>点击上方文件查看备份内容(只读)。</div>
+            ) : diffMode && disk != null && disk.rel === editSelected ? (
+              <>
+                <div className="field-hint" style={{ padding: 0 }}>
+                  对比:左 = 此备份(v{editVersion} · {fmtTime(editSavedAt)}) · 右 = 实时磁盘{selGroup?.stale ? "(有差异,见高亮)" : "(与最新备份一致)"}
+                </div>
+                <div style={{ flex: 1, minHeight: 0, borderRadius: 4, border: "1px solid rgba(127,127,127,0.35)", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                  <DiffEditor original={editContent} modified={disk.content} />
+                </div>
+              </>
             ) : (
               <div style={{ flex: 1, minHeight: 0, borderRadius: 4, border: "1px solid rgba(127,127,127,0.35)", overflow: "hidden", display: "flex", flexDirection: "column" }}>
                 <CodeEditor value={editContent} onChange={() => {}} readOnly />

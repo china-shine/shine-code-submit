@@ -89,3 +89,49 @@ export function CodeEditor({ value, onChange, readOnly }: { value: string; onCha
   // host 必须有非零高度:Monaco 按宿主尺寸布局,0 高宿主渲染空白(父级均为 flex 链,height:100% 兜底)
   return <div ref={hostRef} style={{ flex: 1, minHeight: 0, height: "100%" }} />;
 }
+
+/** 只读 Diff 视图(「修改后的 skills」对比实时):左=original(备份),右=modified(磁盘实时)。
+ *  布局/主题与 CodeEditor 同款;模型随 props 重建(快照/文件切换),旧模型 dispose 防泄漏。 */
+export function DiffEditor({ original, modified }: { original: string; modified: string }) {
+  const hostRef = useRef<HTMLDivElement>(null);
+  const edRef = useRef<monaco.editor.IDiffEditor | null>(null);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    const ed = monaco.editor.createDiffEditor(host, {
+      theme: "shine-dark",
+      readOnly: true,
+      renderSideBySide: true,
+      minimap: { enabled: false },
+      fontSize: 13,
+      lineHeight: 20,
+      scrollBeyondLastLine: false,
+      automaticLayout: false,
+      scrollbar: { verticalScrollbarSize: 10, horizontalScrollbarSize: 10 },
+      padding: { top: 8, bottom: 8 },
+    });
+    edRef.current = ed;
+    const ro = new ResizeObserver(() => ed.layout());
+    ro.observe(host);
+    return () => {
+      ro.disconnect();
+      ed.dispose();
+      edRef.current = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    const ed = edRef.current;
+    if (!ed) return;
+    const om = monaco.editor.createModel(original, "markdown");
+    const mm = monaco.editor.createModel(modified, "markdown");
+    ed.setModel({ original: om, modified: mm });
+    return () => {
+      om.dispose();
+      mm.dispose();
+    };
+  }, [original, modified]);
+
+  return <div ref={hostRef} style={{ flex: 1, minHeight: 0, height: "100%" }} />;
+}

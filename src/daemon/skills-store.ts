@@ -4,7 +4,7 @@
 // /api/skills 标 stale 由前端提示手动恢复;不自动重放,避免静默覆盖新版改过的同名文件。
 // 全同步 fs(文件均 <20KB,daemon 路由直调);写盘一律 tmp+rename 原子写(同 signals-store)。
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DATA_DIR } from "../shared/paths";
@@ -160,6 +160,40 @@ function readBackup(version: string, rel: string): EditBackup | null {
   }
 }
 
+// ---- 保存历史:<version>/history/<b64url(rel)>.<savedAt>.json ----
+// 同 (version,rel) 的备份 json 每次保存覆盖,中间状态不可回溯;内容有变的旧备份归档到 history,
+// 留最近 MAX_HISTORY 份,「修改后的 skills」下拉可按 savedAt 取任意一次保存点。b64url 无 ".",
+// 文件名按 "." 拆出 {rel, savedAt} 无歧义。
+
+const MAX_HISTORY = 10;
+
+function historyFile(version: string, rel: string, savedAt: number): string {
+  return join(EDITS_DIR, version, "history", Buffer.from(rel, "utf8").toString("base64url") + "." + savedAt + ".json");
+}
+
+function pruneHistory(version: string, rel: string): void {
+  const dir = join(EDITS_DIR, version, "history");
+  const prefix = Buffer.from(rel, "utf8").toString("base64url") + ".";
+  let names: string[] = [];
+  try {
+    names = readdirSync(dir);
+  } catch {
+    return;
+  }
+  const mine = names
+    .filter((n) => n.startsWith(prefix) && n.endsWith(".json"))
+    .map((n) => ({ n, savedAt: Number(n.slice(prefix.length, -5)) }))
+    .filter((x) => Number.isFinite(x.savedAt))
+    .sort((a, b) => b.savedAt - a.savedAt);
+  for (const x of mine.slice(MAX_HISTORY)) {
+    try {
+      unlinkSync(join(dir, x.n));
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
 function writeEditBackup(rel: string, content: string): void {
   const { version } = pluginVersion();
   const prev = readBackup(version, rel);
@@ -174,6 +208,11 @@ function writeEditBackup(rel: string, content: string): void {
   // 可读镜像 <version>/md/<rel>(纯 markdown 内容):备份 json 是 base64url 命名的包裹结构,
   // 镜像让磁盘上直接可读可拷;与顶层 .json 隔离,listEdits 只扫顶层 *.json,镜像不进备份列表
   atomicWrite(join(EDITS_DIR, version, "md", rel), content);
+  // 保存历史:旧备份内容有变则归档(重复保存同内容不刷快照),随后修剪到 MAX_HISTORY 份
+  if (prev && prev.hash !== blob.hash) {
+    atomicWrite(historyFile(version, rel, prev.savedAt), JSON.stringify(prev));
+  }
+  pruneHistory(version, rel);
 }
 
 /** 全部编辑备份(仅 header,不含 content):扫 skills-edits 各版本目录下的备份 json,损坏跳过。 */
@@ -216,23 +255,44 @@ export interface EditGroup {
   stale: boolean; // 最新备份 hash ≠ 当前磁盘内容(可能被升级覆盖 / 外部手改)
 }
 
-/** 按 rel 分组全部编辑备份(跨版本,「修改后的 skills」tab 列表);stale 复用 computeStaleEdits。 */
+/** 按 rel 分组全部编辑备份(跨版本 + history 快照,「修改后的 skills」tab 列表);stale 复用 computeStaleEdits。 */
 export function listEditsGrouped(): EditGroup[] {
-  const byRel = new Map<string, EditMeta[]>();
-  for (const e of listEdits()) {
-    const arr = byRel.get(e.rel);
-    if (arr) arr.push(e);
-    else byRel.set(e.rel, [e]);
+  const byRel = new Map<string, Array<{ version: string; savedAt: number }>>();
+  const push = (rel: string, version: string, savedAt: number): void => {
+    const arr = byRel.get(rel);
+    if (arr) arr.push({ version, savedAt });
+    else byRel.set(rel, [{ version, savedAt }]);
+  };
+  for (const e of listEdits()) push(e.rel, e.version, e.savedAt);
+  // history 快照并入(savedAt 编码在文件名,免读全文解析)
+  let versions: string[] = [];
+  try {
+    versions = readdirSync(EDITS_DIR);
+  } catch {
+    versions = [];
+  }
+  for (const v of versions) {
+    let names: string[] = [];
+    try {
+      names = readdirSync(join(EDITS_DIR, v, "history"));
+    } catch {
+      continue;
+    }
+    for (const name of names) {
+      if (!name.endsWith(".json")) continue;
+      const parts = name.slice(0, -5).split(".");
+      if (parts.length !== 2) continue;
+      const rel = Buffer.from(parts[0]!, "base64url").toString("utf8");
+      const savedAt = Number(parts[1]);
+      if (!rel || !Number.isFinite(savedAt)) continue;
+      push(rel, v, savedAt);
+    }
   }
   const staleSet = new Set(computeStaleEdits().map((s) => s.rel));
   const out: EditGroup[] = [];
   for (const [rel, all] of byRel) {
     all.sort((a, b) => b.savedAt - a.savedAt);
-    out.push({
-      rel,
-      versions: all.map((e) => ({ version: e.version, savedAt: e.savedAt })),
-      stale: staleSet.has(rel),
-    });
+    out.push({ rel, versions: all, stale: staleSet.has(rel) });
   }
   out.sort((a, b) => a.rel.localeCompare(b.rel));
   return out;
@@ -245,15 +305,30 @@ export interface EditContent {
   content: string;
 }
 
-/** 读某 rel 的备份内容:默认最新,指定 version 则取该版本;无备份/损坏/缺 content → null。 */
-export function getEditContent(rel: string, version?: string): EditContent | null {
+/** 解析一份快照:默认最新(顶层);version 过滤版本;savedAt 精确定位某次保存(顶层命中直读,否则读 history 归档)。 */
+function resolveSnapshot(rel: string, version?: string, savedAt?: number): { version: string; blob: EditBackup } | null {
   const all = listEdits().filter((e) => e.rel === rel && (!version || e.version === version));
   if (!all.length) return null;
   all.sort((a, b) => b.savedAt - a.savedAt);
   const meta = all[0]!;
-  const blob = readBackup(meta.version, rel);
-  if (!blob || typeof blob.content !== "string") return null;
-  return { rel, version: meta.version, savedAt: meta.savedAt, content: blob.content };
+  if (typeof savedAt !== "number" || savedAt === meta.savedAt) {
+    const blob = readBackup(meta.version, rel);
+    return blob ? { version: meta.version, blob } : null;
+  }
+  try {
+    const blob = JSON.parse(readFileSync(historyFile(version ?? meta.version, rel, savedAt), "utf8")) as EditBackup;
+    return typeof blob.content === "string" ? { version: version ?? meta.version, blob } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 读某 rel 的备份内容:默认最新,version/savedAt 可定位任意一次保存;无备份/损坏/缺 content → null。 */
+export function getEditContent(rel: string, version?: string, savedAt?: number): EditContent | null {
+  const s = resolveSnapshot(rel, version, savedAt);
+  return s && typeof s.blob.content === "string"
+    ? { rel, version: s.version, savedAt: s.blob.savedAt, content: s.blob.content }
+    : null;
 }
 
 /** rel → 最新一条备份(savedAt 最大)。 */
@@ -303,11 +378,18 @@ export type RestoreResult =
   | { ok: true; rel: string; restoredFrom: string; size: number; mtimeMs: number }
   | { ok: false; error: string };
 
-/** 恢复编辑:把备份内容写回磁盘(默认该 rel 最新备份;version 指定则取该版本份)。
+/** 恢复编辑:把备份内容写回磁盘(默认该 rel 最新备份;version/savedAt 可定位任意一次保存)。
  *  恢复本身也落新备份 → hash 对齐 → 自动退出 stale。 */
-export function restoreEdit(rel: string, version?: string): RestoreResult {
+export function restoreEdit(rel: string, version?: string, savedAt?: number): RestoreResult {
   const err = validateRelPath(rel);
   if (err) return { ok: false, error: err };
+  // 指定 savedAt:按快照解析(可能在 history 归档),不走"该版本最新"
+  if (typeof savedAt === "number") {
+    const s = resolveSnapshot(rel, version, savedAt);
+    if (!s) return { ok: false, error: "该快照无备份" };
+    const r = saveSkillFile(rel, s.blob.content);
+    return r.ok ? { ok: true, rel, restoredFrom: s.version, size: r.size, mtimeMs: r.mtimeMs } : r;
+  }
   const all = listEdits().filter((e) => e.rel === rel && (!version || e.version === version));
   if (!all.length) return { ok: false, error: "该文件无备份" };
   all.sort((a, b) => b.savedAt - a.savedAt);

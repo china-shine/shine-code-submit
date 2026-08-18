@@ -31,9 +31,9 @@
 | GET | /api/skills | skills 下的 Markdown 列表(当前生效插件根 skills/:相对路径/大小/mtime/edited/useCount)+ 版本 + sourceMode + `stale`(本地编辑与磁盘不一致,可能被升级覆盖);仅 `.md`,代码文件不开放;**按近 7 天 `shine-worklog:<name>` 使用次数降序**(源=UserPromptSubmit.prompt 文本,高频靠左),同频按字母序 |
 | GET | /api/skills/file | `?path=<rel>`:读单文件内容;路径两道校验(段白名单+前缀防穿越),仅 `.md`,≤1MB |
 | PUT | /api/skills/file | `{path,content,baseMtimeMs?}`:先备份到 `DATA_DIR/skills-edits/` 再原子写——skill 文件命令触发时从磁盘读,**保存即生效**;备份含首次编辑前 `original` 基线(供 reset);baseMtimeMs 护栏(编辑期间被改→409,确认后去掉重发覆盖) |
-| GET | /api/skills/edits | 「修改后的 skills」tab:编辑备份按 rel 分组列表 `{edits:[{rel,versions[{version,savedAt}]降序,stale}]}`(跨版本留痕,stale=磁盘≠最新备份) |
-| GET | /api/skills/edit | `?rel=<rel>`(必填)+`&version=`(缺省最新):读单份备份内容 `{rel,version,savedAt,content}`(只读视图用) |
-| POST | /api/skills/restore | `{path,version?}`:把备份内容写回磁盘(默认该文件最新备份),恢复也落新备份 → 退出 stale |
+| GET | /api/skills/edits | 「修改后的 skills」tab:编辑备份按 rel 分组列表 `{edits:[{rel,versions[{version,savedAt}]降序,stale}]}`(跨版本留痕+history 保存快照,stale=磁盘≠最新备份) |
+| GET | /api/skills/edit | `?rel=<rel>`(必填)+`&version=`/`&savedAt=`(缺省最新):读单份备份内容 `{rel,version,savedAt,content}`(savedAt 精确定位某次保存的 history 快照) |
+| POST | /api/skills/restore | `{path,version?,savedAt?}`:把备份内容写回磁盘(默认最新;savedAt 可恢复任意一次保存点),恢复也落新备份 → 退出 stale |
 | POST | /api/skills/reset | `{path}`:把文件恢复到首次编辑前的原始内容(备份 `original` 字段),重置可反复用;无备份→400 |
 | POST | /api/report/upload | 手动上报;`?full=1` 全量;失败 {status:"skipped"} 水位不推进 |
 | POST | /api/update | 手动检查更新(dashboard 按钮) |
