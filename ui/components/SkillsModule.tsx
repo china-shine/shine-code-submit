@@ -248,23 +248,6 @@ export function SkillsModule() {
     }
   };
 
-  const openBackup = async () => {
-    setMsg(null);
-    try {
-      const res = await fetch(base + "/api/skills/open-backup", {
-        method: "POST",
-        headers: { Authorization: "Bearer " + token, "content-type": "application/json" },
-        body: "{}",
-      });
-      const j = (await res.json().catch(() => ({}))) as { error?: string; path?: string };
-      if (!res.ok) throw new Error(j.error ?? String(res.status));
-      setMsg({ kind: "ok", text: `已打开备份目录 ${j.path ?? ""}` });
-      setTimeout(() => setMsg(null), 4000);
-    } catch (e) {
-      setMsg({ kind: "err", text: e instanceof Error ? e.message : "打开备份目录失败" });
-    }
-  };
-
   // ---- 「修改后的 skills」视图:备份列表加载 / 单备份读取 / 恢复到实时 ----
 
   const loadEdits = useCallback(() => {
@@ -398,19 +381,9 @@ export function SkillsModule() {
       <div className="panel-header">
         <h2>Skills</h2>
         {data && (
-          <>
-            <span className="field-hint" style={{ padding: 0 }}>
-              v{data.version} · {data.files.length} 个文件 · {data.root}
-            </span>
-            <button
-              type="button"
-              className="tool-btn"
-              onClick={() => void openBackup()}
-              title="在系统文件管理器打开备份目录 DATA_DIR/skills-edits/——升级后 skills/ 被覆盖时可手动查看/拷贝备份内容"
-            >
-              📂 打开备份目录
-            </button>
-          </>
+          <span className="field-hint" style={{ padding: 0 }}>
+            v{data.version} · {data.files.length} 个文件 · {data.root}
+          </span>
         )}
       </div>
       <div className="stats-body">

@@ -39,7 +39,6 @@ import {
 import { readSettings, writeSettings } from "./settings";
 import {
   computeStaleEdits,
-  editsDir,
   getEditContent,
   latestEditByRel,
   listEditsGrouped,
@@ -57,7 +56,6 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync,
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { autoUpdateIfNeeded } from "../shared/updater";
-import { openDirectory } from "../shared/daemonctl";
 import type { Store } from "./store";
 import type { EventBus } from "./bus";
 import type { Stats } from "./stats";
@@ -671,11 +669,6 @@ export function startServer(deps: ServerDeps) {
         const c = getEditContent(rel, url.searchParams.get("version") ?? undefined);
         if (!c) return json({ error: "not found" }, 404);
         return json(c);
-      }
-      // 在系统文件管理器打开备份目录(openDirectory 内部 mkdir 兜底)——升级后被覆盖时手动查看/拷贝
-      if (path === "/api/skills/open-backup" && req.method === "POST") {
-        openDirectory(editsDir());
-        return json({ ok: true, path: editsDir() });
       }
       if (path === "/api/settings" && req.method === "PUT") {
         let body: unknown;

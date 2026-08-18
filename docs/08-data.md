@@ -26,7 +26,7 @@ DATA_DIR/
 │  │                         #   的原始内容(初始化基线,后续保存继承不改,供「重置」恢复);升级整目录
 │  │                         #   覆盖后磁盘≠hash → /api/skills 标 stale 提示手动恢复(不自动重放);
 │  │                         #   跨版本留痕,同 (version,rel) 重复保存覆盖
-│  └─ <version>/md/<rel>     # 可读镜像(纯 markdown content),供「打开备份目录」后直接查看/拷贝;
+│  └─ <version>/md/<rel>     # 可读镜像(纯 markdown content),磁盘上直接查看/拷贝;
 │                            #   listEdits 只扫顶层 json,镜像不进备份列表
 ├─ reports/                   # 日报/周报 HTML(日报-YYYY-MM-DD-<姓名>.html,同日覆盖)
 └─ zenpilot/                  # 工时链路数据(原 ZenPilot 目录统一迁入)
