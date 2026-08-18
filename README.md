@@ -60,6 +60,7 @@ Claude Code 共 9 个 hook 事件（[官方清单](https://docs.claude.com/en/do
 #### 工时来源与记录缓存（summary）
 
 - **时长** = daemon 记的 session `activeMinutes`（gap-aware 估算实际编码活跃时长，**不是 AI 估**），换算成小时
+- **多天补报（自上次提交以来）**：collect 范围不是只有今天——起点 = `submitted.json` 最大日期的 0 点（上限回看 14 天），某天忘了提交、或提交后还有增量，之后任意一次 `/report` 都会把漏报会话/水位后增量补上；补报条目按**会话实际日期**提交禅道（草稿里标 `[补 MM-DD]`），不污染今天
 - **文案 work + 归属 task** = `/report` 提交时归纳：有 summary 的会话直读；无 summary 的会话读 Claude transcript 日志（`~/.claude/projects/<项目>/<session>.jsonl`）提取信号，AI 归纳成一句话 work + 归属 task 写入 `summary-YYYY-MM-DD.json`（按项目 + 日期；**文件名日期取 `sessions.json.date`**，跨午夜报当天会话不错位）
 - **note 工时水位**：每条 note 拍快照当时 session 的 `activeMinutes`（`notedActiveMinutes`）。同一会话多条 note 时，按水位**切时间段拆工时到各 task**（段长 = 当前水位 − 上一水位），实现「一个会话干多个任务、工时按段分」
 
@@ -73,7 +74,7 @@ Claude Code 共 9 个 hook 事件（[官方清单](https://docs.claude.com/en/do
 | `/report` 提交 | 锁定当前项目；只有当前项目记的 note 才会被读到 |
 
 - **报多个项目**：分别到各项目目录跑（最省事是在各项目里直接开 Claude Code 会话再 `/report`），一天可多次提交。
-- ⚠️ **cwd 必须对**：cd 错目录或 `$CLAUDE_PROJECT_DIR` 指错 → 读到空 `sessions.json`（报「无当天会话数据」）；在 A 项目记的 note，去 B 项目 `/report` 看不到。
+- ⚠️ **cwd 必须对**：cd 错目录或 `$CLAUDE_PROJECT_DIR` 指错 → 读到空 `sessions.json`（报「无会话数据」）；在 A 项目记的 note，去 B 项目 `/report` 看不到。
 - **dashboard ≠ report**：本地 dashboard / tokenserver 是**全局**的（所有项目、多台机器按 cwd 分组展示，看全貌用这个）；`/report` 提交禅道则严格限定当前项目。
 
 #### 提交逻辑（`plan` → `render` → `commit`）
@@ -303,8 +304,8 @@ zenpilot/           禅道工时填报数据（原 ~/.zenpilot/，1.3.0 统一�
   cache.json          禅道任务/执行缓存（减少重复 API 调用）
   submitted/          提交流水 submitted/<date>.jsonl（每条禅道提交成功逐笔 append，永不覆盖；daemon 上报 tokenserver 的数据源，行号=流水号）
   projects/<编码cwd>/ 按项目隔离（编码 = cwd 非字母数字→"-"，对齐 ~/.claude/projects/ 编码）
-    plan.json           当天提交计划（每次 plan 覆盖，只存当天；items 含 status/work/taskName/hours）
-    sessions.json       当天从 daemon 采集的会话（每次 collect 覆盖，只存当天；算工时用；其 date 字段定 summary 文件名）
+    plan.json           当前提交计划（每次 plan 覆盖，date=采集日；items 含 status/work/taskName/hours/date=会话归属日）
+    sessions.json       自上次提交日以来的会话（含今天，回看上限 14 天；每次 collect 覆盖；算工时用；date=采集日定 summary 文件名、sinceDate=范围起点、每会话 date=归属日）
     summary-YYYY-MM-DD.json  /report 提交时归纳的 work+task 结论（有 summary 直读，无则读 transcript 归纳写入；按日期，文件名日期取 sessions.json.date 防跨午夜错位；每条带 notedActiveMinutes 水位，多 note 按水位拆工时到各 task）
     submitted.json      防重 + amend 索引（按 日期→会话→{tasks,hours,minutes 水位} 累积；minutes 是提交时 activeMinutes 水位，再报同会话只补增量）
 ```

@@ -29,12 +29,12 @@
 | `executions` | 进行中执行 | 供 create-task 选 |
 | `create-task --execution --name --estimate --desc` | 建任务并指派自己 | 自动进缓存 |
 | `refresh` | 全量刷缓存(20 天窗口,进度走 stderr) | {fetchedAt,projects,tasks} |
-| `collect [--session]` | 从 daemon 拉当日会话写 sessions.json | 会话数 |
+| `collect [--session]` | 从 daemon 拉会话写 sessions.json(范围=自上次提交日以来含今天,上限 14 天) | 会话数 |
 | `config` | 写禅道连接配置(url/account/password) | — |
 | `mark` | AI 提交标识配置(开关/文案,等同 /mark skill) | — |
 | `efforts` | 查某任务工时记录 | 记录列表 |
 | `prepare` | 读 transcript 信号供 AI 归纳 | prompts/files/recent |
-| `plan [--source zentao]` | ★ 生成 plan.json(读 sessions+summary+submitted,防重+冷却预判) | items+cooldown |
+| `plan [--source zentao]` | ★ 生成 plan.json(读 sessions+summary+submitted,防重+冷却预判;条目带 `date`=会话归属日,多天补报按此提交) | items+cooldown |
 | `note --session --work --task` | ★ 写 summary(work+task+水位) | — |
 | `render` | ★ 工时草稿文本(逐条分行编号;有 pending/缺 work 会 die) | 草稿 |
 | `commit [--dry-run]` | ★ 逐条提交禅道+写水位+流水镜像 | results+mappings |
@@ -51,7 +51,7 @@
 
 - **shared.ts**:路径常量(`DATA_DIR/zenpilot/...`,与 src/shared/paths.ts 内联复刻、改动两边同步)+ helpers(roundPy 银行家舍入/hoursFromMinutes 向上取 0.5h/applyMark·isAiWork 标识三件套/**writeJSON 原子写** tmp+rename);
 - **client.ts**:禅道 REST v1 客户端(三分错误:网络 die/HTTP throw 供重试/2xx→JSON;新请求体失败自动降级 legacy)+ **getCache 缓存层**(20 天滚动窗口,见 10-mechanisms);
-- **transcript.ts**:collect(daemon /api/sessions → sessions.json)+ transcript 信号提取;
+- **transcript.ts**:collect(daemon /api/sessions → sessions.json,自上次提交日以来多天范围)+ transcript 信号提取;
 - **report.ts**:日报/周报装配(gatherReport 纯数据)+ HTML/文本渲染(worksHtml:`\n`→`<br>`;renderReportText 逐条分行)+ **报表侧按需刷新**(cacheStaleVsSubmissions 检测,1.3.46)。
 
 ## 修改注意

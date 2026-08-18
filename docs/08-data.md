@@ -30,9 +30,11 @@ DATA_DIR/
    ├─ submitted/<date>.jsonl  # ★提交流水逐笔 append-only(行号即 subId=<date>:<行号>),
    │                          #   daemon 据此上报 tokenserver 镜像禅道,幂等重放
    └─ projects/<编码cwd>/     # 按项目隔离(cwd 非字母数字→"-",对齐 Claude Code 编码)
-      ├─ sessions.json        # 当日会话(Stop hook collect 写,daemon /api/sessions 供数)
+      ├─ sessions.json        # 会话(Stop hook collect 写,daemon /api/sessions 供数;范围=自上次
+      │                       #   提交日以来含今天,LOOKBACK_MAX_DAYS=14 上限;date=采集日、
+      │                       #   sinceDate=起点、每会话带 date=归属日)
       ├─ summary-<date>.json  # note 记录的 work+task(带 notedActiveMinutes 水位)
-      ├─ plan.json            # /report 草稿(draftSeq 同日递增、跨日归零)
+      ├─ plan.json            # /report 草稿(draftSeq 同日递增、跨日归零;条目含 date=归属日)
       └─ submitted.json       # 防重水位:{date:{session:{tasks,hours,minutes,_meta.lastCommit}}}
 ```
 

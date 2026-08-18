@@ -72,3 +72,33 @@ describe("cmdCommit 提交流水落盘", () => {
     expect(line.work).toBe("1. 做A"); // 标识关 → 与禅道记录(同样无标识、含序号)逐字一致
   });
 });
+
+describe("cmdCommit 多天补报(按条目归属日)", () => {
+  test("补报条目按 item.date 提交禅道/记台账/分日流水;_meta 同时间戳盖各日期", async () => {
+    const r = await runCommit({
+      plan: PLAN([
+        { status: "resolved", session: "s1", date: "2026-08-05", repo: "r1", branch: "main", start: "17:20", end: "17:59", minutes: 39, hours: 0.5, task: 100, taskName: "T100", project: 1, projectName: "P1", work: "昨天漏报的活" },
+        { status: "resolved", session: "s2", repo: "r1", branch: "main", start: "09:00", end: "10:00", minutes: 55, hours: 1, task: 100, taskName: "T100", project: 1, projectName: "P1", work: "今天的活" },
+      ]),
+    });
+    expect(r.ok).toBe(true);
+    // 禅道 POST:date 逐条按归属日(补报记昨天,不污染今天)
+    expect(r.calls.map((c: any) => c.date)).toEqual(["2026-08-05", "2026-08-06"]);
+    // 台账 submitted.json:写各自日期 key
+    expect(r.submittedJson["2026-08-05"].s1).toMatchObject({ tasks: [100], hours: 0.5, minutes: 39 });
+    expect(r.submittedJson["2026-08-06"].s2).toMatchObject({ tasks: [100], hours: 1, minutes: 55 });
+    // _meta:同一次 commit 的各日期 key 盖同一 lastCommitAt(amend 据此合并定位)
+    expect(r.submittedJson["2026-08-05"]._meta.lastCommitAt).toBe(r.submittedJson["2026-08-06"]._meta.lastCommitAt);
+    // 流水分日文件:subId 前缀区分归属日
+    expect(r.worklogs.map((w: any) => w.subId).sort()).toEqual(["2026-08-05:0", "2026-08-06:0"]);
+  });
+
+  test("cooldown 全局:历史日期 key 里的 lastCommitAt 也拦(10 分钟前)", async () => {
+    // lastCommitAtOffsetMin 在 runner 侧生成(主进程 bun test 是 TZ=UTC,拼的串到 runner 真本地解析差 8h)
+    await expect(runCommit({
+      plan: PLAN([{ status: "resolved", session: "s1", repo: "r1", minutes: 55, hours: 1, task: 100, work: "做A" }]),
+      submitted: { "2026-08-01": { _meta: { lastCommitAt: "", lastCommit: [] } } },
+      lastCommitAtOffsetMin: -10,
+    })).rejects.toThrow();
+  });
+});

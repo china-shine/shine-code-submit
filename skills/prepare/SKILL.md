@@ -5,7 +5,7 @@ description: 提前为今日会话生成工作内容+任务写入工时记录,�
 
 # shine-worklog 提前准备工时
 
-把当天会话的 `work`(工作内容)+ `task`(禅道任务归属)**提前**算好写入 summary,这样 `/report` 时全 `resolved`、秒级提交,不用在填报时干等 AI 推理。
+把今天(及待补报历史日——collect 范围=自上次提交日以来,上限 14 天)会话的 `work`(工作内容)+ `task`(禅道任务归属)**提前**算好写入 summary,这样 `/report` 时全 `resolved`、秒级提交,不用在填报时干等 AI 推理。
 
 脚本在 report skill:`<Base directory>/../report/scripts/zentao.ts`。**用绝对路径在当前项目目录下调用、不要 cd**——脚本靠 `process.cwd()` 识别项目,summary 按项目隔离写入 `DATA_DIR/zenpilot/projects/<编码项目路径>/summary-YYYY-MM-DD.json`。
 

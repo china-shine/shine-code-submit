@@ -5,7 +5,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import * as path from "node:path";
-import { DATA_DIR, PROJECT_CWD, SESSIONS_PATH, encodeProject, todayISO, localMidnightEpoch, writeJSON, num, countLines, extractText, localHHMM, gitBranchFallback } from "./shared";
+import { DATA_DIR, PROJECT_CWD, SESSIONS_PATH, encodeProject, todayISO, localDateISO, lastSubmitSinceEpoch, writeJSON, num, countLines, extractText, localHHMM, gitBranchFallback } from "./shared";
 
 // ---------- shine-worklog daemon 数据接入(合并后 collect 改读 daemon,不再挖 transcript) ----------
 
@@ -51,13 +51,13 @@ export async function fetchDaemonSignalsMap(cwd: string, sinceMs: number): Promi
   }
 }
 
-/** 查 daemon 当天本项目 sessions(GET /api/sessions?cwd=&since=当日0点)。 */
+/** 查 daemon 自 sinceMs 以来本项目 sessions(GET /api/sessions?cwd=&since=,daemon 按 last_activity 过滤)。 */
 async function fetchDaemonSessions(
   cwd: string,
   sinceMs: number,
   token: string,
 ): Promise<{ sessions: any[]; total: number }> {
-  const url = `${DAEMON_BASE}/api/sessions?cwd=${encodeURIComponent(cwd)}&since=${sinceMs}&pageSize=200`;
+  const url = `${DAEMON_BASE}/api/sessions?cwd=${encodeURIComponent(cwd)}&since=${sinceMs}&pageSize=1000`;
   const res = await fetch(url, {
     headers: { authorization: `Bearer ${token}` },
     signal: AbortSignal.timeout(3000),
@@ -77,6 +77,7 @@ export function toZenSession(s: any, branch: string | null): any {
     cwd: s.cwd || PROJECT_CWD,
     repo: path.basename(s.cwd || PROJECT_CWD),
     branch,
+    date: localDateISO(lastActive), // 会话归属日(按 lastActive;跨午夜会话归活跃日)——多天补报时 item.date/禅道 date 用
     start: localHHMM(Math.max(0, lastActive - activeMs)),
     end: localHHMM(lastActive),
     activeMinutes: Math.round(activeMs / 60000),
@@ -204,7 +205,8 @@ async function readStdinTimed(ms = 2000): Promise<string> {
 export async function cmdCollect(): Promise<any> {
   // 合并后:collect 改读 shine-worklog daemon 的 /api/sessions(不再挖 transcript)。
   // hook 模式(Stop hook 触发,stdin 携带 payload)与 full 模式(/report 兜底手动跑)统一:
-  //   读 daemon token → GET /api/sessions?cwd=本项目&since=当日0点 → 映射成 shine-worklog session → 写 sessions.json。
+  //   读 daemon token → GET /api/sessions?cwd=本项目&since=自上次提交日(多天补报,≤LOOKBACK_MAX_DAYS)
+  //   → 映射成 shine-worklog session(带 date 归属日)→ 写 sessions.json。
   // daemon 不可达时:hook 静默跳过(不写、不崩、不影响 hook);full 给错误提示。
   const isHook = process.stdin.isTTY !== true;
   let hookSessionId: string | null = null;
@@ -225,10 +227,11 @@ export async function cmdCollect(): Promise<any> {
     return { mode: "full", error: "daemon 未运行或 token 读不到(shine-worklog daemon 未启动)" };
   }
 
-  // 2. 查 daemon 当天本项目 sessions
+  // 2. 查 daemon 自上次提交日本项目 sessions(多天补报:漏报会话/水位后增量都拉进来;上限 LOOKBACK_MAX_DAYS)
+  const sinceMs = lastSubmitSinceEpoch();
   let resp: { sessions: any[]; total: number };
   try {
-    resp = await fetchDaemonSessions(PROJECT_CWD, localMidnightEpoch(), token);
+    resp = await fetchDaemonSessions(PROJECT_CWD, sinceMs, token);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     if (isHook) return { mode: "hook", skipped: "daemon fetch failed", error: msg, hookSessionId };
@@ -238,15 +241,17 @@ export async function cmdCollect(): Promise<any> {
   // 3. branch 单值探测(daemon 不提供 branch,每 collect 调一次,所有 session 共用当前分支)
   const branch = gitBranchFallback(PROJECT_CWD);
 
-  // 4. 映射 + 写盘(hook 仅在有数据时写,防 daemon 消费者 lag 误删;full 照实写含空)
+  // 4. 映射 + 写盘(hook 仅在有数据时写,防 daemon 消费者 lag 误删;full 照实写含空)。
+  //    date=采集日(cmdNote 的 summary 文件名依赖,保持「今天」语义);sinceDate=本次范围起点(诊断用)。
   const sessions = resp.sessions.map((s: any) => toZenSession(s, branch));
   if (sessions.length > 0 || !isHook) {
-    writeJSON(SESSIONS_PATH, { date: todayISO(), sessions });
+    writeJSON(SESSIONS_PATH, { date: todayISO(), sinceDate: localDateISO(sinceMs), sessions });
   }
 
   return {
     mode: isHook ? "hook" : "full",
     date: todayISO(),
+    sinceDate: localDateISO(sinceMs),
     count: sessions.length,
     hookSessionId,
     sessions: sessions.map((s: any) => ({ id: s.id, repo: s.repo, branch: s.branch, activeMinutes: s.activeMinutes })),

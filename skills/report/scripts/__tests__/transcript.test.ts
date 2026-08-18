@@ -111,6 +111,7 @@ describe("toZenSession (字段映射)", () => {
     expect(z.linesRemoved).toBe(8); // 5+3
     expect(z.filesChanged).toBe(0);
     expect(z.summary).toBe("做某事");
+    expect(z.date).toBe("2026-08-06"); // 会话归属日(lastActive 推,多天补报时 item.date/禅道 date 用)
   });
   test("branch null 透传", () => {
     const z = toZenSession({ sessionId: "s", activeMs: 0, lastActive: 0 }, null);

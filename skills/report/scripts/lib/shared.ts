@@ -7,6 +7,9 @@ import * as path from "node:path";
 
 export const COMMIT_COOLDOWN_MINUTES = 30;
 
+/** /report 会话回看上限(天):自上次提交日以来,超过此天数 clamp(防半年没提交一次拉爆)。 */
+export const LOOKBACK_MAX_DAYS = 14;
+
 // 内联复刻 src/shared/paths.ts 的 DATA_DIR（zentao.ts 零 npm 依赖，不能 import；改名时此串需与 paths.ts 同步）
 export const LOCAL_APP_DIR = process.env.LOCALAPPDATA ?? path.join(homedir(), ".local", "share");
 export const DATA_DIR = path.join(LOCAL_APP_DIR, "shine-worklog");
@@ -205,8 +208,8 @@ export function extractText(content: unknown): string {
   return "";
 }
 
-export function localDateISO(iso: string): string {
-  const d = new Date(iso);
+export function localDateISO(v: string | number): string {
+  const d = new Date(v);
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 }
 
@@ -219,6 +222,23 @@ export function localMidnightEpoch(): number {
   const d = new Date();
   d.setHours(0, 0, 0, 0);
   return d.getTime();
+}
+
+/** YYYY-MM-DD → 本地 0 点 epoch ms(todayISO 的反操作;跨午夜/补报场景把台账日期转采集起点)。 */
+export function epochForDate(iso: string): number {
+  const d = new Date(iso);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+}
+
+/** collect 起点:自上次提交日 0 点以来(含该日全天,增量靠水位判);无提交记录回退今天 0 点;
+ *  超过 LOOKBACK_MAX_DAYS 天 clamp 到上限。每天忘了 / 提交后有增量 / 完全漏报的会话都能再进 plan。 */
+export function lastSubmitSinceEpoch(): number {
+  const all = loadJSON<any>(SUBMITTED_PATH, {});
+  const dates = Object.keys(all).filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d)).sort();
+  if (dates.length === 0) return localMidnightEpoch();
+  const floor = localMidnightEpoch() - LOOKBACK_MAX_DAYS * 86400_000;
+  return Math.max(epochForDate(dates[dates.length - 1]!), floor);
 }
 
 export function gitBranchFallback(cwd: string | null): string | null {

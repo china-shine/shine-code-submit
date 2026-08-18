@@ -15,7 +15,7 @@ description: 修正最后一次禅道工时提交:查看最后一次提交内容
 
 ### 1. 展示最后一次提交
 
-读 `../report/data/submitted.json` 当天的 `_meta`:`lastCommit` 是最后一次提交的清单(会话/任务/工时),`lastCommitAt` 是时间。用表格展示给用户。没有 `_meta` 说明今天还没提交过,告知后停止。
+读 `../report/data/submitted.json` **全局最近一次**的 `_meta`(扫所有日期 key 取最大 `lastCommitAt`——补报场景最后一次提交可能落在历史日期 key 下):`lastCommit` 是最后一次提交的清单(会话/任务/工时),`lastCommitAt` 是时间。用表格展示给用户。没有任何 `_meta` 说明还没提交过,告知后停止。
 
 ### 2. 听取修正意图并分类
 

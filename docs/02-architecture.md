@@ -55,12 +55,12 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    A["plan:读 sessions.json + summary(note)<br/>+ submitted.json(防重水位)"] --> B{"有缺 work/task 的会话?"}
+    A["plan:读 sessions.json + summary(note)<br/>+ submitted.json(防重水位)<br/>(sessions=自上次提交日以来,≤14天)"] --> B{"有缺 work/task 的会话?"}
     B -->|是| C["prepare 读 transcript 信号<br/>→ AI 归纳 → note 写回"]
-    B -->|否| D["render 草稿文本"]
+    B -->|否| D["render 草稿文本<br/>(补报条目标 [补 MM-DD])"]
     C --> D
-    D --> E["用户确认"] --> F["commit:禅道 API 逐条提交<br/>(逐条编号 + AI 标识)"]
-    F --> G["写防重水位 + 逐笔流水镜像<br/>submitted/&lt;date&gt;.jsonl"]
+    D --> E["用户确认"] --> F["commit:禅道 API 逐条提交<br/>(逐条编号 + AI 标识,<br/>date=会话归属日)"]
+    F --> G["写防重水位 + 逐笔流水镜像<br/>submitted/&lt;date&gt;.jsonl(按归属日分文件)"]
 ```
 
 ### ③ 禅道缓存流(refresh / TTL / 报表按需)

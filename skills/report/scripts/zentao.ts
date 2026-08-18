@@ -17,7 +17,7 @@
  *   会话采集+transcript → ./lib/transcript;日报/周报 → ./lib/report。本文件只留命令实现 + 入口分发。 */
 import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
-import { Args, die, loadJSON, writeJSON, roundPy, todayISO, nowISOSeconds, minutesSinceISO, hoursFromMinutes, fmtHours, isObj, loadConfig, loadMarkSetting, applyMark, requireStr, requireInt, summaryPathFor, CONFIG_PATH, CACHE_PATH, MAPPINGS_PATH, SETTINGS_PATH, SESSIONS_PATH, SUBMITTED_PATH, PLAN_PATH, PROJECT_DIR, PROJECT_CWD, SUBMITTED_LOG_DIR, COMMIT_COOLDOWN_MINUTES, localMidnightEpoch } from "./lib/shared";
+import { Args, die, loadJSON, writeJSON, roundPy, todayISO, nowISOSeconds, minutesSinceISO, hoursFromMinutes, fmtHours, isObj, loadConfig, loadMarkSetting, applyMark, requireStr, requireInt, summaryPathFor, CONFIG_PATH, CACHE_PATH, MAPPINGS_PATH, SETTINGS_PATH, SESSIONS_PATH, SUBMITTED_PATH, PLAN_PATH, PROJECT_DIR, PROJECT_CWD, SUBMITTED_LOG_DIR, COMMIT_COOLDOWN_MINUTES, lastSubmitSinceEpoch } from "./lib/shared";
 import { Client, getCache, getCacheLocal } from "./lib/client";
 import { cmdCollect, extractTranscriptSignals, fetchDaemonSignalsMap } from "./lib/transcript";
 import { writeReport, weekStart, lastWeekRange } from "./lib/report";
@@ -146,11 +146,15 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>, source
   // 跨日期扫描所有 summary-*.json 按 session 聚合:长会话跨午夜时 note 散在多个日期文件,
   // 只读当天会漏(昨天的 note 读不到 → work=null)。扫 PROJECT_DIR 全部 summary 文件合并。
   const notesBySession = new Map<string, any[]>();
-  // session=null 的 note(note 时新项目第一次未采集 session)→ 归当天最新 session(/report 时 Stop 已采集)
+  // session=null 的 note(note 时新项目第一次未采集 session)→ 归当天最新 session(/report 时 Stop 已采集)。
+  // 多天补报时 sessions 含历史日:end 是 "HH:MM" 无日期,直接全局取最晚会把昨天的当最新 →
+  // 优先今天(date===采集日)里 end 最晚;今天没有才退全局最晚。
   const fallbackSid = (() => {
     const ss: any[] = Array.isArray(data.sessions) ? data.sessions : [];
     if (ss.length === 0) return "";
-    return String([...ss].sort((x: any, y: any) => String(y.end ?? "").localeCompare(String(x.end ?? "")))[0]?.id ?? "");
+    const latest = (arr: any[]) => String([...arr].sort((x: any, y: any) => String(y.end ?? "").localeCompare(String(x.end ?? "")))[0]?.id ?? "");
+    const todays = ss.filter((x: any) => !x.date || x.date === date);
+    return latest(todays.length ? todays : ss);
   })();
   for (const fn of readdirSync(PROJECT_DIR)) {
     if (!/^summary-\d{4}-\d{2}-\d{2}\.json$/.test(fn)) continue;
@@ -168,6 +172,7 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>, source
       session: s.id,
       repo: s.repo,
       branch: s.branch,
+      date: s.date || date, // 会话归属日(collect 按会话 lastActive 算):多天补报时 commit 按此提交禅道/记台账
       start: s.start,
       end: s.end,
       minutes: s.activeMinutes,
@@ -344,13 +349,14 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>, source
   const draftSeq = prevPlan?.date === date && Number.isFinite(Number(prevPlan.draftSeq)) ? Number(prevPlan.draftSeq) : 0;
   const plan = { date, draftSeq, items };
   writeJSON(PLAN_PATH, plan);
-  // cooldown 预判:返回给调用方(SKILL 据此决定是否 render/commit,避免 commit 失败再查)
-  const cdMeta = (submittedAll[date] || {})._meta || {};
+  // cooldown 预判:返回给调用方(SKILL 据此决定是否 render/commit,避免 commit 失败再查)。
+  // 全局取最近 lastCommitAt(跨所有日期 key):补报场景最后提交可能落在历史日 key 下。
+  const lastAt = latestCommitAt(submittedAll);
   let cooldown: { waitMinutes: number; lastCommitAt: string } | null = null;
-  if (cdMeta.lastCommitAt) {
-    const elapsed = minutesSinceISO(cdMeta.lastCommitAt);
+  if (lastAt) {
+    const elapsed = minutesSinceISO(lastAt);
     if (elapsed < COMMIT_COOLDOWN_MINUTES) {
-      cooldown = { waitMinutes: Math.trunc(COMMIT_COOLDOWN_MINUTES - elapsed) + 1, lastCommitAt: cdMeta.lastCommitAt };
+      cooldown = { waitMinutes: Math.trunc(COMMIT_COOLDOWN_MINUTES - elapsed) + 1, lastCommitAt: lastAt };
     }
   }
   return { ...plan, cooldown };
@@ -368,9 +374,11 @@ function cmdRender(): string {
   writeJSON(PLAN_PATH, plan);
 
   const lines: string[] = [
-    `今日工时草稿 #ZR-${plan.date.replace(/-/g, "")}-${String(plan.draftSeq).padStart(3, "0")}`,
+    `工时草稿 #ZR-${plan.date.replace(/-/g, "")}-${String(plan.draftSeq).padStart(3, "0")}`,
     "",
   ];
+  // 多天补报条目(归属日≠采集日)时间前加 [补 MM-DD],今天的照常——核对时一眼分辨补的是哪天。
+  const dateTag = (i: any): string => (i.date && i.date !== plan.date ? `[补 ${i.date.slice(5)}] ` : "");
   let n = 0;
   for (const i of items) {
     if (i.status !== "resolved") continue;
@@ -384,7 +392,7 @@ function cmdRender(): string {
       : [`    内容:${i.work}`];
     lines.push(
       `[${n}] ${i.projectName || i.repo}(项目#${i.project}) / ${i.taskName || "?"}(任务#${i.task})`,
-      `    ${i.start}—${i.end},${fmtHours(i.hours)}小时${inc}`,
+      `    ${dateTag(i)}${i.start}—${i.end},${fmtHours(i.hours)}小时${inc}`,
       ...workLines,
       `    置信度:${i.confidence}%`,
       `    理由:${i.reason ?? null}`,
@@ -396,7 +404,7 @@ function cmdRender(): string {
     lines.push("跳过(不提交):");
     for (const i of skipped) {
       lines.push(
-        `[·] ${i.repo}/${i.branch} ${i.start}—${i.end},${fmtHours(i.hours || hoursFromMinutes(i.minutes))}小时 — ${i.skipReason || "用户选择跳过"}`,
+        `[·] ${i.repo}/${i.branch} ${dateTag(i)}${i.start}—${i.end},${fmtHours(i.hours || hoursFromMinutes(i.minutes))}小时 — ${i.skipReason || "用户选择跳过"}`,
       );
     }
     lines.push("");
@@ -405,7 +413,7 @@ function cmdRender(): string {
   if (already.length) {
     lines.push("已提交(本次不再提交):");
     for (const i of already) {
-      lines.push(`[·] ${i.taskName || ""}(任务#${i.task}) ${fmtHours(i.submittedHours)}小时 — 会话 ${i.session}`);
+      lines.push(`[·] ${dateTag(i)}${i.taskName || ""}(任务#${i.task}) ${fmtHours(i.submittedHours)}小时 — 会话 ${i.session}`);
     }
     lines.push("");
   }
@@ -468,13 +476,24 @@ function numberWork(work: string, mark: { enabled: boolean; text: string }): str
   return parts.map((s, k) => `${k + 1}. ${!tail || s.endsWith(tail) ? s : s + tail}`).join("\n");
 }
 
+/** 全局最近一次 commit 时间:扫 submitted.json 所有日期 key 的 _meta.lastCommitAt 取最大。
+ *  多天补报后最后提交可能落在历史日 key 下,只看当天会漏(也顺手修「昨天 23:59 提交、今天 00:05 不冷却」)。 */
+function latestCommitAt(log: Record<string, any>): string | null {
+  let max: string | null = null;
+  for (const d of Object.keys(log)) {
+    const at = log[d]?._meta?.lastCommitAt;
+    if (typeof at === "string" && (max === null || at > max)) max = at;
+  }
+  return max;
+}
+
 /** 提交冷却检查:距上次 commit < COMMIT_COOLDOWN_MINUTES 返回 {waitMinutes, lastCommitAt, elapsed},否则 null。cmdCommit(die)+cmdAuto(return)共用,消除冷却逻辑复制。 */
-function checkCooldown(date: string): { waitMinutes: number; lastCommitAt: string; elapsed: number } | null {
-  const meta = (loadJSON<any>(SUBMITTED_PATH, {})[date] || {})._meta || {};
-  if (!meta.lastCommitAt) return null;
-  const elapsed = minutesSinceISO(meta.lastCommitAt);
+function checkCooldown(): { waitMinutes: number; lastCommitAt: string; elapsed: number } | null {
+  const lastAt = latestCommitAt(loadJSON<any>(SUBMITTED_PATH, {}));
+  if (!lastAt) return null;
+  const elapsed = minutesSinceISO(lastAt);
   if (elapsed >= COMMIT_COOLDOWN_MINUTES) return null;
-  return { waitMinutes: Math.trunc(COMMIT_COOLDOWN_MINUTES - elapsed) + 1, lastCommitAt: meta.lastCommitAt, elapsed };
+  return { waitMinutes: Math.trunc(COMMIT_COOLDOWN_MINUTES - elapsed) + 1, lastCommitAt: lastAt, elapsed };
 }
 
 export async function cmdCommit(client: Client, opts: { dryRun?: boolean; amend?: boolean }): Promise<any> {
@@ -488,10 +507,19 @@ export async function cmdCommit(client: Client, opts: { dryRun?: boolean; amend?
   const toSubmit = items.filter((i: any) => i.status === "resolved");
   const noWork = toSubmit.filter((i: any) => !i.work).map((i: any) => i.session);
   if (noWork.length) die("以下条目缺少 work 字段,不能提交", { sessions: noWork });
-  const meta = (loadJSON<any>(SUBMITTED_PATH, {})[plan.date] || {})._meta || {};
+  const submittedAll = loadJSON<any>(SUBMITTED_PATH, {});
   if (amend) {
-    if (!meta.lastCommit) die("没有可修正的提交:今天还没有 commit 记录");
-    const allowed = new Set(meta.lastCommit.map((e: any) => e.session));
+    // 定位「最后一次提交」:全局扫所有日期 key 取最大 lastCommitAt,合并同值天数的 lastCommit
+    // (同一次 commit 各日期 key 盖同一时间戳)。多天补报后最后提交常落在历史日 key,只看 plan.date 找不到。
+    const lastAt = latestCommitAt(submittedAll);
+    const lastCommit = lastAt
+      ? Object.keys(submittedAll).flatMap((d) => {
+          const m = submittedAll[d]?._meta;
+          return m?.lastCommitAt === lastAt && Array.isArray(m.lastCommit) ? m.lastCommit : [];
+        })
+      : [];
+    if (!lastCommit.length) die("没有可修正的提交:还没有 commit 记录");
+    const allowed = new Set(lastCommit.map((e: any) => e.session));
     const extra = toSubmit.filter((i: any) => !allowed.has(i.session)).map((i: any) => i.session);
     if (extra.length) {
       die("amend 只能修正最后一次提交包含的会话,其余条目请改回 skipped 或等冷却后走 commit", {
@@ -500,7 +528,7 @@ export async function cmdCommit(client: Client, opts: { dryRun?: boolean; amend?
       });
     }
   } else if (toSubmit.length && !dryRun) {
-    const cd = checkCooldown(plan.date);
+    const cd = checkCooldown();
     if (cd) {
       die(
         `距上次提交仅 ${Math.trunc(cd.elapsed)} 分钟,两次提交间隔须≥${COMMIT_COOLDOWN_MINUTES}分钟。用户明确要求修正最后一次提交时,用 amend 命令(禅道只能追加更正记录)`,
@@ -512,16 +540,17 @@ export async function cmdCommit(client: Client, opts: { dryRun?: boolean; amend?
   const mark = loadMarkSetting(); // AI 提交标识(开关+文案),循环外读一次
   const results: any[] = [];
   for (const i of toSubmit) {
+    const itemDate = i.date || plan.date; // 条目归属日:补报条目按会话实际日期提交禅道/记台账,今天的不变
     let out: any;
     try {
-      out = await client.submitEffort(i.task, plan.date, i.hours, numberWork(i.work, mark), i.left ?? null, dryRun);
+      out = await client.submitEffort(i.task, itemDate, i.hours, numberWork(i.work, mark), i.left ?? null, dryRun);
     } catch (e) {
       out = { submitted: false, error: e instanceof Error ? e.message : String(e) }; // 单条失败不崩,继续其他条目
     }
     if (out.submitted) {
-      recordSubmission(plan.date, i.session, i.task, i.hours, i.minutes);
+      recordSubmission(itemDate, i.session, i.task, i.hours, i.minutes);
       appendSubmittedLog({
-        date: plan.date,
+        date: itemDate,
         session: i.session,
         cwd: PROJECT_CWD,
         repo: typeof i.repo === "string" ? i.repo : null,
@@ -544,7 +573,7 @@ export async function cmdCommit(client: Client, opts: { dryRun?: boolean; amend?
         }
       }
     }
-    results.push({ session: i.session, hours: i.hours, ...out });
+    results.push({ session: i.session, hours: i.hours, date: itemDate, ...out });
   }
   const ok = results.filter((r: any) => r.submitted);
   if (!dryRun) {
@@ -565,15 +594,24 @@ export async function cmdCommit(client: Client, opts: { dryRun?: boolean; amend?
         }
         if (changed) writeJSON(CACHE_PATH, cache0);
       }
-      const log = loadJSON<any>(SUBMITTED_PATH, {});
-      if (!log[plan.date]) log[plan.date] = {};
-      const day = log[plan.date];
-      const entries = ok.map((r: any) => ({ session: r.session, task: r.task.id, hours: r.hours }));
-      if (amend && day._meta) {
-        day._meta.amendedAt = nowISOSeconds();
-        day._meta.lastCommit = day._meta.lastCommit.concat(entries);
-      } else {
-        day._meta = { lastCommitAt: nowISOSeconds(), lastCommit: entries };
+      const log = loadJSON<any>(SUBMITTED_PATH, {}); // 重新读盘:循环内 recordSubmission 已写过,不能复用开头副本(会顶掉)
+      // 按条目归属日分组写 _meta:同一次 commit 的各日期 key 盖同一 lastCommitAt(amend 据此合并定位「最后一次提交」)。
+      const now = nowISOSeconds();
+      const byDate = new Map<string, any[]>();
+      for (const r of ok) {
+        const d = r.date || plan.date;
+        if (!byDate.has(d)) byDate.set(d, []);
+        byDate.get(d)!.push({ session: r.session, task: r.task.id, hours: r.hours });
+      }
+      for (const [d, entries] of byDate) {
+        if (!log[d]) log[d] = {};
+        const day = log[d];
+        if (amend && day._meta) {
+          day._meta.amendedAt = now;
+          day._meta.lastCommit = day._meta.lastCommit.concat(entries);
+        } else {
+          day._meta = { lastCommitAt: now, lastCommit: entries };
+        }
       }
       writeJSON(SUBMITTED_PATH, log);
       // 注:不做「提交后自动刷缓存」——改为报表侧按需刷新(report.ts cacheStaleVsSubmissions:
@@ -610,7 +648,7 @@ async function cmdAuto(client: Client, cfg: Record<string, any>, a: Args): Promi
   if (noWork.length) return { action: "needs_review", reason: "有 resolved 缺 work", noWork, plan };
   // 提交冷却:复制 cmdCommit 的检查,return 而非 die
   if (toSubmit.length && !dryRun) {
-    const cd = checkCooldown(plan.date);
+    const cd = checkCooldown();
     if (cd) return { action: "cooldown", lastCommitAt: cd.lastCommitAt, waitMinutes: cd.waitMinutes };
   }
   const draft = cmdRender();
@@ -651,12 +689,15 @@ function cmdNote(a: Args): any {
   const work = requireStr(a, "work");
   let session: string | null | undefined = a.session !== undefined ? String(a.session) : undefined;
   if (!session) {
-    const data = loadJSON<{ sessions: any[] }>(SESSIONS_PATH, { sessions: [] });
+    const data = loadJSON<{ sessions: any[]; date?: string }>(SESSIONS_PATH, { sessions: [] });
     const sessions = Array.isArray(data.sessions) ? data.sessions : [];
     if (sessions.length > 0) {
-      // 取 end 最晚的(最新活跃);end 是 "HH:MM" 字符串,字符串排序即时间序
-      const latest = [...sessions].sort((x, y) => String(y.end ?? "").localeCompare(String(x.end ?? "")))[0];
-      session = latest?.id;
+      // 取 end 最晚的(最新活跃);end 是 "HH:MM" 字符串,字符串排序即时间序。
+      // 多天补报时 sessions 含历史日(end 无日期,全局取最晚会把昨天 22:00 当最新)→
+      // 与 cmdPlan fallbackSid 同口径:优先今天(date===采集日)里 end 最晚,今天没有才退全局。
+      const byEnd = (arr: any[]) => [...arr].sort((x, y) => String(y.end ?? "").localeCompare(String(x.end ?? "")));
+      const todays = sessions.filter((x: any) => !x.date || x.date === data.date);
+      session = byEnd(todays.length ? todays : sessions)[0]?.id;
     }
     // 新项目第一次:sessions.json 未采集(Stop 在响应结束才采集)+ 无 CLAUDE_SESSION_ID env
     // → 记 session=null,/report 时 plan 把 session=null 的 note 归到当天最新 session(那时 Stop 已采集)
@@ -712,8 +753,9 @@ async function cmdPrepare(): Promise<any> {
 
   const plan = await cmdPlan(undefined, undefined); // 走纯本地缓存,不联网
   const items: any[] = plan.items || [];
-  // 关键信号一次拉全(daemon 后台预提取,秒回);null=daemon 不可达/旧版无端点 → pending 逐条退化直读 transcript
-  const sigMap = await fetchDaemonSignalsMap(PROJECT_CWD, localMidnightEpoch());
+  // 关键信号一次拉全(daemon 后台预提取,秒回;since=自上次提交日,与 collect 范围一致,补报会话也有信号);
+  // null=daemon 不可达/旧版无端点 → pending 逐条退化直读 transcript
+  const sigMap = await fetchDaemonSignalsMap(PROJECT_CWD, lastSubmitSinceEpoch());
   const ready: any[] = [];
   const pending: any[] = [];
   for (const i of items) {

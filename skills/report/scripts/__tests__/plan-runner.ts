@@ -23,7 +23,15 @@ for (const [d, notes] of Object.entries(fx.summaries ?? {})) {
 
 try {
   const plan = await cmdPlan(undefined, undefined);
-  console.log(JSON.stringify({ ok: true, items: plan.items }));
+  // sinceEpoch/midnightEpoch 对照:多天补报起点逻辑(lastSubmitSinceEpoch)在 runner 侧算,
+  // 主测试进程 bun test 是 TZ=UTC、会拼出与本地差 8h 的时间,不能在主进程对比。
+  console.log(JSON.stringify({
+    ok: true,
+    items: plan.items,
+    sinceEpoch: shared.lastSubmitSinceEpoch(),
+    sinceISO: shared.localDateISO(shared.lastSubmitSinceEpoch()), // 日期转换在 runner 侧(真本地)做完再传
+    midnightEpoch: shared.localMidnightEpoch(),
+  }));
 } catch (e) {
   console.log(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }));
 }

@@ -14,6 +14,16 @@ const { cmdCommit } = await import("../zentao");
 const { collectWorklogs } = await import("../../../../src/daemon/worklog");
 
 const fx = input.fixtures;
+// lastCommitAtOffsetMin:相对「runner 本地现在」的分钟偏移(负=过去)。cooldown 类用例用它生成 lastCommitAt——
+// 不能在主测试进程拼时间串(bun test 强制 TZ=UTC,而 runner 子进程是真本地时区,串过去解析差 8h)。
+if (typeof fx.lastCommitAtOffsetMin === "number") {
+  const t = new Date(Date.now() + fx.lastCommitAtOffsetMin * 60000);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const iso = `${t.getFullYear()}-${pad(t.getMonth() + 1)}-${pad(t.getDate())}T${pad(t.getHours())}:${pad(t.getMinutes())}:${pad(t.getSeconds())}`;
+  for (const d of Object.keys(fx.submitted ?? {})) {
+    if (fx.submitted[d]?._meta) fx.submitted[d]._meta.lastCommitAt = iso;
+  }
+}
 mkdirSync(shared.PROJECT_DIR, { recursive: true });
 writeFileSync(shared.PLAN_PATH, JSON.stringify(fx.plan));
 writeFileSync(shared.SUBMITTED_PATH, JSON.stringify(fx.submitted ?? {}));
@@ -33,7 +43,9 @@ try {
   const result = await cmdCommit(client, { dryRun: false, amend: !!fx.amend });
   let logText = "";
   try { logText = readFileSync(path.join(shared.SUBMITTED_LOG_DIR, `${fx.plan.date}.jsonl`), "utf8"); } catch { /* 无文件 = 空串 */ }
-  console.log(JSON.stringify({ ok: true, calls, result, logText, worklogs: collectWorklogs() }));
+  let submittedJson: any = null;
+  try { submittedJson = JSON.parse(readFileSync(shared.SUBMITTED_PATH, "utf8")); } catch { /* 无文件 = null */ }
+  console.log(JSON.stringify({ ok: true, calls, result, logText, submittedJson, worklogs: collectWorklogs() }));
 } catch (e) {
   console.log(JSON.stringify({ ok: false, error: e instanceof Error ? e.message : String(e) }));
 }

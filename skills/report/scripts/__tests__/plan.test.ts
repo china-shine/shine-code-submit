@@ -1,5 +1,5 @@
 import { describe, test, expect, afterAll } from "bun:test";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import * as path from "node:path";
 
@@ -17,7 +17,7 @@ afterAll(() => {
   if (/"session": "s\d"/.test(summary)) throw new Error("污染!真实 summary 出现假 s* session");
 });
 
-const runPlan = async (fixtures: any) => {
+const runPlanFull = async (fixtures: any): Promise<any> => {
   const tmp = mkdtempSync(path.join(tmpdir(), "zen-plan-"));
   const inputPath = path.join(tmp, "input.json");
   writeFileSync(inputPath, JSON.stringify({ claudDir: tmp, localAppDir: tmp, fixtures }));
@@ -29,8 +29,9 @@ const runPlan = async (fixtures: any) => {
   if (code !== 0) throw new Error("runner exit " + code + ": " + err);
   const r = JSON.parse(out.trim().split("\n").pop()!);
   if (!r.ok) throw new Error("cmdPlan error: " + r.error);
-  return r.items as any[];
+  return r;
 };
+const runPlan = async (fixtures: any) => (await runPlanFull(fixtures)).items as any[];
 
 describe("cmdPlan — 已提交会话", () => {
   test("delta<15 → already", async () => {
@@ -185,6 +186,70 @@ describe("cmdPlan — 跨午夜", () => {
   });
 });
 
+describe("cmdPlan — 多天补报(自上次提交以来)", () => {
+  test("昨天未提交会话 → item.date=昨天(needs_semantic 带归属日)", async () => {
+    const items = await runPlan({
+      date: "2026-08-06",
+      sessions: [{ id: "s20", repo: "r", branch: "main", date: "2026-08-05", activeMinutes: 60, start: "09:00", end: "10:00" }],
+      submitted: {},
+      mappings: { repoToProject: { r: 1 }, branchToTask: {} },
+      cache: { projects: [{ id: 1, name: "P1" }], tasks: [{ id: 100, name: "T1", project: 1 }], executions: [], taskDetails: {} },
+    });
+    expect(items[0].status).toBe("needs_semantic");
+    expect(items[0].date).toBe("2026-08-05"); // commit 按此提交禅道(补报记会话实际日)
+  });
+
+  test("昨天已提交会话水位后增量 → increment 且 item.date=昨天", async () => {
+    const items = await runPlan({
+      date: "2026-08-06",
+      sessions: [{ id: "s21", repo: "r", branch: "main", date: "2026-08-05", activeMinutes: 374, start: "09:00", end: "17:07" }],
+      submitted: { "2026-08-05": { s21: { tasks: [100], hours: 5.5, minutes: 336 } } },
+      cache: { projects: [{ id: 1, name: "P1" }], tasks: [{ id: 100, name: "T1", project: 1 }], executions: [], taskDetails: {} },
+    });
+    expect(items[0].status).toBe("resolved");
+    expect(items[0].increment).toBe(true);
+    expect(items[0].hours).toBe(0.5); // 374-336=38min → 0.5h
+    expect(items[0].date).toBe("2026-08-05"); // 增量归属会话日,不落今天
+  });
+
+  test("fallbackSid 今天优先:昨天的 end 更晚也不抢走 session=null 的 note", async () => {
+    const items = await runPlan({
+      date: "2026-08-06",
+      sessions: [
+        { id: "s22-yd", repo: "r", branch: "main", date: "2026-08-05", activeMinutes: 60, start: "16:00", end: "22:00" },
+        { id: "s23-td", repo: "r", branch: "main", date: "2026-08-06", activeMinutes: 60, start: "09:00", end: "10:00" },
+      ],
+      submitted: {},
+      summaries: { "2026-08-06": [{ session: null, work: "今天的note", task: 100, notedActiveMinutes: null }] },
+      cache: { projects: [{ id: 1, name: "P1" }], tasks: [{ id: 100, name: "T1", project: 1 }], executions: [], taskDetails: {} },
+    });
+    const td = items.find((i: any) => i.session === "s23-td");
+    expect(td).toBeDefined();
+    expect(td.work).toBe("今天的note"); // 归今天的 session,不是 end 22:00 的昨天会话
+  });
+
+  test("老数据:会话无 date 字段 → item.date 兜底采集日", async () => {
+    const items = await runPlan({
+      date: "2026-08-06",
+      sessions: [{ id: "s24", repo: "r", branch: "main", activeMinutes: 60, start: "09:00", end: "10:00" }],
+      submitted: {},
+    });
+    expect(items[0].date).toBe("2026-08-06");
+  });
+
+  test("lastSubmitSinceEpoch:无提交回退今天 0 点;上次提交日 0 点;超 14 天 clamp", async () => {
+    // 无记录 → 今天 0 点(runner 侧对照,主进程 TZ=UTC 不能比)
+    const a = await runPlanFull({ date: "2026-08-06", sessions: [], submitted: {} });
+    expect(a.sinceEpoch).toBe(a.midnightEpoch);
+    // 最后提交 08-16 → 起点 = 08-16 0 点(含该日全天,增量靠水位判);ISO 在 runner 侧转好(主进程 TZ=UTC)
+    const b = await runPlanFull({ date: "2026-08-06", sessions: [], submitted: { "2026-08-16": { x: { tasks: [1], hours: 1, minutes: 60 } } } });
+    expect(b.sinceISO).toBe("2026-08-16");
+    // 最后提交 3 个月前 → clamp 到 14 天前
+    const c = await runPlanFull({ date: "2026-08-06", sessions: [], submitted: { "2026-05-01": { x: { tasks: [1], hours: 1, minutes: 60 } } } });
+    expect(c.sinceEpoch).toBe(c.midnightEpoch - 14 * 86400_000);
+  });
+});
+
 describe("cmdPlan — task=-1 unmatched", () => {
   test("summary note task=-1 → unmatched + candidates", async () => {
     const items = await runPlan({
@@ -291,5 +356,39 @@ describe("cmdPlan — session=null note 归属", () => {
     expect(items[0].session).toBe("s15");
     expect(items[0].work).toBe("无session的note");
     expect(items[0].task).toBe(100);
+  });
+});
+
+describe("cmdNote(note 命令,CLI 子进程)— 不传 session 的默认归属", () => {
+  // cmdNote 无 export,走真实 CLI 入口;多天 sessions 下默认 session 必须归今天(不归 end 更晚的昨天会话)。
+  // LOCALAPPDATA 必须指 tmp(env 隔离同 runner 模式)——否则 note 会写到真实 DATA_DIR 污染生产项目目录。
+  const runNote = async (fixtures: any): Promise<any> => {
+    const tmp = mkdtempSync(path.join(tmpdir(), "zen-note-"));
+    const projDir = path.join(tmp, "shine-worklog", "zenpilot", "projects", tmp.replace(/[^a-zA-Z0-9]/g, "-"));
+    mkdirSync(projDir, { recursive: true });
+    writeFileSync(path.join(projDir, "sessions.json"), JSON.stringify({ date: fixtures.date ?? "2026-08-06", sessions: fixtures.sessions }));
+    const script = path.join(import.meta.dir, "..", "zentao.ts");
+    const proc = Bun.spawn(["bun", "run", script, "note", "--cwd", tmp, "--work", "W", "--task", "100"], {
+      stdout: "pipe", stderr: "pipe", env: { ...process.env, LOCALAPPDATA: tmp },
+    });
+    const out = await new Response(proc.stdout).text();
+    const err = await new Response(proc.stderr).text();
+    const code = await proc.exited;
+    const summary = readFileSync(path.join(projDir, "summary-2026-08-06.json"), "utf8");
+    rmSync(tmp, { recursive: true, force: true });
+    if (code !== 0) throw new Error("note exit " + code + ": " + err + out); // note 设计为静默,失败才 die 输出
+    return { summary: JSON.parse(summary) };
+  };
+
+  test("多天 sessions:默认归今天 end 最晚,不归昨天 22:00 的(与 fallbackSid 同口径)", async () => {
+    const r = await runNote({
+      sessions: [
+        { id: "yd-22h", repo: "r", branch: "main", date: "2026-08-05", activeMinutes: 60, start: "16:00", end: "22:00" },
+        { id: "td-10h", repo: "r", branch: "main", date: "2026-08-06", activeMinutes: 60, start: "09:00", end: "10:00" },
+      ],
+    });
+    expect(r.summary[0].session).toBe("td-10h"); // 不是 yd-22h(end 22:00 更晚但属昨天)
+    expect(r.summary[0].work).toBe("W");
+    expect(r.summary[0].notedActiveMinutes).toBe(60); // 水位拍自归属 session
   });
 });

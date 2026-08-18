@@ -23,9 +23,10 @@ flowchart LR
 ## ② 汇报工时与水位防重
 
 - `hoursFromMinutes`:取整到 0.5h 粒度(roundPy 银行家舍入,非纯向上)、最小 0.5h;
-- **水位**:`submitted.json` 按 (date,session) 记 {tasks,hours,minutes,_meta.lastCommitAt};增量 = activeMinutes − rec.minutes(原始分钟);
+- **多天补报范围**:collect 起点 = `lastSubmitSinceEpoch()`(submitted.json 最大日期 key 的 0 点,clamp 到 `LOOKBACK_MAX_DAYS=14` 天前;无记录回退今天 0 点)——某天忘了提交/提交后有增量,之后任意一次 /report 都会补上;补报条目按会话归属日(`item.date`,lastActive 推)提交禅道/记台账/分日流水;
+- **水位**:`submitted.json` 按 (date,session) 记 {tasks,hours,minutes,_meta.lastCommitAt};增量 = activeMinutes − rec.minutes(原始分钟);跨日期全扫取最大水位(跨午夜兼容);
 - **增量 note 过滤严格大于**(1.3.44 修):`notedActiveMinutes > submittedMin`——相等也算已提交(note 水位 123min vs 取整提交 120min 曾重复混入);
-- 阈值:增量 ≥15min 才补报;两次 commit 冷却 30min(amend 可豁免同会话);
+- 阈值:增量 ≥15min 才补报;两次 commit 冷却 30min(全局取最近 lastCommitAt——含历史日期 key,补报场景最后一次提交可能落在昨天;amend 可豁免同会话);
 - 多 note 拆段:按水位切段拆 task,段膨胀检测(segSum > totalHours)合并回单条。
 
 ## ③ 禅道缓存 20 天滚动窗口(EFFORT_FRESH_DAYS=20,1.3.41)

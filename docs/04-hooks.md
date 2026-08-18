@@ -15,7 +15,7 @@ hooks.json 注册 **7 个事件**,统一走 `node ${CLAUDE_PLUGIN_ROOT}/bin/laun
 | SessionStart | ①清理旧版本缓存目录(保留最新 5 个,防多会话升级锁旧目录)②早采集 session(写 sessions.json,让第一轮 note 能读到)③startup/resume 时 stdout 输出 Dashboard 链接(systemMessage) |
 | UserPromptSubmit | 转发(工时提醒 detectAndRemind 在 skill 层消费) |
 | PostToolUse | 转发(dashboard 实时事件 + 代码行统计的数据源) |
-| Stop / SubagentStop | detached fork `zentao.ts collect`(把当日会话写 sessions.json 供 /report) |
+| Stop / SubagentStop | detached fork `zentao.ts collect`(把**自上次提交日以来**的会话写 sessions.json 供 /report,上限 14 天——漏报/增量自动补) |
 | PreCompact / SessionEnd | 转发(事件留存) |
 
 ```text

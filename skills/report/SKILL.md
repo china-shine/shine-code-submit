@@ -1,11 +1,11 @@
 ---
 name: report
-description: 汇总当天 Claude Code 会话统计(工时/token/代码量),智能判断每段工作归属的禅道项目与任务,经用户确认后调用禅道 API 填报工时。当用户要求填报工时、上报工时、报工、提交禅道工时,或运行 /report 时使用。
+description: 汇总当天及上次提交以来未提交的 Claude Code 会话统计(工时/token/代码量),智能判断每段工作归属的禅道项目与任务,经用户确认后调用禅道 API 填报工时。当用户要求填报工时、上报工时、报工、提交禅道工时,或运行 /report 时使用。
 ---
 
 # shine-worklog 工时填报
 
-把当天的编码会话数据归属到禅道任务并填报工时。
+把**今天 + 自上次提交以来所有未提交**的编码会话数据归属到禅道任务并填报工时——某天忘了提交、或提交后还有增量,之后任意一次 `/report` 都会把它们补上(上限回看 14 天),补报条目按**会话实际日期**提交禅道。
 
 > **调用约定**:脚本 = `<Base directory>/scripts/zentao.ts`(Base directory 见启动信息)。**所有命令都在当前项目目录下用绝对路径调用、不要 cd 到插件目录**——脚本靠 `process.cwd()` 识别项目,数据按项目隔离写入 `~/.zenpilot/projects/<编码项目路径>/`。若已 cd,加 `--cwd "$PWD"`。
 
@@ -19,7 +19,7 @@ description: 汇总当天 Claude Code 会话统计(工时/token/代码量),智�
 
 ### 准备阶段(建议先跑 /prepare,让本流程秒级)
 
-`/shine-worklog:prepare` 提前把当天会话的 work+task 算好写入 summary(本 skill 的 plan 直读为 resolved)。**先跑 prepare,下面的 auto 就能跳过最耗时的日志汇总、全 resolved 秒级提交**。开工/工作中/收工前任意时机跑一次即可;uncertain(多任务判不准)的会留到 /report 用 AskUserQuestion 问。
+`/shine-worklog:prepare` 提前把今天(及待补报历史日)会话的 work+task 算好写入 summary(本 skill 的 plan 直读为 resolved)。**先跑 prepare,下面的 auto 就能跳过最耗时的日志汇总、全 resolved 秒级提交**。开工/工作中/收工前任意时机跑一次即可;uncertain(多任务判不准)的会留到 /report 用 AskUserQuestion 问。
 
 ### auto 一键(追求速度、work 不归纳)
 
@@ -54,7 +54,7 @@ bun "<Base directory>/scripts/zentao.ts" plan [--source zentao]
 ```
 (选"先刷新"则先跑 `bun "<Base directory>/scripts/zentao.ts" refresh`,再 plan)
 
-一步读 `sessions.json`(Stop hook 每轮自动从 transcript 挖掘写入,**不需主动 collect**)+ summary + submitted,输出 `plan.json` + 返回 `cooldown`。按返回分三个分支:
+一步读 `sessions.json`(Stop hook 每轮自动 collect 写入,范围=**自上次提交日以来**含今天,上限 14 天,**不需主动 collect**)+ summary + submitted,输出 `plan.json` + 返回 `cooldown`。按返回分三个分支:
 
 - **`cooldown` 非空**(距上次提交<30min):告知用户"距上次提交需等 `waitMinutes` 分钟",**停止,不 render/commit**。
 - **全 `already`**(已提交且增量<15min):无需提交,render 空草稿说明本次无需。

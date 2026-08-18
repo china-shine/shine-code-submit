@@ -6,6 +6,7 @@ import {
   roundPy, pad2, esc, num, countLines, extractText, encodeProject, summaryPathFor,
   hoursFromMinutes, fmtHours, isObj, localDateISO, localHHMM, minutesSinceISO,
   todayISO, nowISOSeconds, loadJSON, writeJSON, writeText, requireStr, requireInt,
+  epochForDate, LOOKBACK_MAX_DAYS,
   COMMIT_COOLDOWN_MINUTES, IDLE_CAP_MS,
 } from "../lib/shared";
 
@@ -179,6 +180,22 @@ describe("日期族", () => {
   test("localDateISO(本地非UTC)", () => {
     expect(localDateISO("2026-08-06T12:00:00")).toBe("2026-08-06");
     expect(localDateISO("2026-01-09")).toBe("2026-01-09");
+  });
+  test("localDateISO 兼容 epoch ms(daemon lastActive;多天补报会话归属日)", () => {
+    expect(localDateISO(new Date("2026-08-06T10:00:00").getTime())).toBe("2026-08-06");
+    expect(localDateISO(new Date("2026-08-05T23:59:00").getTime())).toBe("2026-08-05");
+  });
+  test("epochForDate(todayISO 反操作,本地 0 点)", () => {
+    const iso = "2026-08-16";
+    const t = epochForDate(iso);
+    const d = new Date(t);
+    expect(d.getFullYear()).toBe(2026);
+    expect(d.getMonth()).toBe(7);
+    expect(d.getDate()).toBe(16);
+    expect(d.getHours()).toBe(0);
+    expect(d.getMinutes()).toBe(0);
+    expect(localDateISO(t)).toBe(iso);
+    expect(LOOKBACK_MAX_DAYS).toBe(14); // 回看上限(改动时同步文档 08/10)
   });
   test("localHHMM", () => {
     expect(localHHMM("2026-08-06T09:05:00")).toBe("09:05");
