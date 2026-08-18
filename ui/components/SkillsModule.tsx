@@ -2,7 +2,7 @@
 // skill 文件是命令触发时从磁盘读 → 保存即生效,无需重启 Claude Code 或 daemon;
 // 保存同时备份到 DATA_DIR/skills-edits/,autoUpdate 升级整目录覆盖后磁盘与备份分叉 → stale 提示手动恢复。
 // 只开放 .md:.ts 是代码,不在 dashboard 动,走源码仓库改。
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useApi } from "../hooks/useApi";
 import { useApp } from "../state/AppContext";
 import { Markdown } from "./Markdown";
@@ -74,6 +74,74 @@ function fmtTime(ms: number): string {
   const d = new Date(ms);
   const p = (n: number) => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** 保存点下拉(自绘:深色主题下原生 select 弹层是系统白底,观感突兀)。
+ *  触发键与 tool-btn 同款,弹层右对齐垂下;首项标「最新」,当前选中高亮。 */
+function SnapshotMenu({
+  value,
+  options,
+  onPick,
+}: {
+  value: string; // "version@savedAt"
+  options: Array<{ version: string; savedAt: number }>; // savedAt 降序
+  onPick: (version: string, savedAt: number) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const onDoc = (e: MouseEvent): void => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent): void => {
+      if (e.key === "Escape") setOpen(false);
+    };
+    document.addEventListener("mousedown", onDoc);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+  const cur = options.find((v) => `${v.version}@${v.savedAt}` === value);
+  return (
+    <div ref={ref} style={{ position: "relative" }}>
+      <button
+        type="button"
+        className="tool-btn"
+        onClick={() => setOpen(!open)}
+        title="切换保存点(同版本留最近 10 次快照)"
+        style={{ display: "inline-flex", alignItems: "center", gap: 6 }}
+      >
+        <span style={{ fontSize: "var(--fs-xs)" }}>🕘</span>
+        <span style={{ fontSize: "var(--fs-xs)" }}>{cur ? `v${cur.version} · ${fmtTime(cur.savedAt)}` : "保存点"}</span>
+        <span style={{ fontSize: 9, color: "var(--muted)", transform: open ? "rotate(180deg)" : "none", transition: "transform .15s" }}>▼</span>
+      </button>
+      {open && (
+        <div className="snap-menu">
+          {options.map((v, i) => {
+            const key = `${v.version}@${v.savedAt}`;
+            return (
+              <button
+                key={key}
+                type="button"
+                className={`snap-item${key === value ? " sel" : ""}`}
+                onClick={() => {
+                  setOpen(false);
+                  onPick(v.version, v.savedAt);
+                }}
+              >
+                <span className="snap-ver">v{v.version}</span>
+                <span>{fmtTime(v.savedAt)}</span>
+                {i === 0 && <span className="snap-badge">最新</span>}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function SkillsModule() {
@@ -510,23 +578,13 @@ export function SkillsModule() {
                 <div className="skill-actions">
                   {editMsg && <span className={editMsg.kind === "ok" ? "field-ok" : "field-err"} style={{ fontSize: "var(--fs-xs)" }}>{editMsg.text}</span>}
                   {selGroup != null && selGroup.versions.length > 1 && (
-                    <select
+                    <SnapshotMenu
                       value={editVersion && editSavedAt ? `${editVersion}@${editSavedAt}` : ""}
-                      onChange={(e) => {
-                        const at = e.target.value.split("@");
-                        void openEdit(editSelected, at[0], at[1] ? Number(at[1]) : undefined);
-                      }}
-                      className="field-input"
-                      style={{ padding: "0.15rem 0.4rem", fontSize: "var(--fs-xs)", width: "auto" }}
-                      title="切换保存点(同版本留最近 10 次快照)"
-                    >
-                      {selGroup.versions.map((v) => (
-                        <option key={`${v.version}@${v.savedAt}`} value={`${v.version}@${v.savedAt}`}>v{v.version} · {fmtTime(v.savedAt)}</option>
-                      ))}
-                    </select>
+                      options={selGroup.versions}
+                      onPick={(v, s) => void openEdit(editSelected, v, s)}
+                    />
                   )}
                   <span className="field-hint" style={{ padding: 0 }}>
-                    v{editVersion ?? "?"} · {fmtTime(editSavedAt)} ·{" "}
                     {selGroup?.versions[0] && selGroup.versions[0].version === editVersion && selGroup.versions[0].savedAt === editSavedAt
                       ? (selGroup.stale ? "已被覆盖(未生效)" : "与磁盘一致")
                       : "历史快照"}

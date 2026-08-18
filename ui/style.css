@@ -917,6 +917,49 @@ ul { list-style: none; margin: 0; padding: 0; }
 .skill-dot { color: #f5a623; font-size: var(--fs-xs); flex: 0 0 auto; }
 .skill-actions { margin-left: auto; display: flex; align-items: center; gap: 0.4rem; padding: 0 0 0 0.6rem; flex: 0 0 auto; }
 
+/* 保存点下拉(Skills「修改后的 skills」自绘菜单,替代原生 select) */
+.snap-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 100;
+  min-width: 15rem;
+  max-height: 18rem;
+  overflow-y: auto;
+  background: var(--titlebar);
+  border: 1px solid var(--border-light);
+  border-radius: 6px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.45);
+  padding: 4px;
+}
+.snap-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 4px;
+  padding: 0.35rem 0.55rem;
+  cursor: pointer;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+.snap-item:hover { background: var(--hover); color: var(--text); }
+.snap-item.sel { background: rgba(79,140,255,0.16); color: var(--text); }
+.snap-ver { font-size: var(--fs-xs); color: #7fb0ff; flex: 0 0 auto; }
+.snap-item:not(.sel) .snap-ver { color: var(--muted); }
+.snap-badge {
+  margin-left: auto;
+  flex: 0 0 auto;
+  font-size: 10px;
+  color: #9bcd97;
+  border: 1px solid rgba(155,205,151,0.4);
+  border-radius: 3px;
+  padding: 0 4px;
+}
+
 /* Skills 工具栏次要按钮(预览/复制/下载/恢复):默认可见底+描边,按下实心蓝明显反馈 */
 .tool-btn {
   background: var(--titlebar);
