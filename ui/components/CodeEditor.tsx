@@ -80,6 +80,12 @@ export function CodeEditor({ value, onChange, readOnly }: { value: string; onCha
     if (editor && editor.getValue() !== value) editor.setValue(value);
   }, [value]);
 
+  // readOnly 动态生效:双 tab 切换时 React 在实时/备份两个分支间复用同一编辑器实例
+  // (同位置同类型不重挂载),创建时的一次性 readOnly 不会跟着变,必须 updateOptions 同步
+  useEffect(() => {
+    editorRef.current?.updateOptions({ readOnly: readOnly ?? false });
+  }, [readOnly]);
+
   // host 必须有非零高度:Monaco 按宿主尺寸布局,0 高宿主渲染空白(父级均为 flex 链,height:100% 兜底)
   return <div ref={hostRef} style={{ flex: 1, minHeight: 0, height: "100%" }} />;
 }
