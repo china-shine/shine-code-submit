@@ -12,6 +12,11 @@ import { SERVICE_VERSION } from "../shared/config";
 
 const EDITS_DIR = join(DATA_DIR, "skills-edits");
 const MAX_DEPTH = 6;
+
+/** 备份根目录 getter(供 server /api/skills/open-backup 打开与展示)。 */
+export function editsDir(): string {
+  return EDITS_DIR;
+}
 const MAX_BYTES = 1_048_576; // 1MB 上限:skills 实际文件均 <20KB,纯防御
 // 只开放 markdown 编辑(SKILL.md 是 AI 的执行逻辑、改完即生效);.ts 代码走源码仓库改,不在 dashboard 动
 const EXT_RE = /\.md$/;
@@ -171,6 +176,9 @@ function writeEditBackup(rel: string, content: string): void {
   }
   const blob: EditBackup = { rel, version, savedAt: Date.now(), hash: sha1(content), content, original };
   atomicWrite(backupPath(version, rel), JSON.stringify(blob, null, 2) + "\n");
+  // 可读镜像 <version>/md/<rel>(纯 markdown 内容):「打开备份目录」后直接查看/拷贝;
+  // 与顶层 base64url .json 隔离,listEdits 只扫顶层 *.json,镜像不进备份列表
+  atomicWrite(join(EDITS_DIR, version, "md", rel), content);
 }
 
 /** 全部编辑备份(仅 header,不含 content):扫 skills-edits 各版本目录下的备份 json,损坏跳过。 */

@@ -20,12 +20,14 @@ DATA_DIR/
 │                             #   turns(每轮结论/commits/任务/文件)+aiTitle+awaySummaries;
 │                             #   日期=首个信号事件日(跨午夜会话留开工日目录);不入 SQLite,
 │                             #   整目录可删——近 3 天活跃的会话由兜底全扫自动重建,更早的走直读兜底
-├─ skills-edits/              # dashboard Skills 模块的本地编辑备份(仅 .md;保存时先备份再写 skills/):
-│  └─ <version>/<base64url(rel)>.json
-│                             #   {rel,version,savedAt,hash:sha1,content,original};original=首次编辑前
-│                             #   的原始内容(初始化基线,后续保存继承不改,供「重置」恢复);升级整目录
-│                             #   覆盖后磁盘≠hash → /api/skills 标 stale 提示手动恢复(不自动重放);
-│                             #   跨版本留痕,同 (version,rel) 重复保存覆盖
+├─ skills-edits/              # dashboard Skills 模块的本地编辑备份(保存时先备份再写 skills/):
+│  ├─ <version>/<base64url(rel)>.json
+│  │                         #   {rel,version,savedAt,hash:sha1,content,original};original=首次编辑前
+│  │                         #   的原始内容(初始化基线,后续保存继承不改,供「重置」恢复);升级整目录
+│  │                         #   覆盖后磁盘≠hash → /api/skills 标 stale 提示手动恢复(不自动重放);
+│  │                         #   跨版本留痕,同 (version,rel) 重复保存覆盖
+│  └─ <version>/md/<rel>     # 可读镜像(纯 markdown content),供「打开备份目录」后直接查看/拷贝;
+│                            #   listEdits 只扫顶层 json,镜像不进备份列表
 ├─ reports/                   # 日报/周报 HTML(日报-YYYY-MM-DD-<姓名>.html,同日覆盖)
 └─ zenpilot/                  # 工时链路数据(原 ZenPilot 目录统一迁入)
    ├─ config.json             # 禅道连接(url/account/password)—— /setup 写

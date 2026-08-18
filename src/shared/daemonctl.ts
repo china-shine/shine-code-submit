@@ -153,6 +153,33 @@ export function openBrowser(url: string): void {
   }
 }
 
+/** 跨平台在系统文件管理器打开一个目录(不存在则先创建)。Windows 用 explorer(目录首选),
+ *  WSL 走 Windows interop,其它用 open / xdg-open。 */
+export function openDirectory(dir: string): void {
+  mkdirSync(dir, { recursive: true });
+  const platform = process.platform;
+  let cmd: string;
+  let args: string[];
+  if (platform === "win32") {
+    cmd = "explorer";
+    args = [dir];
+  } else if (platform === "darwin") {
+    cmd = "open";
+    args = [dir];
+  } else if (isWsl()) {
+    cmd = "cmd.exe";
+    args = ["/c", "start", "", dir];
+  } else {
+    cmd = "xdg-open";
+    args = [dir];
+  }
+  try {
+    spawn(cmd, args, { detached: true, stdio: "ignore" }).unref();
+  } catch {
+    /* ignore */
+  }
+}
+
 /** 是否跑在 WSL（Linux 内核版本字符串含 microsoft）。用于 openBrowser 选 interop 路径。 */
 function isWsl(): boolean {
   if (process.platform !== "linux") return false;

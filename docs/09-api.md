@@ -33,6 +33,7 @@
 | PUT | /api/skills/file | `{path,content,baseMtimeMs?}`:先备份到 `DATA_DIR/skills-edits/` 再原子写——skill 文件命令触发时从磁盘读,**保存即生效**;备份含首次编辑前 `original` 基线(供 reset);baseMtimeMs 护栏(编辑期间被改→409,确认后去掉重发覆盖) |
 | POST | /api/skills/restore | `{path,version?}`:把备份内容写回磁盘(默认该文件最新备份),恢复也落新备份 → 退出 stale |
 | POST | /api/skills/reset | `{path}`:把文件恢复到首次编辑前的原始内容(备份 `original` 字段),重置可反复用;无备份→400 |
+| POST | /api/skills/open-backup | 在系统文件管理器打开备份目录 `DATA_DIR/skills-edits/`(不存在先创建;Win: explorer / mac: open / linux: xdg-open),返回 `{ok,path}` |
 | POST | /api/report/upload | 手动上报;`?full=1` 全量;失败 {status:"skipped"} 水位不推进 |
 | POST | /api/update | 手动检查更新(dashboard 按钮) |
 | POST | /api/hook/<type> | hook 事件入口(响应含 version 供版本同步) |
