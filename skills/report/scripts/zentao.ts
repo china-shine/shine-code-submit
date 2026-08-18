@@ -928,9 +928,9 @@ const LEADIN_RE = /[:：]\s*$|(如下|请核对|请确认|请查收|请查阅)[�
 const STATUS_RE = /^(已取消|已提交|已渲染|草稿已|工时草稿|好的[,，])/;
 export function simplifyConclusion(text: string): string | null {
   const lines = text.split("\n").map((l) => l.trim());
-  // 行级跳过:空/太短(<10 字提不出合格首句,代码围栏短行同理)/标题列表/代码围栏/引导语/markdown 表格行/流程状态语
+  // 行级跳过:空/太短(<10 字提不出合格首句,代码围栏短行同理)/标题列表/代码围栏/引导语/markdown 表格行/流程状态语/草稿引用行/时钟时间行(「09:45—12:11,2.0小时」)
   const skip = (l: string) =>
-    !l || l.length < 10 || /^(#{1,6}\s|>|[-*+]\s|\d+[.、]\s|```|\|)/.test(l) || LEADIN_RE.test(l) || STATUS_RE.test(l);
+    !l || l.length < 10 || /^(#{1,6}\s|>|[-*+]\s|\d+[.、]\s|\[\d+\]\s?|\d{1,2}:\d{2}|```|\|)/.test(l) || LEADIN_RE.test(l) || STATUS_RE.test(l);
   const body = lines.find((l) => !skip(l)) ?? "";
   let s = body.replace(/[*`#>]/g, "").replace(/\s+/g, " ").trim();
   const m = /^(.{2,120}?[。;;.!?])/.exec(s);
@@ -954,7 +954,10 @@ export function buildAutoWork(turns: any[], sinceMs: number): { work: string; la
       lines.push(work);
       continue;
     }
-    const subjects = (Array.isArray(t.commits) ? t.commits.map(String) : []).filter(Boolean);
+    // commit subject 回退:剥 conventional-commit 类型前缀(feat(report): 等),留人类可读正文
+    const subjects = (Array.isArray(t.commits) ? t.commits.map(String) : [])
+      .map((s) => s.replace(/^(?:feat|fix|docs|chore|perf|refactor|test|style|build|ci|revert)(?:\([\w.\-/]+\))?:\s*/i, "").trim())
+      .filter(Boolean);
     if (subjects.length) lines.push(subjects.join(";"));
   }
   const merged = dedupLines(lines);

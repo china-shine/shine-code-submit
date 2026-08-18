@@ -104,7 +104,8 @@ Stop/SubagentStop → hook detached fork zentao.ts collect(现有,不阻塞无�
  → collect 尾部 autoNote(session_id 取自 stdin payload):
     GET /api/signals?sessionId= 精查(不受 since/200 上限影响,open turn 也并入)
     → 水位后新 turns 窗口全量:每 turn 的 conclusion 各精简一行(空/无信息量的 turn 有 commits 则记 subject 行),旧→新 join
-    → simplifyConclusion:行级跳过(标题/列表/引用/代码围栏/**markdown 表格行**/**引导语**「草稿如下:」「请核对:」等以冒号或「如下」收尾的开场白/**流程状态语**「已取消,本次不提交」「工时草稿 ZR-…」/<10 字短行——2026-08-18 三类垃圾文案实测各堵一轮)→ 取正文首句(≤120 字,去行内 markdown);全跳过 → null 不记(下次自愈)
+    → simplifyConclusion:行级跳过(标题/列表/引用/代码围栏/**markdown 表格行**/**引导语**「草稿如下:」「请核对:」等以冒号或「如下」收尾的开场白/**流程状态语**「已取消,本次不提交」「工时草稿 ZR-…」/**草稿引用行**「[1] 日常工作/…」/**时钟时间行**「09:45—12:11,2.0小时」/<10 字短行——2026-08-18 四类垃圾文案实测各堵一轮)→ 取正文首句(≤120 字,去行内 markdown);全跳过 → null 不记(下次自愈)
+    → conclusion 空的 turn 回退 commits subjects,并剥 conventional-commit 类型前缀(feat(report): 等)留正文
     → dedupLines 去重(归一化去空白标点,互含只留长者)→ ≤MAX_AUTO_NOTE_LINES(4)行,超出保留最新并加「…(前 N 轮略)」;全无素材 → 不记且不推进水位(下次 Stop 自愈)
     → task = inferProjectTask(该会话历史 → 项目最近 → -1 留 /report 问)
     → appendNote 写 summary(auto:true + sigLastMs=最新 turn endMs)

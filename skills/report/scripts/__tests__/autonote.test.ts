@@ -61,6 +61,10 @@ describe("simplifyConclusion(conclusion → 一句话 work)", () => {
     expect(simplifyConclusion("已取消，本次不提交。")).toBeNull();
     expect(simplifyConclusion("工时草稿 ZR-20260818-017")).toBeNull();
   });
+  test("草稿引用行跳过(2026-08-18 三次踩坑:重装后新代码仍写下「[1] 日常工作/…」)", () => {
+    expect(simplifyConclusion("[1] 日常工作/AI智能体(项目#6924) / AI提效工具开发(任务#77563)\n    09:45—12:11,2.0小时\n\n实现草稿引用行过滤,补齐回归用例。")).toBe("实现草稿引用行过滤,补齐回归用例。");
+    expect(simplifyConclusion("[1] 日常工作/AI智能体(项目#6924) / AI提效工具开发(任务#77563)")).toBeNull();
+  });
 });
 
 describe("buildAutoWork(水位后新 turns → work)", () => {
@@ -74,13 +78,13 @@ describe("buildAutoWork(水位后新 turns → work)", () => {
     expect(r.work).toBe("上一轮完成了工时脚本的重构工作。");
     expect(r.lastMs).toBe(2000); // lastMs 仍取新 turns 最大 endMs
   });
-  test("conclusion 全空 → 逐 turn 回退 commits subjects(旧→新)", () => {
-    const r = buildAutoWork([turn(1000, null, ["feat: A"]), turn(2000, null, ["fix: B"])], 0)!;
-    expect(r.work).toBe("feat: A\nfix: B");
+  test("conclusion 全空 → 逐 turn 回退 commits subjects(旧→新,剥类型前缀)", () => {
+    const r = buildAutoWork([turn(1000, null, ["feat: A"]), turn(2000, null, ["fix(report): B"])], 0)!;
+    expect(r.work).toBe("A\nB");
   });
   test("混合:有 conclusion 的 turn 一行 + 空 conclusion 有 commits 的 turn 一行 subject", () => {
     const r = buildAutoWork([turn(1000, "完成了X功能的开发工作。"), turn(2000, null, ["fix: Y"])], 0)!;
-    expect(r.work).toBe("完成了X功能的开发工作。\nfix: Y");
+    expect(r.work).toBe("完成了X功能的开发工作。\nY");
   });
   test("去重:相同/包含的行只留长者", () => {
     expect(buildAutoWork([turn(1000, "完成了增量合并功能开发。"), turn(2000, "完成了增量合并功能开发。")], 0)!.work)
