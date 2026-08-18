@@ -92,6 +92,7 @@ export function SkillsModule() {
   const [editSavedAt, setEditSavedAt] = useState(0);
   const [editContent, setEditContent] = useState("");
   const [restoringEdit, setRestoringEdit] = useState(false);
+  const [confirmRestore, setConfirmRestore] = useState(false);
   const [editMsg, setEditMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   const reload = useCallback(() => {
@@ -280,9 +281,15 @@ export function SkillsModule() {
     }
   };
 
-  const restoreToLive = async () => {
+  // 恢复到实时:先弹 React 确认框(与「重置」同款),确认后 restoreNow 执行
+  const restoreToLive = () => {
     if (editSelected == null || editVersion == null) return;
-    if (!confirm(`把 v${editVersion} 的备份写回执行目录 ${editSelected}?\n当前磁盘内容(可能是升级后的新版)会被覆盖;恢复动作本身也会落一条新备份,可再次「重置」。`)) return;
+    setConfirmRestore(true);
+  };
+
+  const restoreNow = async () => {
+    if (editSelected == null || editVersion == null) return;
+    setConfirmRestore(false);
     setRestoringEdit(true);
     setEditMsg(null);
     try {
@@ -372,6 +379,29 @@ export function SkillsModule() {
               <button type="button" className="tool-btn" onClick={() => setConfirmReset(false)}>取消</button>
               <button type="button" className="tool-btn" style={{ background: "#ef4444", borderColor: "#ef4444", color: "#fff" }} onClick={() => void resetNow()}>
                 重置
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {confirmRestore && (
+        <div
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
+          onClick={() => setConfirmRestore(false)}
+        >
+          <div
+            style={{ background: "var(--titlebar)", color: "var(--text)", border: "1px solid var(--border-light)", borderRadius: 8, padding: "20px 24px", maxWidth: 420, boxShadow: "0 20px 60px rgba(0,0,0,0.45)" }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>确认恢复到实时?</div>
+            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 18, lineHeight: 1.5 }}>
+              将把「{editSelected?.split("/")[0]}」v{editVersion} 的备份写回执行目录,立即生效。
+              当前磁盘内容(可能是升级后的新版)会被覆盖;恢复本身也会落一条新备份,可再次「重置」。
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <button type="button" className="tool-btn" onClick={() => setConfirmRestore(false)}>取消</button>
+              <button type="button" className="tool-btn" style={{ background: "#4f8cff", borderColor: "#4f8cff", color: "#fff" }} onClick={() => void restoreNow()}>
+                恢复
               </button>
             </div>
           </div>

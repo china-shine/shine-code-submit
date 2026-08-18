@@ -2,7 +2,6 @@
 name: daily
 description: 生成今天的工时日报(从禅道提交记录汇总),输出 HTML 到 reports/,含 AI 日总结。当用户要求生成日报、今天的工时汇总、写日报,或运行 /daily 时使用。
 ---
-
 # shine-worklog 日报
 
 生成**今天**的工时日报,数据来自禅道的提交记录(`/tasks/{id}/estimate` 的 efforts,非本地会话),与禅道页面一致。输出为**自包含 HTML**,写入 `DATA_DIR/reports/日报-YYYY-MM-DD.html`(同日重跑覆盖,不堆积;**dashboard 日报模块可查看**),并在底部附 **AI 日总结**。
