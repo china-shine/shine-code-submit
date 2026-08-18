@@ -415,15 +415,23 @@ export type ResetResult =
   | { ok: true; rel: string; size: number; mtimeMs: number }
   | { ok: false; error: string };
 
-/** 重置:把文件恢复到首次编辑前的原始内容(备份 original 字段)。saveSkillFile 会继承 original 基线,重置可反复用。 */
+/** 重置:把文件恢复到**当前版本**首次编辑前的原始内容(备份 original 字段,saveSkillFile 继承基线可反复用)。
+ *  只认当前版本的备份——升级换版本目录后新版本首存会从新磁盘重捕 original,旧版本的 original 不作重置来源,
+ *  否则「升级后没在新版本编辑过就点重置」会把旧版内容写进新版磁盘,破坏「不修改=与版本一致」不变量
+ *  (2026-08-18 定)。当前版本无备份=磁盘即出厂内容,明确报错;旧编辑走「修改后的 skills」恢复。 */
 export function resetEdit(rel: string): ResetResult {
   const err = validateRelPath(rel);
   if (err) return { ok: false, error: err };
-  const meta = latestEditByRel().get(rel);
-  if (!meta) return { ok: false, error: "该文件无编辑备份,无需重置" };
+  const { version } = pluginVersion();
+  const hasAny = latestEditByRel().has(rel);
+  if (!hasAny) return { ok: false, error: "该文件无编辑备份,无需重置" };
+  const cur = listEdits().some((e) => e.rel === rel && e.version === version);
+  if (!cur) {
+    return { ok: false, error: "当前版本未编辑过该文件——磁盘即出厂内容,无需重置;旧编辑在「修改后的 skills」里查看/恢复" };
+  }
   let blob: EditBackup;
   try {
-    blob = JSON.parse(readFileSync(backupPath(meta.version, rel), "utf8")) as EditBackup;
+    blob = JSON.parse(readFileSync(backupPath(version, rel), "utf8")) as EditBackup;
   } catch {
     return { ok: false, error: "备份文件损坏" };
   }
