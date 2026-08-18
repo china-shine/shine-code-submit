@@ -46,6 +46,15 @@ interface EditContent {
   content: string;
 }
 
+// 通用确认弹窗(替代原生 confirm,全模块统一):重置/恢复到实时/放弃未保存/覆盖外部修改共用
+interface ConfirmReq {
+  title: string;
+  body: string;
+  okText: string;
+  danger?: boolean; // true=红色确认键(破坏性操作)
+  onOk: () => void;
+}
+
 const SAVE_BTN: React.CSSProperties = {
   background: "#4f8cff",
   color: "#fff",
@@ -81,7 +90,6 @@ export function SkillsModule() {
   const [saving, setSaving] = useState(false);
   const [restoring, setRestoring] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
-  const [confirmReset, setConfirmReset] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   // 「修改后的 skills」视图(备份浏览/恢复):live = 执行目录实时编辑,edits = 备份只读视图
@@ -92,7 +100,7 @@ export function SkillsModule() {
   const [editSavedAt, setEditSavedAt] = useState(0);
   const [editContent, setEditContent] = useState("");
   const [restoringEdit, setRestoringEdit] = useState(false);
-  const [confirmRestore, setConfirmRestore] = useState(false);
+  const [confirmReq, setConfirmReq] = useState<ConfirmReq | null>(null);
   const [editMsg, setEditMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   const reload = useCallback(() => {
@@ -117,9 +125,7 @@ export function SkillsModule() {
   const dirty = content !== loaded;
   const selGroup = edits?.find((g) => g.rel === editSelected) ?? null; // 选中备份的分组(版本列表+stale)
 
-  const open = async (rel: string) => {
-    if (selected === rel) return;
-    if (dirty && !confirm("有未保存的修改,放弃?")) return;
+  const doOpen = async (rel: string) => {
     try {
       const f = await api<FileResponse>(`/api/skills/file?path=${encodeURIComponent(rel)}`);
       setSelected(rel);
@@ -131,6 +137,21 @@ export function SkillsModule() {
     } catch {
       setMsg({ kind: "err", text: "读取失败" });
     }
+  };
+
+  const open = (rel: string) => {
+    if (selected === rel) return;
+    if (dirty) {
+      setConfirmReq({
+        title: "放弃未保存的修改?",
+        body: `当前「${selected?.split("/")[0]}」有未保存的修改,切换后将丢失。`,
+        okText: "放弃修改",
+        danger: true,
+        onOk: () => void doOpen(rel),
+      });
+      return;
+    }
+    void doOpen(rel);
   };
 
   const doSave = async (force: boolean) => {
@@ -146,10 +167,14 @@ export function SkillsModule() {
         body: JSON.stringify(body),
       });
       if (res.status === 409) {
-        if (confirm("文件在编辑期间已被修改(其他标签页/外部程序),仍要覆盖?")) {
-          setSaving(false);
-          return doSave(true);
-        }
+        setSaving(false);
+        setConfirmReq({
+          title: "文件已被外部修改",
+          body: "「" + (selected?.split("/")[0] ?? "") + "」在编辑期间被其他标签页/外部程序修改过,仍要用当前内容覆盖?",
+          okText: "覆盖",
+          danger: true,
+          onOk: () => void doSave(true),
+        });
         return;
       }
       if (!res.ok) {
@@ -222,9 +247,19 @@ export function SkillsModule() {
 
   const copy = () => copyText(content, "已复制——可粘贴回仓库 skills/ 随下版发布", "复制失败,请手动全选复制");
 
+  const askReset = () => {
+    if (selected == null) return;
+    setConfirmReq({
+      title: "确认重置?",
+      body: `将把「${selected.split("/")[0]}」恢复到首次编辑前的原始内容,当前修改会丢失。`,
+      okText: "重置",
+      danger: true,
+      onOk: () => void resetNow(),
+    });
+  };
+
   const resetNow = async () => {
     if (selected == null) return;
-    setConfirmReset(false);
     setResetting(true);
     setMsg(null);
     try {
@@ -281,15 +316,19 @@ export function SkillsModule() {
     }
   };
 
-  // 恢复到实时:先弹 React 确认框(与「重置」同款),确认后 restoreNow 执行
+  // 恢复到实时:先弹通用确认框,确认后 restoreNow 执行
   const restoreToLive = () => {
     if (editSelected == null || editVersion == null) return;
-    setConfirmRestore(true);
+    setConfirmReq({
+      title: "确认恢复到实时?",
+      body: `将把「${editSelected.split("/")[0]}」v${editVersion} 的备份写回执行目录,立即生效。当前磁盘内容(可能是升级后的新版)会被覆盖;恢复本身也会落一条新备份,可再次「重置」。`,
+      okText: "恢复",
+      onOk: () => void restoreNow(),
+    });
   };
 
   const restoreNow = async () => {
     if (editSelected == null || editVersion == null) return;
-    setConfirmRestore(false);
     setRestoringEdit(true);
     setEditMsg(null);
     try {
@@ -362,46 +401,32 @@ export function SkillsModule() {
 
   return (
     <>
-      {confirmReset && (
+      {confirmReq && (
         <div
           style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
-          onClick={() => setConfirmReset(false)}
-        >
-          <div
-            style={{ background: "var(--titlebar)", color: "var(--text)", border: "1px solid var(--border-light)", borderRadius: 8, padding: "20px 24px", maxWidth: 380, boxShadow: "0 20px 60px rgba(0,0,0,0.45)" }}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>确认重置?</div>
-            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 18, lineHeight: 1.5 }}>
-              将把「{selected?.split("/")[0]}」恢复到首次编辑前的原始内容,当前修改会丢失。
-            </div>
-            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button type="button" className="tool-btn" onClick={() => setConfirmReset(false)}>取消</button>
-              <button type="button" className="tool-btn" style={{ background: "#ef4444", borderColor: "#ef4444", color: "#fff" }} onClick={() => void resetNow()}>
-                重置
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {confirmRestore && (
-        <div
-          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.55)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000 }}
-          onClick={() => setConfirmRestore(false)}
+          onClick={() => setConfirmReq(null)}
         >
           <div
             style={{ background: "var(--titlebar)", color: "var(--text)", border: "1px solid var(--border-light)", borderRadius: 8, padding: "20px 24px", maxWidth: 420, boxShadow: "0 20px 60px rgba(0,0,0,0.45)" }}
             onClick={(e) => e.stopPropagation()}
           >
-            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>确认恢复到实时?</div>
-            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 18, lineHeight: 1.5 }}>
-              将把「{editSelected?.split("/")[0]}」v{editVersion} 的备份写回执行目录,立即生效。
-              当前磁盘内容(可能是升级后的新版)会被覆盖;恢复本身也会落一条新备份,可再次「重置」。
-            </div>
+            <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>{confirmReq.title}</div>
+            <div style={{ fontSize: 13, color: "var(--muted)", marginBottom: 18, lineHeight: 1.5 }}>{confirmReq.body}</div>
             <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-              <button type="button" className="tool-btn" onClick={() => setConfirmRestore(false)}>取消</button>
-              <button type="button" className="tool-btn" style={{ background: "#4f8cff", borderColor: "#4f8cff", color: "#fff" }} onClick={() => void restoreNow()}>
-                恢复
+              <button type="button" className="tool-btn" onClick={() => setConfirmReq(null)}>取消</button>
+              <button
+                type="button"
+                className="tool-btn"
+                style={confirmReq.danger
+                  ? { background: "#ef4444", borderColor: "#ef4444", color: "#fff" }
+                  : { background: "#4f8cff", borderColor: "#4f8cff", color: "#fff" }}
+                onClick={() => {
+                  const r = confirmReq;
+                  setConfirmReq(null);
+                  r.onOk();
+                }}
+              >
+                {confirmReq.okText}
               </button>
             </div>
           </div>
@@ -550,7 +575,7 @@ export function SkillsModule() {
                 <button type="button" className="tool-btn" onClick={download}>
                   下载
                 </button>
-                <button type="button" className="tool-btn" onClick={() => setConfirmReset(true)} disabled={resetting} title="恢复到首次编辑前的原始内容">
+                <button type="button" className="tool-btn" onClick={askReset} disabled={resetting} title="恢复到首次编辑前的原始内容">
                   {resetting ? "重置中…" : "重置"}
                 </button>
                 <button
