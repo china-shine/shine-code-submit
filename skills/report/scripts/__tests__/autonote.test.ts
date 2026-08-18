@@ -89,6 +89,13 @@ describe("simplifyConclusion(conclusion → 一句话 work)", () => {
     // 半角句点在真句末(后跟空白/行尾)仍终止
     expect(simplifyConclusion("修复了 collect 的路径解析 bug. 回归全过,细节略")).toBe("修复了 collect 的路径解析 bug.");
   });
+  test("加粗编号标题行跳过(2026-08-18 七次踩坑:修复报告开场「**1. auto-note 拦报表状态语** — …」剥 * 后成「1. …」残片)", () => {
+    // 行级 skip 在 markdown 剥离前做,原始行以 ** 开头须直接拦(数字列表正则要求行首裸数字,拦不到 **1.)
+    expect(simplifyConclusion("**1. auto-note 拦报表状态语** — `STATUS_RE` 增补 `(周报|日报|报告|报表)已`\n- 「周报已生成完毕」这类播报不再记成 work\n\n实现状态语过滤加固并补齐回归用例。"))
+      .toBe("实现状态语过滤加固并补齐回归用例。");
+    expect(simplifyConclusion("**修复说明**\n实现了句点词边界判定,标识符不再被截断。")).toBe("实现了句点词边界判定,标识符不再被截断。");
+    expect(simplifyConclusion("**1. auto-note 拦报表状态语** — `STATUS_RE` 增补 `(周报|日报|报告|报表)已`")).toBeNull(); // 全是标题 → null
+  });
 });
 
 describe("buildAutoWork(水位后新 turns → work)", () => {

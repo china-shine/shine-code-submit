@@ -935,11 +935,14 @@ const STATUS_RE = /^(已取消|已提交|已渲染|草稿已|工时草稿|好的
 const ERROR_RE = /^(api error|error:|connection (lost|reset|refused)|network error|timeout)/i;
 // 草稿标签行(render 草稿的元数据行,被整段回显时会成为 conclusion 候选)
 const LABEL_RE = /^(理由|置信度|内容|状态|汇总)[:：]/;
+// 加粗行首:修复报告的开场标题「**1. auto-note 拦报表状态语** — …」——行级 skip 在 markdown 剥离前做,
+// 原始行以 ** 开头不匹配 \d+[.、]/[-*+]\s(数字/星号列表都要求行首裸字符),剥掉 * 后才现出「1. 」已晚(七次踩坑)
+const BOLD_RE = /^\*\*/;
 export function simplifyConclusion(text: string): string | null {
   const lines = text.split("\n").map((l) => l.trim());
   // 行级跳过:空/太短(<10 字提不出合格首句,代码围栏短行同理)/标题列表/代码围栏/引导语/markdown 表格行/流程状态语/草稿引用行/时钟时间行(「09:45—12:11,2.0小时」)/API 错误残行/草稿标签行
   const skip = (l: string) =>
-    !l || l.length < 10 || /^(#{1,6}\s|>|[-*+]\s|\d+[.、]\s|\[\d+\]\s?|\d{1,2}:\d{2}|```|\|)/.test(l) || LEADIN_RE.test(l) || STATUS_RE.test(l) || ERROR_RE.test(l) || LABEL_RE.test(l);
+    !l || l.length < 10 || BOLD_RE.test(l) || /^(#{1,6}\s|>|[-*+]\s|\d+[.、]\s|\[\d+\]\s?|\d{1,2}:\d{2}|```|\|)/.test(l) || LEADIN_RE.test(l) || STATUS_RE.test(l) || ERROR_RE.test(l) || LABEL_RE.test(l);
   const body = lines.find((l) => !skip(l)) ?? "";
   let s = body.replace(/[*`#>]/g, "").replace(/\s+/g, " ").trim();
   // 半角 . ! ? ; 仅在词边界(后跟空白/行尾)才算句末——config.json / 1.3.51 / 域名 里的点
