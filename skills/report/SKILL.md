@@ -75,7 +75,9 @@ bun "<Base directory>/scripts/zentao.ts" plan [--source zentao]
    - 调 `note --session <id> --work <生成的work> --task <task>` 写 summary
 3. **⚠️ 全 resolved 时跳过归纳,直接 render**:auto-note 的 conclusion 本身就是每轮的总结句(质量已达「总结性 work」标准),**plan 返回的 work 是什么样就怎么提交**——不要为「把 work 归纳得更好」重新组织文案,更**严禁为此额外考古**(git log / 读文件 / 查环境:实测一次多花 90s 思考,零收益)。归纳只在用户明确要求「调整文案」时做。仅当 work 明显异常(join 拼接不连贯/流水账多行)时才按下面规则精简。
 
-4. **归纳规则**(仅在 work 异常或用户要求调整时):
+4. **work 异常的快修**(引导语/截断/拼接不连贯):**直接凭已知上下文用 Edit 改 plan.json 该条 work**——item 自带 `summary`(会话标题,即该会话干了什么的概括)+ 你对近期工作的了解,一句话写出实际成果即可。**禁止探查**(不跑 prepare、不读 summary 文件、不读源码、不查 git log——实测一通探查多花 2 分钟,信息量与 item.summary 相当)。改完 render → 确认。
+
+5. **归纳规则**(仅在 work 异常或用户要求调整时):
    - 相似/相关功能**合并成一句话**;每条一句话核心成果(动宾),不加括号技术细节
    - **严禁小括号列技术细节**、**严禁逐条罗列(流水账)**,细节留 transcript
 

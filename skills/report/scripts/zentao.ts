@@ -887,15 +887,21 @@ function cmdNote(a: Args): any {
 /** 同会话两次 auto-note 最短间隔:防快速连续 Stop 刷碎条(拆段语义不受影响,下次 note 段=上条水位起)。 */
 export const AUTO_NOTE_MIN_INTERVAL_MS = 10 * 60_000;
 
-/** conclusion 原文 → 一句话 work:找首个非标题/非列表行 → 去行内 markdown → 取首句(≤120 字)。
+/** conclusion 原文 → 一句话 work:逐行找首个非标题/非列表/非引导语行 → 去行内 markdown → 取首句(≤120 字)。
+ *  引导语(「文案已改好,草稿如下:」「草稿已渲染,请核对:」这类以冒号/「如下」收尾的展示引导)跳过找下一行
+ *  ——它们是回复的开场白不是工作结论,当 work 会明显异常、诱发 AI 提交时再修(2026-08-18 实测踩坑)。
  *  <10 字(如「好的」)返回 null——无信息量不记。 */
+const LEADIN_RE = /[:：]\s*$|(如下|请核对|请确认|请查收|请查阅)[。!?]?\s*$/;
 export function simplifyConclusion(text: string): string | null {
   const lines = text.split("\n").map((l) => l.trim());
-  const body = lines.find((l) => l && !/^(#{1,6}\s|>|[-*+]\s|\d+[.、]\s)/.test(l)) ?? "";
+  // 行级跳过:空/太短(<10 字提不出合格首句,代码围栏短行同理)/标题列表/代码围栏/引导语
+  const skip = (l: string) =>
+    !l || l.length < 10 || /^(#{1,6}\s|>|[-*+]\s|\d+[.、]\s|```)/.test(l) || LEADIN_RE.test(l);
+  const body = lines.find((l) => !skip(l)) ?? "";
   let s = body.replace(/[*`#>]/g, "").replace(/\s+/g, " ").trim();
   const m = /^(.{2,120}?[。;;.!?])/.exec(s);
   s = m ? m[1]! : s.length > 100 ? s.slice(0, 100) + "…" : s;
-  return s.length >= 10 ? s : null;
+  return s.length >= 10 && !LEADIN_RE.test(s) ? s : null;
 }
 
 /** 新 turns(水位后)→ {work, lastMs}。最新非空 conclusion 优先;全空回退 commits subjects(≤3);

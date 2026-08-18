@@ -47,6 +47,12 @@ describe("simplifyConclusion(conclusion → 一句话 work)", () => {
   test("纯标题/列表 → null", () => {
     expect(simplifyConclusion("## 标题\n- a\n- b")).toBeNull();
   });
+  test("引导语(开场白)跳过,取后续实质句(2026-08-18 实测踩坑)", () => {
+    // 回复以「草稿如下:」开场,后面才是真结论
+    expect(simplifyConclusion("文案已改好,草稿如下：\n\n```text\n(代码块)\n```\n\n生成本周工时周报,核对禅道明细并调整总结文案。")).toBe("生成本周工时周报,核对禅道明细并调整总结文案。");
+    expect(simplifyConclusion("草稿已渲染，请核对：")).toBeNull(); // 全是引导语 → null(不记,下次自愈)
+    expect(simplifyConclusion("完整内容如下:")).toBeNull();
+  });
 });
 
 describe("buildAutoWork(水位后新 turns → work)", () => {
