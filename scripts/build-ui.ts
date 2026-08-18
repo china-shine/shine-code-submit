@@ -19,10 +19,12 @@ if (!uiBuild.success) {
 }
 process.stdout.write(`bundle ui/app.tsx -> ${UI_BUNDLE}\n`);
 
-const [uiHtml, uiJs, uiCss] = await Promise.all([
+const [uiHtml, uiJs, uiCss, vendorCss] = await Promise.all([
   Bun.file("ui/index.html").text(),
   Bun.file(UI_BUNDLE).text(),
   Bun.file("ui/style.css").text(),
+  // Bun.build 收集的 import 链内 css(monaco-editor)→ app.css;无 css 依赖时为空串
+  Bun.file("ui/.build/app.css").text().catch(() => ""),
 ]);
 await Bun.write(
   "src/daemon/ui-assets.ts",
@@ -30,6 +32,7 @@ await Bun.write(
 export const INDEX_HTML = ${JSON.stringify(uiHtml)};
 export const APP_JS = ${JSON.stringify(uiJs)};
 export const STYLE_CSS = ${JSON.stringify(uiCss)};
+export const VENDOR_CSS = ${JSON.stringify(vendorCss)};
 `,
 );
 process.stdout.write("✓ ui-assets regenerated (no exe built)\n");

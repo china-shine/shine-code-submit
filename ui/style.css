@@ -909,3 +909,26 @@ ul { list-style: none; margin: 0; padding: 0; }
 .field-hint { color: var(--muted); font-size: var(--fs-xs); padding: 0.3rem 0.8rem; }
 .field-ok { color: #9bcd97; }
 .field-err { color: var(--c-err, #fc533a); }
+
+/* Skills 模块:顶部 tab 导航(skill 名为 tab,工具按钮行尾),编辑区撑满剩余高度 */
+.skill-tabs { flex: 0 0 auto; display: flex; align-items: stretch; border-bottom: 1px solid var(--border); }
+.skill-tab-scroll { display: flex; gap: 2px; overflow-x: auto; min-height: 0; }
+.skill-tab-scroll .tab { display: inline-flex; align-items: center; gap: 0.3rem; white-space: nowrap; }
+.skill-dot { color: #f5a623; font-size: var(--fs-xs); flex: 0 0 auto; }
+.skill-actions { margin-left: auto; display: flex; align-items: center; gap: 0.4rem; padding: 0 0 0 0.6rem; flex: 0 0 auto; }
+
+/* Skills 工具栏次要按钮(预览/复制/下载/恢复):默认可见底+描边,按下实心蓝明显反馈 */
+.tool-btn {
+  background: var(--titlebar);
+  color: var(--text);
+  border: 1px solid var(--border-light);
+  border-radius: 4px;
+  padding: 0.35rem 0.9rem;
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: background 0.08s, border-color 0.08s, color 0.08s, transform 0.05s;
+}
+.tool-btn:hover { background: var(--hover); border-color: var(--accent-line); color: #fff; }
+.tool-btn:active { background: var(--accent); border-color: var(--accent); color: #fff; transform: translateY(1px); }
+.tool-btn:disabled { opacity: 0.45; cursor: default; }
+.tool-btn:disabled:hover, .tool-btn:disabled:active { background: var(--titlebar); border-color: var(--border-light); color: var(--text); transform: none; }

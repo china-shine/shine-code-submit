@@ -12,6 +12,7 @@ const ITEMS: Array<{ id: ModuleId; label: string; icon: IconName }> = [
   { id: "report", label: "报表", icon: "log" },
   { id: "daily", label: "日报", icon: "log" },
   { id: "weekly", label: "周报", icon: "log" },
+  { id: "skills", label: "Skills", icon: "log" },
   { id: "settings", label: "设置", icon: "sliders" },
   { id: "zentao", label: "禅道", icon: "inbox" },
   { id: "system", label: "系统", icon: "server" },

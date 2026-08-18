@@ -57,6 +57,7 @@
 ## 修改注意
 
 - **skills/ 不在 tsconfig**——typecheck 抓不到,改函数签名必须全局 grep 调用方(1.3.41 曾漏 zentao.ts 两处);
+- **dashboard「Skills」模块可直接编辑 skills/ 的 Markdown 文档**(GET/PUT /api/skills/file,写当前生效插件根的 skills/,仅 `.md`——.ts 代码不开放,走源码仓库改):SKILL.md 是命令触发时从磁盘读,**保存即生效**、无需发版/重装。编辑器为 Monaco(VS Code 内核,markdown 高亮+查找/折叠/多光标),tab 按近 7 天使用频率降序、默认开最高频,Ctrl/Cmd+S 快捷保存;「重置」把文件恢复到首次编辑前的原始内容(备份 `original` 基线)。autoUpdate 升级/`install --force` 整目录覆盖会冲掉本地编辑——保存时自动备份到 `DATA_DIR/skills-edits/`,升级后 dashboard 提示 stale、一键恢复(不自动重放);源码模式下编辑即改仓库文件(git 兜底)。试验稳定后应「复制」拷回仓库 skills/ 随下版发布;monaco-editor 只进 devDependencies(本机构建用,发布物不带);
 - 测试:`skills/report/scripts/__tests__/`,bun test;两类:
   - **CLI 端到端**(cli-local/cli-net/cli-report + cli-harness 基建):mock 禅道(Bun.serve port 0)+ 子进程真跑 `zentao.ts`(LOCALAPPDATA→tmp + `--cwd`→tmp 双隔离),覆盖全部 23 个命令的成功/die 分支;mock 记录请求供「参数正确/未发请求」断言。collect 的 daemon 可达分支(127.0.0.1:36666 硬编码)与 auto 的 abort 分支无法注入,已注明;
   - **子进程 runner**(plan-runner/commit-runner):env `LOCALAPPDATA` 指临时目录做真隔离,直接调 cmdPlan/cmdCommit 函数级深测;

@@ -37,6 +37,18 @@ import {
   sumTokens,
 } from "./aggregate";
 import { readSettings, writeSettings } from "./settings";
+import {
+  computeStaleEdits,
+  latestEditByRel,
+  listSkillFiles,
+  pluginVersion,
+  readSkillFile,
+  resetEdit,
+  restoreEdit,
+  saveSkillFile,
+  skillsRoot,
+  validateRelPath,
+} from "./skills-store";
 import { DATA_DIR } from "../shared/paths";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -581,6 +593,68 @@ export function startServer(deps: ServerDeps) {
       // 手动触发禅道刷新:spawn zentao.ts refresh(登录禅道重拉,慢;禅道逻辑在 skill 层)。
       if (path === "/api/zentao-cache/refresh" && req.method === "POST") {
         return json(await refreshZentaoCache());
+      }
+
+      // Skills 文件编辑(dashboard「Skills」模块):读写当前生效插件根的 skills/。
+      // skill 文件是命令触发时从磁盘读 → 写对位置即生效,无需重启;备份与升级覆盖检测见 skills-store。
+      if (path === "/api/skills" && req.method === "GET") {
+        const { version, sourceMode } = pluginVersion();
+        const latest = latestEditByRel();
+        // Skill 使用频率(events 表 7 天滚动窗口):用户敲 /shine-worklog:<name> 是 slash command 注入,
+        // 不产生 Skill tool 调用——真源是 UserPromptSubmit 的 prompt 文本(含 <command-name>/shine-worklog:report</command-name>
+        // 展开标签),按 "shine-worklog:<name>" 出现次数计数;tab 按此降序,高频靠左
+        const counts = new Map<string, number>();
+        for (const e of store.query({ type: "UserPromptSubmit", since: 0, limit: 2000 })) {
+          const prompt = String(((e.payload ?? {}) as Record<string, unknown>).prompt ?? "");
+          for (const m of prompt.matchAll(/shine-worklog:(\w+)/g)) {
+            const name = m[1];
+            if (!name) continue;
+            counts.set(name, (counts.get(name) ?? 0) + 1);
+          }
+        }
+        const files = listSkillFiles().map((f) => ({
+          ...f,
+          edited: latest.has(f.rel),
+          editVersion: latest.get(f.rel)?.version ?? null,
+          useCount: counts.get(f.rel.split("/")[0] ?? "") ?? 0,
+        }));
+        files.sort((a, b) => b.useCount - a.useCount || a.rel.localeCompare(b.rel));
+        return json({ root: skillsRoot(), version, sourceMode, files, stale: computeStaleEdits() });
+      }
+      if (path === "/api/skills/file" && req.method === "GET") {
+        const rel = url.searchParams.get("path") ?? "";
+        const err = validateRelPath(rel);
+        if (err) return json({ error: err }, 400);
+        const f = readSkillFile(rel);
+        if (!f) return json({ error: "not found" }, 404);
+        return json({ rel, ...f });
+      }
+      if (path === "/api/skills/file" && req.method === "PUT") {
+        const body = (await req.json().catch(() => null)) as { path?: unknown; content?: unknown; baseMtimeMs?: unknown } | null;
+        if (typeof body?.content !== "string") return json({ error: "missing content" }, 400);
+        const rel = typeof body.path === "string" ? body.path : "";
+        // 轻量并发护栏:编辑期间文件被改(其他标签页/外部) → 409,前端确认后可去掉该字段重发覆盖(整体 last-write-wins)
+        if (typeof body.baseMtimeMs === "number") {
+          const cur = readSkillFile(rel);
+          if (cur && cur.mtimeMs > body.baseMtimeMs + 2000) {
+            return json({ error: "文件在编辑期间已被修改,请确认后覆盖", currentMtimeMs: cur.mtimeMs }, 409);
+          }
+        }
+        const r = saveSkillFile(rel, body.content);
+        return r.ok ? json(r) : json({ error: r.error }, 400);
+      }
+      if (path === "/api/skills/restore" && req.method === "POST") {
+        const body = (await req.json().catch(() => null)) as { path?: unknown; version?: unknown } | null;
+        const rel = typeof body?.path === "string" ? body.path : "";
+        const version = typeof body?.version === "string" && body.version ? body.version : undefined;
+        const r = restoreEdit(rel, version);
+        return r.ok ? json(r) : json({ error: r.error }, 400);
+      }
+      if (path === "/api/skills/reset" && req.method === "POST") {
+        const body = (await req.json().catch(() => null)) as { path?: unknown } | null;
+        const rel = typeof body?.path === "string" ? body.path : "";
+        const r = resetEdit(rel);
+        return r.ok ? json(r) : json({ error: r.error }, 400);
       }
       if (path === "/api/settings" && req.method === "PUT") {
         let body: unknown;
