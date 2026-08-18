@@ -73,9 +73,10 @@ bun "<Base directory>/scripts/zentao.ts" plan [--source zentao]
    - **work**:`signals` 非空时以 `turns` 逐轮 `conclusion`(Claude 本轮结论汇报)为主料、`commits`/`taskSubjects` 佐证、`prompts` 补意图;`transcript` 非空时据 recentAssistantTexts + prompts + filesChanged;两者皆 null 时退化用 daemonSummary + filesChanged 推断。生成一句话核心成果(动宾,不罗列功能点)
    - **task**:从 candidates 选最匹配(置信度 ≥85 直定;<85 或候选模糊时用 AskUserQuestion 让用户选,≤4 选项,选项含「更新缓存后重新匹配 / 创建新任务 / 选候选 / 跳过」)
    - 调 `note --session <id> --work <生成的work> --task <task>` 写 summary
-3. **⚠️ 全 resolved 时跳过归纳,直接 render**:auto-note 的 conclusion 本身就是每轮的总结句(质量已达「总结性 work」标准),**plan 返回的 work 是什么样就怎么提交**——不要为「把 work 归纳得更好」重新组织文案,更**严禁为此额外考古**(git log / 读文件 / 查环境:实测一次多花 90s 思考,零收益)。归纳只在用户明确要求「调整文案」时做。仅当 work 明显异常(join 拼接不连贯/流水账多行)时才按下面规则精简。
+3. **⚠️ 全 resolved 时跳过归纳,直接 render**:auto-note 的 conclusion 本身就是每轮的总结句(质量已达「总结性 work」标准),**plan 返回的 work 是什么样就怎么提交**——不要为「把 work 归纳得更好」重新组织文案,更**严禁为此额外考古**(git log / 读文件 / 查环境:实测一次多花 90s 思考,零收益)。归纳只在用户明确要求「调整文案」时做。仅当 work 明显异常(引导语/表格残片/截断/明显不连贯)时才按下面规则精简。
+   - **增量条目的 work = 水位后全部 note 按时间合并,多行(每行一条成果、render 自动编号)是预期产物**——它就是为了覆盖自上次提交以来的全部关键改动;多行 ≠ 拼接异常,不要合并重写。
 
-4. **work 异常的快修**(引导语/表格残片/截断/拼接不连贯):**直接用 Edit 改 plan.json 该条 work**,一句话写出实际成果。**禁止探查**(不跑 prepare、不读 summary 文件、不读源码、不查 git log、不搜路径——实测一通探查多花 2 分钟零信息增量)。两条注意:
+4. **work 异常的快修**(引导语/表格残片/截断/明显不连贯;多行列表本身**不是**异常,见上):**直接用 Edit 改 plan.json 该条 work**,一句话写出实际成果。**禁止探查**(不跑 prepare、不读 summary 文件、不读源码、不查 git log、不搜路径——实测一通探查多花 2 分钟零信息增量)。两条注意:
    - **plan.json 路径公式**(不用搜):`%LOCALAPPDATA%\shine-worklog\zenpilot\projects\<编码cwd>\plan.json`,编码 = 当前项目 cwd 的非字母数字→`-`(与 `~/.claude/projects/` 同款);mac/linux 前缀换 `~/.local/share/shine-worklog/`
    - **⚠️ item.summary(会话标题)可能严重过时**:长期复用的会话以首次 skill 开头(如 weekly)但实际早已变成别的工作——**按你对条目近期实际工作的了解写**(你亲历的上下文),不要照标题抄(两次实测都因此写错)
    改完 render → 确认。

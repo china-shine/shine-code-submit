@@ -64,19 +64,35 @@ describe("simplifyConclusion(conclusion → 一句话 work)", () => {
 });
 
 describe("buildAutoWork(水位后新 turns → work)", () => {
-  test("水位过滤 + 最新非空 conclusion", () => {
-    const r = buildAutoWork([turn(1000, "旧结论。"), turn(2000, null), turn(3000, "新结论:完成X功能。")], 1500)!;
-    expect(r.work).toBe("新结论:完成X功能。");
+  test("水位过滤 + 窗口全量 join(每 turn 一行)", () => {
+    const r = buildAutoWork([turn(1000, "旧结论。"), turn(2000, "第一轮完成了A功能的开发。"), turn(3000, "新结论:完成X功能。")], 1500)!;
+    expect(r.work).toBe("第一轮完成了A功能的开发。\n新结论:完成X功能。"); // 不再只取最新,中间轮不丢
     expect(r.lastMs).toBe(3000);
   });
-  test("最新 conclusion 为 null → 取前一条非空", () => {
+  test("最新 conclusion 为 null → 该 turn 不产生行,lastMs 仍取最大", () => {
     const r = buildAutoWork([turn(1000, "上一轮完成了工时脚本的重构工作。"), turn(2000, null)], 0)!;
     expect(r.work).toBe("上一轮完成了工时脚本的重构工作。");
     expect(r.lastMs).toBe(2000); // lastMs 仍取新 turns 最大 endMs
   });
-  test("conclusion 全空 → 回退 commits subjects(新在前)", () => {
+  test("conclusion 全空 → 逐 turn 回退 commits subjects(旧→新)", () => {
     const r = buildAutoWork([turn(1000, null, ["feat: A"]), turn(2000, null, ["fix: B"])], 0)!;
-    expect(r.work).toBe("fix: B;feat: A");
+    expect(r.work).toBe("feat: A\nfix: B");
+  });
+  test("混合:有 conclusion 的 turn 一行 + 空 conclusion 有 commits 的 turn 一行 subject", () => {
+    const r = buildAutoWork([turn(1000, "完成了X功能的开发工作。"), turn(2000, null, ["fix: Y"])], 0)!;
+    expect(r.work).toBe("完成了X功能的开发工作。\nfix: Y");
+  });
+  test("去重:相同/包含的行只留长者", () => {
+    expect(buildAutoWork([turn(1000, "完成了增量合并功能开发。"), turn(2000, "完成了增量合并功能开发。")], 0)!.work)
+      .toBe("完成了增量合并功能开发。");
+    expect(buildAutoWork([turn(1000, "完成了增量合并功能开发。"), turn(2000, "完成了增量合并功能开发并通过测试。")], 0)!.work)
+      .toBe("完成了增量合并功能开发并通过测试。"); // 长者胜,占首行位置
+  });
+  test("上限:超过 MAX_AUTO_NOTE_LINES 行 → 保留最新 4 行 + 顶部省略标记", () => {
+    const turns = [1, 2, 3, 4, 5, 6].map((i) => turn(i * 1000, `第${"一二三四五六"[i - 1]}轮完成功能${i}的开发工作。`));
+    const r = buildAutoWork(turns, 0)!;
+    expect(r.work).toBe("…(前 2 轮略)\n第三轮完成功能3的开发工作。\n第四轮完成功能4的开发工作。\n第五轮完成功能5的开发工作。\n第六轮完成功能6的开发工作。");
+    expect(r.lastMs).toBe(6000);
   });
   test("全空且无 commits → null(不推进水位,下次自愈)", () => {
     expect(buildAutoWork([turn(1000, null), turn(2000, null)], 0)).toBeNull();

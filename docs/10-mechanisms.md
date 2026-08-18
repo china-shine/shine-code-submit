@@ -26,7 +26,7 @@ flowchart LR
 - **多天补报范围**:collect 起点 = `lastSubmitSinceEpoch()`(submitted.json 最大日期 key 的 0 点,clamp 到 `LOOKBACK_MAX_DAYS=14` 天前;无记录回退今天 0 点)——某天忘了提交/提交后有增量,之后任意一次 /report 都会补上;补报条目按会话归属日(`item.date`,lastActive 推)提交禅道/记台账/分日流水;`_meta` 按归属日分组写,同一次 commit 的各日期 key 盖**同一 `lastCommitAt`**——amend 全局扫最大时间戳并合并同值天数的 `lastCommit`,多天混合提交也能精确定位「最后一次提交」;
 - **元会话聚合**(zentao.ts `aggregateMetaItems`):跑 /report//prepare//amend 本身产生的 skill 会话(daemon title 含 `skills\report|prepare|amend` 且活跃<45min 双保险——weekly/daily 报表会话是正常工作、大活跃会话可能在 skill 里干了真开发)同日合并一条:固定文案「执行 shine-worklog 工时填报流程」+ **时间区间并集去重工时**(重叠会话不双计,`unionMinutes`)+ `sourceSessions` 防重清单(commit 后各源记水位 hours=0/minutes=各自 → 下次 already,填报工时不再自我繁殖);already/increment 的 meta 不并入(语义不同);needs_semantic 的 meta 免 AI 归纳直接按 `inferProjectTask` 历史归属(无历史 → unmatched 留 /report 问一次);
 - **水位**:`submitted.json` 按 (date,session) 记 {tasks,hours,minutes,_meta.lastCommitAt};增量 = activeMinutes − rec.minutes(原始分钟);跨日期全扫取最大水位(跨午夜兼容);
-- **增量 note 过滤严格大于**(1.3.44 修):`notedActiveMinutes > submittedMin`——相等也算已提交(note 水位 123min vs 取整提交 120min 曾重复混入);increment 的 **work 取最新一条新 note 不 join 全部**(手动+auto note 混排 join 出不搭多行,诱发 AI 提交时再归纳;最新结论最概括近期工作,b24a992);
+- **增量 note 过滤严格大于**(1.3.44 修):`notedActiveMinutes > submittedMin`——相等也算已提交(note 水位 123min vs 取整提交 120min 曾重复混入);increment 的 **work = 水位后全部新 note 按时间合并**(旧→新、dedupLines 去重、≤`MAX_INCREMENT_WORK_LINES`=10 行,超出保留最新并加「…(更早 N 条略)」)——单取最新会丢增量区间内的关键改动(08-18 实测 4 条 note 只剩最后 1 条、前 3 个功能 commit 全丢;早先 b24a992 改单取是怕混排 join 不搭,现 auto note 自身已是窗口全量总结,顾虑已化解);多行是预期产物,render/numberWork 天然按行编号;
 - 阈值:增量 ≥15min 才补报;两次 commit 冷却 30min(全局取最近 lastCommitAt——含历史日期 key,补报场景最后一次提交可能落在昨天;amend 可豁免同会话);
 - 多 note 拆段:按水位切段拆 task,段膨胀检测(segSum > totalHours)合并回单条。
 
@@ -103,15 +103,15 @@ daemon 定期查 npm latest → spawn detached `npx shine-worklog@latest install
 Stop/SubagentStop → hook detached fork zentao.ts collect(现有,不阻塞无输出)
  → collect 尾部 autoNote(session_id 取自 stdin payload):
     GET /api/signals?sessionId= 精查(不受 since/200 上限影响,open turn 也并入)
-    → 水位后新 turns 取最新非空 conclusion
+    → 水位后新 turns 窗口全量:每 turn 的 conclusion 各精简一行(空/无信息量的 turn 有 commits 则记 subject 行),旧→新 join
     → simplifyConclusion:行级跳过(标题/列表/引用/代码围栏/**markdown 表格行**/**引导语**「草稿如下:」「请核对:」等以冒号或「如下」收尾的开场白/**流程状态语**「已取消,本次不提交」「工时草稿 ZR-…」/<10 字短行——2026-08-18 三类垃圾文案实测各堵一轮)→ 取正文首句(≤120 字,去行内 markdown);全跳过 → null 不记(下次自愈)
-    → conclusion 全空回退 commits subjects(≤3);仍无 → 不记且不推进水位(下次 Stop 自愈)
+    → dedupLines 去重(归一化去空白标点,互含只留长者)→ ≤MAX_AUTO_NOTE_LINES(4)行,超出保留最新并加「…(前 N 轮略)」;全无素材 → 不记且不推进水位(下次 Stop 自愈)
     → task = inferProjectTask(该会话历史 → 项目最近 → -1 留 /report 问)
     → appendNote 写 summary(auto:true + sigLastMs=最新 turn endMs)
 ```
 
 - **水位**(zentao.ts `noteWatermark`):扫 summary 取 max(sigLastMs, **手动** note 的 ts)——手动 note 覆盖「记的时刻之前」故 ts 计入;auto note 只用精确 sigLastMs,ts 不计入(否则水位被推到写入时刻,跳过 daemon 消费 tick 滞后产生的 turn 漏记);
-- **节流** `AUTO_NOTE_MIN_INTERVAL_MS=10min`:距上一条 note(任意来源)<10min 跳过——防快速连续 Stop 刷碎条;拆段语义不受影响(下次 note 的段=上条水位起);
+- **节流** `AUTO_NOTE_MIN_INTERVAL_MS=10min`:距上一条 note(任意来源)<10min 跳过——防快速连续 Stop 刷碎条;拆段语义不受影响(下次 note 的段=上条水位起);节流窗内多个 turn 不丢(窗口全量 join,下次触发补齐窗内全部结论——08-18 前「只取最新」会永久丢中间 turn);
 - **与手动 note 共存**:AI 顺手 note 质量更高且 ts 计入水位,刚记过 auto 不重复;同段双记由 plan 拆段膨胀合并兜底(工时正确);
 - **开关** settings.autoNote(默认开);daemon 不可达/提取滞后 → 静默跳过,绝不出声;
 - 时序:Stop 瞬间 conclusion 最坏落后 ~250ms+5s 消费 tick → 表现为「最新 turn 没记上」,下次 Stop 自愈(水位未推进)。

@@ -297,6 +297,15 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>, source
         const incNotes = notesBySession.get(s.id) || [];
         const submittedMin = rec.minutes ?? 0;
         const newIncNotes = waterNotes(incNotes).filter((n: any) => (Number(n.notedActiveMinutes) || 0) > submittedMin);
+        // 增量 work = 水位后全部新 note 合并(旧→新、dedupLines 去重、≤MAX_INCREMENT_WORK_LINES):
+        // 单取最新会丢增量区间内的关键改动(08-18 实测 4 条 note 只剩最后 1 条,前 3 个功能 commit 全丢)。
+        // 早先「join 混排不搭」的顾虑已化解——auto note 自身就是窗口全量总结(见 buildAutoWork),
+        // 多行是预期产物,render/numberWork 天然按行编号;无新 note 仍 null 走 AI 归纳。
+        const incLines = dedupLines(newIncNotes.map((n: any) => String(n.work ?? "").trim()).filter(Boolean));
+        const incCapped =
+          incLines.length > MAX_INCREMENT_WORK_LINES
+            ? [`…(更早 ${incLines.length - MAX_INCREMENT_WORK_LINES} 条略)`, ...incLines.slice(-MAX_INCREMENT_WORK_LINES)]
+            : incLines;
         Object.assign(
           item,
           {
@@ -306,9 +315,7 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>, source
             hours: hoursFromMinutes(delta),
             confidence: 95,
             reason: "已提交会话的增量补报,沿用原任务",
-            // work 取最新一条新 note(不 join 全部):auto-note 的 conclusion 本身是总结句,
-            // join 多条(手动+auto 混排)会拼出不搭的多行、诱发 AI 提交时再归纳(慢);最新结论最概括近期工作。
-            work: newIncNotes.length ? newIncNotes[newIncNotes.length - 1]!.work : null,
+            work: incCapped.length ? incCapped.join("\n") : null,
           },
           await taskInfo(taskId),
         );
@@ -887,6 +894,31 @@ function cmdNote(a: Args): any {
 /** 同会话两次 auto-note 最短间隔:防快速连续 Stop 刷碎条(拆段语义不受影响,下次 note 段=上条水位起)。 */
 export const AUTO_NOTE_MIN_INTERVAL_MS = 10 * 60_000;
 
+/** 单条 auto note 的 work 行数上限:10min 节流窗内罕见超;超出保留最新 N 行,旧的用「…(前 N 轮略)」标记。 */
+export const MAX_AUTO_NOTE_LINES = 4;
+
+/** 增量补报条目的 work 行数上限:14 天大窗防爆;超出保留最新 N 行,旧的用「…(更早 N 条略)」标记。 */
+export const MAX_INCREMENT_WORK_LINES = 10;
+
+/** 归一化去重:完全相同或互为包含的行只留长者(短行是长行子集,信息已被覆盖),保持原有先后顺序。
+ *  归一化去空白和标点——「开发。」与「开发并通过测试。」才构成前缀包含,带标点会漏判。 */
+export function dedupLines(lines: string[]): string[] {
+  const norm = (s: string) => s.replace(/[\s。;,.、!??::;()()\[\]【】《》\-—~"'']/g, "").toLowerCase();
+  const out: string[] = [];
+  for (const l of lines) {
+    const nl = norm(l);
+    if (!nl) continue;
+    const hit = out.find((o) => {
+      const no = norm(o);
+      return no === nl || no.includes(nl) || nl.includes(no);
+    });
+    if (hit !== undefined) {
+      if (nl.length > norm(hit).length) out[out.indexOf(hit)] = l; // 留长者
+    } else out.push(l);
+  }
+  return out;
+}
+
 /** conclusion 原文 → 一句话 work:逐行找首个非标题/非列表/非引导语行 → 去行内 markdown → 取首句(≤120 字)。
  *  引导语(「文案已改好,草稿如下:」「草稿已渲染,请核对:」这类以冒号/「如下」收尾的展示引导)跳过找下一行
  *  ——它们是回复的开场白不是工作结论,当 work 会明显异常、诱发 AI 提交时再修(2026-08-18 实测踩坑)。
@@ -906,25 +938,32 @@ export function simplifyConclusion(text: string): string | null {
   return s.length >= 10 && !LEADIN_RE.test(s) ? s : null;
 }
 
-/** 新 turns(水位后)→ {work, lastMs}。最新非空 conclusion 优先;全空回退 commits subjects(≤3);
- *  都无 → null(调用方不推进水位,下次 Stop 自愈——如 daemon 消费 tick 还没跑完最新 turn)。 */
+/** 新 turns(水位后)→ {work, lastMs}。窗口全量:每个 turn 的 conclusion 各精简一行(空/无信息量
+ *  conclusion 的 turn 有 commits 则用 commit subject 行),按时间旧→新 join——单取最新会丢节流窗内
+ *  中间 turn 的结论(08-18 实测 4 条 note 只剩最后 1 条)。去重后 ≤MAX_AUTO_NOTE_LINES 行;
+ *  全无素材 → null(调用方不推进水位,下次 Stop 自愈——如 daemon 消费 tick 还没跑完最新 turn)。 */
 export function buildAutoWork(turns: any[], sinceMs: number): { work: string; lastMs: number } | null {
   const fresh = (Array.isArray(turns) ? turns : []).filter((t) => t && num(t.endMs) > sinceMs);
   if (fresh.length === 0) return null;
   const lastMs = Math.max(...fresh.map((t) => num(t.endMs)));
-  for (let i = fresh.length - 1; i >= 0; i--) {
-    const c = typeof fresh[i]!.conclusion === "string" ? fresh[i]!.conclusion.trim() : "";
-    if (!c) continue;
+  const lines: string[] = [];
+  for (const t of fresh) {
+    const c = typeof t.conclusion === "string" ? t.conclusion.trim() : "";
     const work = simplifyConclusion(c);
-    if (work) return { work, lastMs };
+    if (work) {
+      lines.push(work);
+      continue;
+    }
+    const subjects = (Array.isArray(t.commits) ? t.commits.map(String) : []).filter(Boolean);
+    if (subjects.length) lines.push(subjects.join(";"));
   }
-  const subjects = fresh
-    .flatMap((t) => (Array.isArray(t.commits) ? t.commits.map(String) : []))
-    .filter(Boolean)
-    .slice(-3)
-    .reverse(); // 新 commit 在前
-  if (subjects.length) return { work: subjects.join(";"), lastMs };
-  return null;
+  const merged = dedupLines(lines);
+  if (merged.length === 0) return null;
+  const capped =
+    merged.length > MAX_AUTO_NOTE_LINES
+      ? [`…(前 ${merged.length - MAX_AUTO_NOTE_LINES} 轮略)`, ...merged.slice(-MAX_AUTO_NOTE_LINES)]
+      : merged;
+  return { work: capped.join("\n"), lastMs };
 }
 
 /** 该 session 的 auto-note 水位:扫全部 summary-*.json 取 max(sigLastMs, 手动 note.ts 的 epoch)。

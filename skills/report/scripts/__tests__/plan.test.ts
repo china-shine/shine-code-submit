@@ -205,6 +205,35 @@ describe("cmdPlan — 跨午夜", () => {
     expect(items[0].hours).toBe(0.5); // 140-120=20min → 0.5h
     expect(items[0].work).toBe("真正新增"); // 旧段(水位==120)不混入
   });
+
+  test("多条新 note → 合并旧→新(08-18 实测踩坑:单取最新丢增量区间内关键改动)", async () => {
+    const items = await runPlan({
+      sessions: [{ id: "s14", repo: "r", branch: "main", activeMinutes: 200, start: "09:00", end: "12:00" }],
+      submitted: { "2026-08-06": { s14: { tasks: [100], hours: 1, minutes: 60 } } },
+      summaries: { "2026-08-06": [
+        { session: "s14", work: "已提交旧段", task: 100, notedActiveMinutes: 60 },
+        { session: "s14", work: "完成多天补报功能收尾", task: 100, notedActiveMinutes: 90 },
+        { session: "s14", work: "实现auto-note自动归纳功能", task: 100, notedActiveMinutes: 140 },
+        { session: "s14", work: "实现auto-note自动归纳功能并通过全部测试", task: 100, notedActiveMinutes: 200 },
+      ] },
+      cache: { projects: [{ id: 1, name: "P1" }], tasks: [{ id: 100, name: "T1", project: 1 }], executions: [], taskDetails: {} },
+    });
+    // 旧段(水位==60)不混入;三条新 note 按时间合并,互含的只留长者
+    expect(items[0].work).toBe("完成多天补报功能收尾\n实现auto-note自动归纳功能并通过全部测试");
+  });
+
+  test("新 note 超过 MAX_INCREMENT_WORK_LINES → 保留最新 10 行 + 顶部省略标记", async () => {
+    const notes = Array.from({ length: 12 }, (_, i) => ({
+      session: "s15", work: `增量W${String(i + 1).padStart(2, "0")}`, task: 100, notedActiveMinutes: 70 + i * 10,
+    }));
+    const items = await runPlan({
+      sessions: [{ id: "s15", repo: "r", branch: "main", activeMinutes: 200, start: "09:00", end: "12:00" }],
+      submitted: { "2026-08-06": { s15: { tasks: [100], hours: 1, minutes: 60 } } },
+      summaries: { "2026-08-06": notes },
+      cache: { projects: [{ id: 1, name: "P1" }], tasks: [{ id: 100, name: "T1", project: 1 }], executions: [], taskDetails: {} },
+    });
+    expect(items[0].work).toBe(`…(更早 2 条略)\n${Array.from({ length: 10 }, (_, i) => `增量W${String(i + 3).padStart(2, "0")}`).join("\n")}`);
+  });
 });
 
 describe("cmdPlan — 多天补报(自上次提交以来)", () => {
