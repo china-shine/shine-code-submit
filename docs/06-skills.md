@@ -57,5 +57,7 @@
 ## 修改注意
 
 - **skills/ 不在 tsconfig**——typecheck 抓不到,改函数签名必须全局 grep 调用方(1.3.41 曾漏 zentao.ts 两处);
-- 测试:`skills/report/scripts/__tests__/`,bun test;子进程 runner(plan-runner/commit-runner)用 env `LOCALAPPDATA` 指向临时目录做真隔离;
+- 测试:`skills/report/scripts/__tests__/`,bun test;两类:
+  - **CLI 端到端**(cli-local/cli-net/cli-report + cli-harness 基建):mock 禅道(Bun.serve port 0)+ 子进程真跑 `zentao.ts`(LOCALAPPDATA→tmp + `--cwd`→tmp 双隔离),覆盖全部 23 个命令的成功/die 分支;mock 记录请求供「参数正确/未发请求」断言。collect 的 daemon 可达分支(127.0.0.1:36666 硬编码)与 auto 的 abort 分支无法注入,已注明;
+  - **子进程 runner**(plan-runner/commit-runner):env `LOCALAPPDATA` 指临时目录做真隔离,直接调 cmdPlan/cmdCommit 函数级深测;
 - SKILL.md 的措辞就是 AI 的执行逻辑(如「完整展示工时记录(硬性要求)」),改流程常改 SKILL 而非代码。
