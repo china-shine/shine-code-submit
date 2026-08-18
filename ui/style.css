@@ -917,6 +917,10 @@ ul { list-style: none; margin: 0; padding: 0; }
 .skill-dot { color: #f5a623; font-size: var(--fs-xs); flex: 0 0 auto; }
 .skill-actions { margin-left: auto; display: flex; align-items: center; gap: 0.4rem; padding: 0 0 0 0.6rem; flex: 0 0 auto; }
 
+/* 「修改后的 skills」操作条:tab 行下方独立一行(快照菜单+状态+操作按钮),窄窗口 flex-wrap 换行不互挤 */
+.skill-edit-bar { flex: 0 0 auto; display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+.skill-edit-actions { margin-left: auto; display: flex; align-items: center; gap: 0.4rem; flex: 0 0 auto; }
+
 /* 保存点下拉(Skills「修改后的 skills」自绘菜单,替代原生 select) */
 .snap-menu {
   position: absolute;

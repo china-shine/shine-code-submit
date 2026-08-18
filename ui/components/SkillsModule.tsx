@@ -195,6 +195,13 @@ export function SkillsModule() {
 
   const dirty = content !== loaded;
   const selGroup = edits?.find((g) => g.rel === editSelected) ?? null; // 选中备份的分组(版本列表+stale)
+  const isLatestSnap = selGroup?.versions[0] != null && selGroup.versions[0].version === editVersion && selGroup.versions[0].savedAt === editSavedAt;
+  const editStatusText =
+    diffMode && disk != null && disk.rel === editSelected
+      ? `对比中:左 = 此备份 · 右 = 实时磁盘${selGroup?.stale ? ",有差异(见高亮)" : ",与最新备份一致"}`
+      : isLatestSnap
+        ? (selGroup?.stale ? "已被覆盖(未生效)" : "与磁盘一致")
+        : "历史快照";
 
   const doOpen = async (rel: string) => {
     try {
@@ -574,21 +581,19 @@ export function SkillsModule() {
                   </button>
                 ))}
               </div>
-              {editSelected != null && (
-                <div className="skill-actions">
-                  {editMsg && <span className={editMsg.kind === "ok" ? "field-ok" : "field-err"} style={{ fontSize: "var(--fs-xs)" }}>{editMsg.text}</span>}
-                  {selGroup != null && selGroup.versions.length > 1 && (
-                    <SnapshotMenu
-                      value={editVersion && editSavedAt ? `${editVersion}@${editSavedAt}` : ""}
-                      options={selGroup.versions}
-                      onPick={(v, s) => void openEdit(editSelected, v, s)}
-                    />
-                  )}
-                  <span className="field-hint" style={{ padding: 0 }}>
-                    {selGroup?.versions[0] && selGroup.versions[0].version === editVersion && selGroup.versions[0].savedAt === editSavedAt
-                      ? (selGroup.stale ? "已被覆盖(未生效)" : "与磁盘一致")
-                      : "历史快照"}
-                  </span>
+            </div>
+            {editSelected != null && (
+              <div className="skill-edit-bar">
+                {selGroup != null && selGroup.versions.length > 1 && (
+                  <SnapshotMenu
+                    value={editVersion && editSavedAt ? `${editVersion}@${editSavedAt}` : ""}
+                    options={selGroup.versions}
+                    onPick={(v, s) => void openEdit(editSelected, v, s)}
+                  />
+                )}
+                <span className="field-hint" style={{ padding: 0, whiteSpace: "nowrap" }}>{editStatusText}</span>
+                {editMsg && <span className={editMsg.kind === "ok" ? "field-ok" : "field-err"} style={{ fontSize: "var(--fs-xs)" }}>{editMsg.text}</span>}
+                <div className="skill-edit-actions">
                   <button type="button" className="tool-btn" onClick={() => void toggleDiff()} title="左=此备份,右=执行目录实时内容,差异高亮——升级后搬改动用">
                     {diffMode ? "退出对比" : "⇄ 对比实时"}
                   </button>
@@ -609,8 +614,8 @@ export function SkillsModule() {
                     {restoringEdit ? "恢复中…" : "⬇ 恢复到实时"}
                   </button>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
             {edits == null ? (
               <div className="sum-empty" style={{ flex: 1 }}>加载中…</div>
             ) : edits.length === 0 ? (
@@ -620,14 +625,9 @@ export function SkillsModule() {
             ) : editSelected == null ? (
               <div className="sum-empty" style={{ flex: 1 }}>点击上方文件查看备份内容(只读)。</div>
             ) : diffMode && disk != null && disk.rel === editSelected ? (
-              <>
-                <div className="field-hint" style={{ padding: 0 }}>
-                  对比:左 = 此备份(v{editVersion} · {fmtTime(editSavedAt)}) · 右 = 实时磁盘{selGroup?.stale ? "(有差异,见高亮)" : "(与最新备份一致)"}
-                </div>
-                <div style={{ flex: 1, minHeight: 0, borderRadius: 4, border: "1px solid rgba(127,127,127,0.35)", overflow: "hidden", display: "flex", flexDirection: "column" }}>
-                  <DiffEditor original={editContent} modified={disk.content} />
-                </div>
-              </>
+              <div style={{ flex: 1, minHeight: 0, borderRadius: 4, border: "1px solid rgba(127,127,127,0.35)", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                <DiffEditor original={editContent} modified={disk.content} />
+              </div>
             ) : (
               <div style={{ flex: 1, minHeight: 0, borderRadius: 4, border: "1px solid rgba(127,127,127,0.35)", overflow: "hidden", display: "flex", flexDirection: "column" }}>
                 <CodeEditor value={editContent} onChange={() => {}} readOnly />
