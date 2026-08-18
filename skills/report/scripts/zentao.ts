@@ -542,10 +542,9 @@ function cmdRender(): string {
   }
   const already = items.filter((i: any) => i.status === "already");
   if (already.length) {
-    lines.push("已提交(本次不再提交):");
-    for (const i of already) {
-      lines.push(`[·] ${dateTag(i)}${i.taskName || ""}(任务#${i.task}) ${fmtHours(i.submittedHours)}小时 — 会话 ${i.session}`);
-    }
+    // 已提交条目折叠为一行:提交后 sessions 仍在窗口内,逐条展开会刷屏——元会话聚合的防重
+    // 是逐源会话记录的,提交后摊回 N 行「0.0小时」纯噪音(08-18 用户实测吐槽);分钟水位防重不受影响。
+    lines.push(`已提交(本次不再提交):${already.length} 条会话,防重跳过`);
     lines.push("");
   }
   lines.push("状态:未提交");
