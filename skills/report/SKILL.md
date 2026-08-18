@@ -73,9 +73,10 @@ bun "<Base directory>/scripts/zentao.ts" plan [--source zentao]
    - **work**:`signals` 非空时以 `turns` 逐轮 `conclusion`(Claude 本轮结论汇报)为主料、`commits`/`taskSubjects` 佐证、`prompts` 补意图;`transcript` 非空时据 recentAssistantTexts + prompts + filesChanged;两者皆 null 时退化用 daemonSummary + filesChanged 推断。生成一句话核心成果(动宾,不罗列功能点)
    - **task**:从 candidates 选最匹配(置信度 ≥85 直定;<85 或候选模糊时用 AskUserQuestion 让用户选,≤4 选项,选项含「更新缓存后重新匹配 / 创建新任务 / 选候选 / 跳过」)
    - 调 `note --session <id> --work <生成的work> --task <task>` 写 summary
-3. **合并简化 work(激进归纳)**:每个 resolved 条目,把 work 归纳成一句话核心成果:
-   - 相似/相关功能**合并成一句话**
-   - 目标:日报 **≤3 条**、周报 **≤5 条**;每条一句话核心成果(动宾),不加括号技术细节
+3. **⚠️ 全 resolved 时跳过归纳,直接 render**:auto-note 的 conclusion 本身就是每轮的总结句(质量已达「总结性 work」标准),**plan 返回的 work 是什么样就怎么提交**——不要为「把 work 归纳得更好」重新组织文案,更**严禁为此额外考古**(git log / 读文件 / 查环境:实测一次多花 90s 思考,零收益)。归纳只在用户明确要求「调整文案」时做。仅当 work 明显异常(join 拼接不连贯/流水账多行)时才按下面规则精简。
+
+4. **归纳规则**(仅在 work 异常或用户要求调整时):
+   - 相似/相关功能**合并成一句话**;每条一句话核心成果(动宾),不加括号技术细节
    - **严禁小括号列技术细节**、**严禁逐条罗列(流水账)**,细节留 transcript
 
 高置信度条目不打扰用户;不确定的归属问题在这一步用 AskUserQuestion 问完。

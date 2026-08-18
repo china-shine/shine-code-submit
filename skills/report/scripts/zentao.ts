@@ -306,7 +306,9 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>, source
             hours: hoursFromMinutes(delta),
             confidence: 95,
             reason: "已提交会话的增量补报,沿用原任务",
-            work: newIncNotes.length ? newIncNotes.map((n: any) => n.work).join("\n") : null,
+            // work 取最新一条新 note(不 join 全部):auto-note 的 conclusion 本身是总结句,
+            // join 多条(手动+auto 混排)会拼出不搭的多行、诱发 AI 提交时再归纳(慢);最新结论最概括近期工作。
+            work: newIncNotes.length ? newIncNotes[newIncNotes.length - 1]!.work : null,
           },
           await taskInfo(taskId),
         );
