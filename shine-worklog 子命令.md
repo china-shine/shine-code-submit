@@ -22,14 +22,14 @@
 
 ---
 
-## `/shine-worklog:report` — 填报当天工时
+## `/shine-worklog:report` — 填报工时(今天 + 上次提交以来未提交的)
 
-- **什么时候用**:每天报工
+- **什么时候用**:每天报工;漏报/增量也随时可跑
 - **触发词**:`填报工时`、`上报工时`、`报工`、`提交禅道工时`
 
 **执行逻辑**(顺序锁死):
 1. `check` — 前置验证(失败 → `/setup`)
-2. `collect` — 采集当天会话(纯本地)
+2. `collect` — 采集会话(自上次提交日以来含今天,回看上限 14 天;纯本地)
 3. `plan` — 生成计划(条目 `resolved`/`needs_semantic`/`already`)
 4. **AI 填空**(改 plan.json):
    - `needs_semantic` → 匹配 task(≥85 自定;<85 问用户;选「自动建任务」→ `executions`+`create-task`)

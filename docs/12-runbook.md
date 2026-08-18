@@ -25,12 +25,12 @@
 2. `/api/member/%` 非法编码 500(decodeURIComponent 未捕获);
 3. sessions 列表 LIMIT 500 截断、getSessionLines 2000 条截断(长会话 lines 少算);
 4. 大小写盘符导致 aiLines 查空(罕见 hook 偶发);
-5. worklogs 只增不删;跨午夜未提交会话的 collect 全量快照(已提交会话有跨日期水位防重);
+5. worklogs 只增不删;collect 全量快照范围=自上次提交日以来(≤14 天),防重靠跨日期水位(跨午夜/漏报补报均兼容);
 6. daemon transcript 全量回扫历史会话补 aiAdded(一次性,~10-30s)。
 
 ## 测试资产
 
-- `skills/report/scripts/__tests__/`:123+ 用例(plan 增量/水位/拆段、commit 流水/numberWork、mark 幂等、client REST);
+- `skills/report/scripts/__tests__/`:135 用例(plan 增量/水位/拆段/多天补报、commit 流水/numberWork、mark 幂等、client REST);
 - runner 子进程模式(plan-runner/commit-runner):env LOCALAPPDATA 指临时目录真隔离;
 - tokenserver 功能测试:TOKENSERVER_DATA_DIR 指临时目录 + 造数据断言(store.ts 全链路);**不用 tsc**(基线噪音),验证靠 build:ui + HTTP。
 
