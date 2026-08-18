@@ -301,11 +301,15 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>, source
         const incNotes = notesBySession.get(s.id) || [];
         const submittedMin = rec.minutes ?? 0;
         const newIncNotes = waterNotes(incNotes).filter((n: any) => (Number(n.notedActiveMinutes) || 0) > submittedMin);
-        // 增量 work = 水位后全部新 note 合并(旧→新、dedupLines 去重、≤MAX_INCREMENT_WORK_LINES):
+        // 增量 work = 水位后全部新 note 合并(旧→新、行级 dedupLines 去重、≤MAX_INCREMENT_WORK_LINES):
         // 单取最新会丢增量区间内的关键改动(08-18 实测 4 条 note 只剩最后 1 条,前 3 个功能 commit 全丢)。
         // 早先「join 混排不搭」的顾虑已化解——auto note 自身就是窗口全量总结(见 buildAutoWork),
         // 多行是预期产物,render/numberWork 天然按行编号;无新 note 仍 null 走 AI 归纳。
-        const incLines = dedupLines(newIncNotes.map((n: any) => String(n.work ?? "").trim()).filter(Boolean));
+        // 行级去重(十次踩坑):整串级 dedup 拦不住「两条 note 各含同一行」——commit subject 在相邻
+        // note 窗口重复出现(水位后 turn 无新 commit 时回退取最近的),join 后成回声行。
+        const incLines = dedupLines(
+          newIncNotes.flatMap((n: any) => String(n.work ?? "").split("\n")).map((s: string) => s.trim()).filter(Boolean),
+        );
         const incCapped =
           incLines.length > MAX_INCREMENT_WORK_LINES
             ? [`…(更早 ${incLines.length - MAX_INCREMENT_WORK_LINES} 条略)`, ...incLines.slice(-MAX_INCREMENT_WORK_LINES)]
@@ -377,7 +381,9 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>, source
             ...mainTask,
             hours: totalHours,
             minutes: total, // 防重水位 = 整 session activeMinutes(非 mainTask 的 note 水位,否则下次增量算多)
-            work: segItems.map((it: any) => it.work).filter(Boolean).join("\n") || null,
+            // 行级去重(十次踩坑同因):相邻 note 窗口可能各含同一行(如 commit subject 回退重复),
+            // 整串 join 会产出「与其它条目逐字重复的回声行」(08-18 第七轮 /report 实测)
+            work: dedupLines(segItems.map((it: any) => String(it.work ?? "")).join("\n").split("\n")).join("\n") || null,
             reason: "开发时 summary 记录(多 note 合并,避免拆段工时膨胀)",
             confidence: allUnmatched ? 0 : 100,
           };

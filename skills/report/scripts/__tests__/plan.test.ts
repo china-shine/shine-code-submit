@@ -221,6 +221,21 @@ describe("cmdPlan — 跨午夜", () => {
     expect(items[0].work).toBe("完成多天补报功能收尾\n实现auto-note自动归纳功能并通过全部测试");
   });
 
+  test("增量多条 note 跨条重复行去重(十次踩坑:commit subject 在相邻窗口重复 → 回声行)", async () => {
+    const items = await runPlan({
+      sessions: [{ id: "s17", repo: "r", branch: "main", activeMinutes: 120, start: "09:00", end: "11:00" }],
+      submitted: { "2026-08-06": { s17: { tasks: [100], hours: 1, minutes: 60 } } },
+      summaries: { "2026-08-06": [
+        { session: "s17", work: "已提交旧段", task: 100, notedActiveMinutes: 60 },
+        { session: "s17", work: "做X\nauto-note 代码围栏状态机", task: 100, notedActiveMinutes: 80 },
+        { session: "s17", work: "auto-note 代码围栏状态机\n做Z", task: 100, notedActiveMinutes: 120 },
+      ] },
+      cache: { projects: [{ id: 1, name: "P1" }], tasks: [{ id: 100, name: "T1", project: 1 }], executions: [], taskDetails: {} },
+    });
+    expect(items[0].increment).toBe(true);
+    expect(items[0].work).toBe("做X\nauto-note 代码围栏状态机\n做Z"); // 跨 note 重复行只留一次
+  });
+
   test("新 note 超过 MAX_INCREMENT_WORK_LINES → 保留最新 10 行 + 顶部省略标记", async () => {
     const notes = Array.from({ length: 12 }, (_, i) => ({
       session: "s15", work: `增量W${String(i + 1).padStart(2, "0")}`, task: 100, notedActiveMinutes: 70 + i * 10,
@@ -449,6 +464,21 @@ describe("cmdPlan — 碎 note 膨胀合并", () => {
     expect(items[0].work).toContain("A");
     expect(items[0].work).toContain("C"); // work join 所有 note
     expect(items[0].reason).toContain("合并");
+  });
+
+  test("跨 note 重复行去重(十次踩坑:相邻 note 窗口各含同一 commit subject → 回声行)", async () => {
+    const items = await runPlan({
+      sessions: [{ id: "s16", repo: "r", branch: "main", activeMinutes: 18, start: "09:00", end: "09:18" }],
+      submitted: {},
+      summaries: { "2026-08-06": [
+        { session: "s16", work: "做A", task: 100, notedActiveMinutes: 5 },
+        { session: "s16", work: "auto-note 代码围栏状态机\n做B", task: 100, notedActiveMinutes: 10 },
+        { session: "s16", work: "auto-note 代码围栏状态机", task: 100, notedActiveMinutes: 15 }, // 与上条 note 重复的行
+      ] },
+      cache: { projects: [{ id: 1, name: "P1" }], tasks: [{ id: 100, name: "T1", project: 1 }], executions: [], taskDetails: {} },
+    });
+    expect(items.length).toBe(1);
+    expect(items[0].work).toBe("做A\nauto-note 代码围栏状态机\n做B"); // 重复行只留一次
   });
 
   test("大会话多 note 不膨胀 → 正常拆段(不误合并)", async () => {
