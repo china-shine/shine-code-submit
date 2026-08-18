@@ -934,8 +934,9 @@ const STATUS_RE = /^(已取消|已提交|已渲染|草稿已|工时草稿|好的
 // API 错误残行(turn 中途断线时 transcript 的 conclusion 就是错误文案,不是工作成果)
 const ERROR_RE = /^(api error|error:|connection (lost|reset|refused)|network error|timeout)/i;
 // 草稿标签行(render 草稿的元数据行,被整段回显时会成为 conclusion 候选);
-// 「说明:」是 /report 轮草稿解说叙述的开头(八次踩坑余波:引用残片原文也被截断记下)
-const LABEL_RE = /^(理由|置信度|内容|状态|汇总|说明)[:：]/;
+// 「说明:」是 /report 轮草稿解说叙述的开头;「修法:/根因:/解法:」是修复汇报的叙述开头
+// (九次踩坑:「修法:BOLD_RE = /^…/ 直接拦…」整段被记,还按全角 ；拆成两行残片)
+const LABEL_RE = /^(理由|置信度|内容|状态|汇总|说明|修法|根因|解法)[:：]/;
 // 加粗行首:修复报告的开场标题「**1. auto-note 拦报表状态语** — …」——行级 skip 在 markdown 剥离前做,
 // 原始行以 ** 开头不匹配 \d+[.、]/[-*+]\s(数字/星号列表都要求行首裸字符),剥掉 * 后才现出「1. 」已晚(七次踩坑)
 const BOLD_RE = /^\*\*/;

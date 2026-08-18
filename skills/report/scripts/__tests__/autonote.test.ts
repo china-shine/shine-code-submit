@@ -71,6 +71,8 @@ describe("simplifyConclusion(conclusion → 一句话 work)", () => {
     expect(simplifyConclusion("理由:开发时 summary 记录(多 note 合并,避免拆段工时膨胀)")).toBeNull();
     expect(simplifyConclusion("置信度:100%\n实现草稿标签行过滤,补齐回归用例。")).toBe("实现草稿标签行过滤,补齐回归用例。");
     expect(simplifyConclusion("说明:条目 2 原文中夹了一行正则残片,已在 plan.json 里删掉。")).toBeNull(); // 「说明:」叙述行(八次踩坑余波)
+    expect(simplifyConclusion("修法:BOLD_RE = /^\\*\\*/ 直接拦加粗行首(修复报告的开场标题都是结构性行；全跳过由下次自愈兜底)。")).toBeNull(); // 「修法:」叙述行(九次踩坑)
+    expect(simplifyConclusion("根因:skip() 在 markdown 剥离前执行,原始行拦不到。")).toBeNull();
   });
   test("报表状态语跳过(2026-08-18 五次踩坑:weekly 会话的 auto note 记成「周报已生成完毕…」状态播报)", () => {
     expect(simplifyConclusion("周报已生成完毕，AI 周总结已写入 HTML 底部。")).toBeNull();
