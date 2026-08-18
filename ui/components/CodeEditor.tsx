@@ -37,8 +37,9 @@ monaco.editor.defineTheme("shine-dark", {
   },
 });
 
-/** 受控 Monaco:value 变化仅在外部赋值(切文件/恢复)时重设模型,打字由 onDidChange 回流不构成循环。 */
-export function CodeEditor({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+/** 受控 Monaco:value 变化仅在外部赋值(切文件/恢复)时重设模型,打字由 onDidChange 回流不构成循环。
+ *  readOnly 供备份查看(「修改后的 skills」)——只读下打字被 Monaco 拦截,onDidChange 不触发。 */
+export function CodeEditor({ value, onChange, readOnly }: { value: string; onChange: (v: string) => void; readOnly?: boolean }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
   const onChangeRef = useRef(onChange);
@@ -51,6 +52,7 @@ export function CodeEditor({ value, onChange }: { value: string; onChange: (v: s
       value,
       language: "markdown",
       theme: "shine-dark",
+      readOnly: readOnly ?? false,
       minimap: { enabled: false },
       fontSize: 13,
       lineHeight: 20,

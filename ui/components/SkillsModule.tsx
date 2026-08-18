@@ -32,6 +32,20 @@ interface FileResponse {
   mtimeMs: number;
 }
 
+// 「修改后的 skills」视图:编辑备份(按插件版本留痕)的分组列表与单份内容
+interface EditGroup {
+  rel: string;
+  versions: Array<{ version: string; savedAt: number }>; // savedAt 降序
+  stale: boolean; // 磁盘 ≠ 最新备份(可能被升级覆盖 / 外部手改)
+}
+
+interface EditContent {
+  rel: string;
+  version: string;
+  savedAt: number;
+  content: string;
+}
+
 const SAVE_BTN: React.CSSProperties = {
   background: "#4f8cff",
   color: "#fff",
@@ -45,6 +59,12 @@ const SAVE_BTN: React.CSSProperties = {
 
 function fmtSize(n: number): string {
   return n >= 1024 ? `${(n / 1024).toFixed(1)} KB` : `${n} B`;
+}
+
+function fmtTime(ms: number): string {
+  const d = new Date(ms);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
 export function SkillsModule() {
@@ -63,6 +83,16 @@ export function SkillsModule() {
   const [resetting, setResetting] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
+
+  // 「修改后的 skills」视图(备份浏览/恢复):live = 执行目录实时编辑,edits = 备份只读视图
+  const [view, setView] = useState<"live" | "edits">("live");
+  const [edits, setEdits] = useState<EditGroup[] | null>(null); // null=未加载(进 edits tab 时拉)
+  const [editSelected, setEditSelected] = useState<string | null>(null);
+  const [editVersion, setEditVersion] = useState<string | null>(null);
+  const [editSavedAt, setEditSavedAt] = useState(0);
+  const [editContent, setEditContent] = useState("");
+  const [restoringEdit, setRestoringEdit] = useState(false);
+  const [editMsg, setEditMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
   const reload = useCallback(() => {
     return api<SkillsResponse>("/api/skills")
@@ -84,6 +114,7 @@ export function SkillsModule() {
   }, [data]);
 
   const dirty = content !== loaded;
+  const selGroup = edits?.find((g) => g.rel === editSelected) ?? null; // 选中备份的分组(版本列表+stale)
 
   const open = async (rel: string) => {
     if (selected === rel) return;
@@ -165,28 +196,30 @@ export function SkillsModule() {
     }
   };
 
-  const copy = async () => {
+  const copyText = async (text: string, ok: string, err: string) => {
     // 局域网 IP 访问(非 localhost/非 https)时 navigator.clipboard 不可用 → 回退 textarea+execCommand
     try {
       if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(content);
+        await navigator.clipboard.writeText(text);
       } else {
         const ta = document.createElement("textarea");
-        ta.value = content;
+        ta.value = text;
         ta.style.position = "fixed";
         ta.style.opacity = "0";
         document.body.appendChild(ta);
         ta.select();
-        const ok = document.execCommand("copy");
+        const okc = document.execCommand("copy");
         document.body.removeChild(ta);
-        if (!ok) throw new Error("execCommand copy failed");
+        if (!okc) throw new Error("execCommand copy failed");
       }
-      setMsg({ kind: "ok", text: "已复制——可粘贴回仓库 skills/ 随下版发布" });
+      setMsg({ kind: "ok", text: ok });
       setTimeout(() => setMsg(null), 2500);
     } catch {
-      setMsg({ kind: "err", text: "复制失败,请手动全选复制" });
+      setMsg({ kind: "err", text: err });
     }
   };
+
+  const copy = () => copyText(content, "已复制——可粘贴回仓库 skills/ 随下版发布", "复制失败,请手动全选复制");
 
   const resetNow = async () => {
     if (selected == null) return;
@@ -232,6 +265,71 @@ export function SkillsModule() {
     }
   };
 
+  // ---- 「修改后的 skills」视图:备份列表加载 / 单备份读取 / 恢复到实时 ----
+
+  const loadEdits = useCallback(() => {
+    return api<{ edits: EditGroup[] }>("/api/skills/edits")
+      .then((d) => setEdits(d.edits))
+      .catch(() => setEdits([]));
+  }, [api]);
+
+  useEffect(() => {
+    if (view === "edits") void loadEdits();
+  }, [view, loadEdits]);
+
+  // 默认打开最左侧备份;仅未选中时自动选(版本切换/恢复后的刷新不重置)
+  useEffect(() => {
+    if (view === "edits" && editSelected == null && edits?.length) void openEdit(edits[0]!.rel);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [view, edits]);
+
+  const openEdit = async (rel: string, version?: string) => {
+    setEditMsg(null);
+    try {
+      const q = `rel=${encodeURIComponent(rel)}` + (version ? `&version=${encodeURIComponent(version)}` : "");
+      const c = await api<EditContent>(`/api/skills/edit?${q}`);
+      setEditSelected(rel);
+      setEditVersion(c.version);
+      setEditSavedAt(c.savedAt);
+      setEditContent(c.content);
+    } catch {
+      setEditMsg({ kind: "err", text: "读取备份失败" });
+    }
+  };
+
+  const restoreToLive = async () => {
+    if (editSelected == null || editVersion == null) return;
+    if (!confirm(`把 v${editVersion} 的备份写回执行目录 ${editSelected}?\n当前磁盘内容(可能是升级后的新版)会被覆盖;恢复动作本身也会落一条新备份,可再次「重置」。`)) return;
+    setRestoringEdit(true);
+    setEditMsg(null);
+    try {
+      const res = await fetch(base + "/api/skills/restore", {
+        method: "POST",
+        headers: { Authorization: "Bearer " + token, "content-type": "application/json" },
+        body: JSON.stringify({ path: editSelected, version: editVersion }),
+      });
+      const j = (await res.json().catch(() => ({}))) as { error?: string; restoredFrom?: string };
+      if (!res.ok) throw new Error(j.error ?? String(res.status));
+      await Promise.all([reload(), loadEdits()]);
+      // 切回实时视图直接看到生效内容(open 有同文件短路,这里无条件重载)
+      const f = await api<FileResponse>(`/api/skills/file?path=${encodeURIComponent(editSelected)}`);
+      setSelected(editSelected);
+      setContent(f.content);
+      setLoaded(f.content);
+      setFileMtime(f.mtimeMs);
+      setPreview(false);
+      setView("live");
+      setMsg({ kind: "ok", text: `已把 v${j.restoredFrom ?? editVersion} 的备份写回 ${editSelected},立即生效` });
+      setTimeout(() => setMsg(null), 3500);
+    } catch (e) {
+      setEditMsg({ kind: "err", text: e instanceof Error ? e.message : "恢复失败" });
+    } finally {
+      setRestoringEdit(false);
+    }
+  };
+
+  const copyEdit = () => copyText(editContent, "已复制备份内容", "复制失败,请手动全选复制");
+
   // Ctrl+S / Cmd+S 保存(有未保存修改且非保存中才触发)
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -245,14 +343,18 @@ export function SkillsModule() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selected, dirty, saving, content, fileMtime]);
 
-  const download = () => {
-    if (selected == null) return;
-    const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+  const downloadText = (text: string, rel: string) => {
+    const blob = new Blob([text], { type: "text/plain;charset=utf-8" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
-    a.download = selected.split("/").pop() ?? "skill.md";
+    a.download = rel.split("/").pop() ?? "skill.md";
     a.click();
     URL.revokeObjectURL(a.href);
+  };
+
+  const download = () => {
+    if (selected == null) return;
+    downloadText(content, selected);
   };
 
   if (loadErr) {
@@ -313,6 +415,91 @@ export function SkillsModule() {
       </div>
       <div className="stats-body">
         <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", minHeight: 0, height: "100%" }}>
+          {/* 视图切换:实时(执行目录,可编辑) / 修改后(备份留痕,只读+恢复) */}
+          <div style={{ display: "flex", gap: 2, flex: "0 0 auto", borderBottom: "1px solid var(--border)" }}>
+            <button type="button" className={`tab${view === "live" ? " active" : ""}`} onClick={() => setView("live")}>
+              实时 skills
+            </button>
+            <button type="button" className={`tab${view === "edits" ? " active" : ""}`} onClick={() => setView("edits")}>
+              修改后的 skills{edits?.length ? ` (${edits.length})` : ""}
+            </button>
+          </div>
+
+          {view === "edits" ? (
+          <>
+            <div className="field-hint" style={{ padding: 0 }}>
+              备份 = 每次保存留痕(按插件版本);● = 执行目录与最新备份不一致(可能被升级覆盖)。可查看旧内容、复制片段回「实时 skills」粘贴,或一键「恢复到实时」。
+            </div>
+            <div className="skill-tabs">
+              <div className="skill-tab-scroll">
+                {edits == null ? null : edits.map((g) => (
+                  <button
+                    key={g.rel}
+                    type="button"
+                    className={`tab${editSelected === g.rel ? " active" : ""}`}
+                    onClick={() => void openEdit(g.rel)}
+                    title={`${g.rel} · ${g.versions.length} 份备份(最新 v${g.versions[0]?.version ?? "?"})`}
+                  >
+                    {g.stale && <span className="skill-dot" title="执行目录与最新备份不一致">●</span>}
+                    {g.rel.split("/")[0]}
+                    <span style={{ color: "var(--muted)", fontSize: "var(--fs-xs)" }}>v{g.versions[0]?.version ?? "?"}</span>
+                  </button>
+                ))}
+              </div>
+              {editSelected != null && (
+                <div className="skill-actions">
+                  {editMsg && <span className={editMsg.kind === "ok" ? "field-ok" : "field-err"} style={{ fontSize: "var(--fs-xs)" }}>{editMsg.text}</span>}
+                  {selGroup != null && selGroup.versions.length > 1 && (
+                    <select
+                      value={editVersion ?? ""}
+                      onChange={(e) => void openEdit(editSelected, e.target.value)}
+                      className="field-input"
+                      style={{ padding: "0.15rem 0.4rem", fontSize: "var(--fs-xs)", width: "auto" }}
+                      title="切换备份版本"
+                    >
+                      {selGroup.versions.map((v) => (
+                        <option key={v.version} value={v.version}>v{v.version} · {fmtTime(v.savedAt)}</option>
+                      ))}
+                    </select>
+                  )}
+                  <span className="field-hint" style={{ padding: 0 }}>
+                    v{editVersion ?? "?"} · {fmtTime(editSavedAt)} · {selGroup?.stale ? "已被覆盖(未生效)" : "与磁盘一致"}
+                  </span>
+                  <button type="button" className="tool-btn" onClick={() => void copyEdit()} title="复制备份全文,可切回「实时 skills」粘贴">
+                    复制
+                  </button>
+                  <button type="button" className="tool-btn" onClick={() => editSelected && downloadText(editContent, editSelected)}>
+                    下载
+                  </button>
+                  <button
+                    type="button"
+                    className="tool-btn"
+                    onClick={() => void restoreToLive()}
+                    disabled={restoringEdit}
+                    title="把这份备份写回执行目录(立即生效,当前磁盘内容被覆盖;恢复本身也落新备份)"
+                    style={{ background: "#4f8cff", color: "#fff", borderColor: "#4f8cff" }}
+                  >
+                    {restoringEdit ? "恢复中…" : "⬇ 恢复到实时"}
+                  </button>
+                </div>
+              )}
+            </div>
+            {edits == null ? (
+              <div className="sum-empty" style={{ flex: 1 }}>加载中…</div>
+            ) : edits.length === 0 ? (
+              <div className="sum-empty" style={{ flex: 1 }}>
+                暂无修改记录——在「实时 skills」编辑保存后,这里会出现备份。
+              </div>
+            ) : editSelected == null ? (
+              <div className="sum-empty" style={{ flex: 1 }}>点击上方文件查看备份内容(只读)。</div>
+            ) : (
+              <div style={{ flex: 1, minHeight: 0, borderRadius: 4, border: "1px solid rgba(127,127,127,0.35)", overflow: "hidden", display: "flex", flexDirection: "column" }}>
+                <CodeEditor value={editContent} onChange={() => {}} readOnly />
+              </div>
+            )}
+          </>
+          ) : (
+          <>
           {!!data?.stale.length && (
             <div className="field-hint" style={{ border: "1px solid rgba(255,80,80,0.5)", borderRadius: 4, padding: "0.4rem 0.6rem", display: "flex", flexDirection: "column", gap: "0.35rem" }}>
               <div>
@@ -392,6 +579,8 @@ export function SkillsModule() {
             <div style={{ flex: 1, minHeight: 0, borderRadius: 4, border: "1px solid rgba(127,127,127,0.35)", overflow: "hidden", display: "flex", flexDirection: "column" }}>
               <CodeEditor value={content} onChange={setContent} />
             </div>
+          )}
+          </>
           )}
         </div>
       </div>

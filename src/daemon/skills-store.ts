@@ -215,6 +215,52 @@ export function listEdits(): EditMeta[] {
   return out;
 }
 
+export interface EditGroup {
+  rel: string;
+  versions: Array<{ version: string; savedAt: number }>; // savedAt 降序
+  stale: boolean; // 最新备份 hash ≠ 当前磁盘内容(可能被升级覆盖 / 外部手改)
+}
+
+/** 按 rel 分组全部编辑备份(跨版本,「修改后的 skills」tab 列表);stale 复用 computeStaleEdits。 */
+export function listEditsGrouped(): EditGroup[] {
+  const byRel = new Map<string, EditMeta[]>();
+  for (const e of listEdits()) {
+    const arr = byRel.get(e.rel);
+    if (arr) arr.push(e);
+    else byRel.set(e.rel, [e]);
+  }
+  const staleSet = new Set(computeStaleEdits().map((s) => s.rel));
+  const out: EditGroup[] = [];
+  for (const [rel, all] of byRel) {
+    all.sort((a, b) => b.savedAt - a.savedAt);
+    out.push({
+      rel,
+      versions: all.map((e) => ({ version: e.version, savedAt: e.savedAt })),
+      stale: staleSet.has(rel),
+    });
+  }
+  out.sort((a, b) => a.rel.localeCompare(b.rel));
+  return out;
+}
+
+export interface EditContent {
+  rel: string;
+  version: string;
+  savedAt: number;
+  content: string;
+}
+
+/** 读某 rel 的备份内容:默认最新,指定 version 则取该版本;无备份/损坏/缺 content → null。 */
+export function getEditContent(rel: string, version?: string): EditContent | null {
+  const all = listEdits().filter((e) => e.rel === rel && (!version || e.version === version));
+  if (!all.length) return null;
+  all.sort((a, b) => b.savedAt - a.savedAt);
+  const meta = all[0]!;
+  const blob = readBackup(meta.version, rel);
+  if (!blob || typeof blob.content !== "string") return null;
+  return { rel, version: meta.version, savedAt: meta.savedAt, content: blob.content };
+}
+
 /** rel → 最新一条备份(savedAt 最大)。 */
 export function latestEditByRel(): Map<string, EditMeta> {
   const m = new Map<string, EditMeta>();

@@ -40,7 +40,9 @@ import { readSettings, writeSettings } from "./settings";
 import {
   computeStaleEdits,
   editsDir,
+  getEditContent,
   latestEditByRel,
+  listEditsGrouped,
   listSkillFiles,
   pluginVersion,
   readSkillFile,
@@ -657,6 +659,18 @@ export function startServer(deps: ServerDeps) {
         const rel = typeof body?.path === "string" ? body.path : "";
         const r = resetEdit(rel);
         return r.ok ? json(r) : json({ error: r.error }, 400);
+      }
+      // 「修改后的 skills」tab:分组备份列表(跨版本,带 stale 标记)+ 单备份内容读取(只读视图)
+      if (path === "/api/skills/edits" && req.method === "GET") {
+        return json({ edits: listEditsGrouped() });
+      }
+      if (path === "/api/skills/edit" && req.method === "GET") {
+        const rel = url.searchParams.get("rel") ?? "";
+        const err = validateRelPath(rel);
+        if (err) return json({ error: err }, 400);
+        const c = getEditContent(rel, url.searchParams.get("version") ?? undefined);
+        if (!c) return json({ error: "not found" }, 404);
+        return json(c);
       }
       // 在系统文件管理器打开备份目录(openDirectory 内部 mkdir 兜底)——升级后被覆盖时手动查看/拷贝
       if (path === "/api/skills/open-backup" && req.method === "POST") {
