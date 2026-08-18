@@ -35,7 +35,9 @@ DATA_DIR/
       │                       #   sinceDate=起点、每会话带 date=归属日)
       ├─ summary-<date>.json  # note 记录的 work+task(带 notedActiveMinutes 水位)
       ├─ plan.json            # /report 草稿(draftSeq 同日递增、跨日归零;条目含 date=归属日)
-      └─ submitted.json       # 防重水位:{date:{session:{tasks,hours,minutes,_meta.lastCommit}}}
+      └─ submitted.json       # 防重水位:{date:{session:{tasks,hours,minutes,_meta.lastCommit}}};
+                              #   _meta 按条目归属日分组写——同一次 commit 的各日期 key 盖同一
+                              #   lastCommitAt,amend 据此合并定位「最后一次提交」(多天混合也准)
 ```
 
 ## tokenserver 数据(`tokenserver/data/tokens.db`,生产同构)
