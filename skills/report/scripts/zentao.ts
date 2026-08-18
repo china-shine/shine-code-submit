@@ -928,8 +928,9 @@ export function dedupLines(lines: string[]): string[] {
  *  <10 字(如「好的」)返回 null——无信息量不记。 */
 const LEADIN_RE = /[:：]\s*$|(如下|请核对|请确认|请查收|请查阅)[。!?]?\s*$/;
 // 流程状态语开头(/report 交互轮的 conclusion 常见):描述流程本身而非工作成果;
-// 「周报已生成完毕…」这类报表完成播报同理(2026-08-18 五次踩坑:weekly 会话的 auto note 记成状态汇报句)
-const STATUS_RE = /^(已取消|已提交|已渲染|草稿已|工时草稿|好的[,，]|(周报|日报|报告|报表)已)/;
+// 「周报已生成完毕…」报表完成播报同理(五次踩坑:weekly 会话记成状态汇报句);
+// 「plan 已出:…」是 /report 轮自己的开场结论(六次踩坑:长 skill 会话超 45min 不并入 meta,结论直进 note)
+const STATUS_RE = /^(已取消|已提交|已渲染|草稿已|工时草稿|好的[,，]|(周报|日报|报告|报表)已|plan 已)/;
 // API 错误残行(turn 中途断线时 transcript 的 conclusion 就是错误文案,不是工作成果)
 const ERROR_RE = /^(api error|error:|connection (lost|reset|refused)|network error|timeout)/i;
 // 草稿标签行(render 草稿的元数据行,被整段回显时会成为 conclusion 候选)
@@ -941,7 +942,9 @@ export function simplifyConclusion(text: string): string | null {
     !l || l.length < 10 || /^(#{1,6}\s|>|[-*+]\s|\d+[.、]\s|\[\d+\]\s?|\d{1,2}:\d{2}|```|\|)/.test(l) || LEADIN_RE.test(l) || STATUS_RE.test(l) || ERROR_RE.test(l) || LABEL_RE.test(l);
   const body = lines.find((l) => !skip(l)) ?? "";
   let s = body.replace(/[*`#>]/g, "").replace(/\s+/g, " ").trim();
-  const m = /^(.{2,120}?[。;;.!?])/.exec(s);
+  // 半角 . ! ? ; 仅在词边界(后跟空白/行尾)才算句末——config.json / 1.3.51 / 域名 里的点
+  // 不当句终(六次踩坑同轮:「把真实 config.」「核对完真实数据(plan.」两行残句);全角标点照旧直配。
+  const m = /^(.{2,120}?(?:[。;;]|[.!?;](?=\s|$)))/.exec(s);
   s = m ? m[1]! : s.length > 100 ? s.slice(0, 100) + "…" : s;
   return s.length >= 10 && !LEADIN_RE.test(s) ? s : null;
 }

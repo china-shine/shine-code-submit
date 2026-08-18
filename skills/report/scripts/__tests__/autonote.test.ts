@@ -76,6 +76,19 @@ describe("simplifyConclusion(conclusion → 一句话 work)", () => {
     expect(simplifyConclusion("日报已生成并发送到团队群。")).toBeNull();
     expect(simplifyConclusion("周报已生成完毕，AI 周总结已写入 HTML 底部。\n生成上周工时周报 HTML 并写入 AI 周总结。")).toBe("生成上周工时周报 HTML 并写入 AI 周总结。"); // 跳过播报行取实质句
   });
+  test("plan 状态语跳过(2026-08-18 六次踩坑:/report 轮开场结论「plan 已出：…」被记成 work)", () => {
+    expect(simplifyConclusion("plan 已出：2 条 resolved(1 条填报流程聚合 + 1 条增量补报)，另有 17 条已提交(不进计划)。")).toBeNull();
+    expect(simplifyConclusion("plan 已出：4 条 resolved，无 cooldown。\n扩充 CLI 端到端测试覆盖全部 23 个命令。")).toBe("扩充 CLI 端到端测试覆盖全部 23 个命令。");
+  });
+  test("半角句点不截断标识符(六次踩坑同轮:config.json/plan.json 的点被当句末,产出「把真实 config.」残句)", () => {
+    // 标识符/版本号/域名里的 . 不当句终,取到真正句号为止
+    expect(simplifyConclusion("手动复现命令忘设 LOCALAPPDATA,把真实 config.json 的 url 覆盖错了,已找回原值恢复并验证登录。"))
+      .toBe("手动复现命令忘设 LOCALAPPDATA,把真实 config.json 的 url 覆盖错了,已找回原值恢复并验证登录。");
+    expect(simplifyConclusion("核对完真实数据(plan.json + submitted.json),结论是主流程没有逻辑错误,数字全对。"))
+      .toContain("submitted.json)"); // 不在 plan. 处截断
+    // 半角句点在真句末(后跟空白/行尾)仍终止
+    expect(simplifyConclusion("修复了 collect 的路径解析 bug. 回归全过,细节略")).toBe("修复了 collect 的路径解析 bug.");
+  });
 });
 
 describe("buildAutoWork(水位后新 turns → work)", () => {
