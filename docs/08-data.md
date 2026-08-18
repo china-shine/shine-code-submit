@@ -24,7 +24,7 @@ DATA_DIR/
 │  ├─ <version>/<base64url(rel)>.json
 │  │                         #   {rel,version,savedAt,hash:sha1,content,original};original=首次编辑前
 │  │                         #   的原始内容(初始化基线,后续保存继承不改,供「重置」恢复);升级整目录
-│  │                         #   覆盖后磁盘≠hash → /api/skills 标 stale 提示手动恢复(不自动重放);
+│  │                         #   覆盖后磁盘≠hash → stale(实时视图不展示,「修改后的 skills」视图 ● 标记);
 │  │                         #   跨版本留痕,同 (version,rel) 重复保存覆盖
 │  ├─ <version>/history/<base64url(rel)>.<savedAt>.json
 │  │                         #   ★保存历史:内容有变的旧备份归档(重复保存同内容不刷快照),

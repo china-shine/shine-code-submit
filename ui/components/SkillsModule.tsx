@@ -156,7 +156,6 @@ export function SkillsModule() {
   const [fileMtime, setFileMtime] = useState(0); // 加载时 mtime,保存护栏(409)用
   const [preview, setPreview] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [restoring, setRestoring] = useState<string | null>(null);
   const [resetting, setResetting] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
@@ -269,34 +268,6 @@ export function SkillsModule() {
       setMsg({ kind: "err", text: e instanceof Error ? e.message : "保存失败" });
     } finally {
       setSaving(false);
-    }
-  };
-
-  const restore = async (rel: string) => {
-    setRestoring(rel);
-    setMsg(null);
-    try {
-      const res = await fetch(base + "/api/skills/restore", {
-        method: "POST",
-        headers: { Authorization: "Bearer " + token, "content-type": "application/json" },
-        body: JSON.stringify({ path: rel }),
-      });
-      const j = (await res.json().catch(() => ({}))) as { error?: string; restoredFrom?: string };
-      if (!res.ok) throw new Error(j.error ?? String(res.status));
-      setMsg({ kind: "ok", text: `已从 v${j.restoredFrom ?? "?"} 的备份恢复 ${rel}` });
-      setTimeout(() => setMsg(null), 2500);
-      await reload();
-      if (selected === rel) {
-        // 当前打开的就是被恢复文件:重载内容
-        const f = await api<FileResponse>(`/api/skills/file?path=${encodeURIComponent(rel)}`);
-        setContent(f.content);
-        setLoaded(f.content);
-        setFileMtime(f.mtimeMs);
-      }
-    } catch (e) {
-      setMsg({ kind: "err", text: e instanceof Error ? e.message : "恢复失败" });
-    } finally {
-      setRestoring(null);
     }
   };
 
@@ -636,25 +607,10 @@ export function SkillsModule() {
           </>
           ) : (
           <>
-          {!!data?.stale.length && (
-            <div className="field-hint" style={{ border: "1px solid rgba(255,80,80,0.5)", borderRadius: 4, padding: "0.4rem 0.6rem", display: "flex", flexDirection: "column", gap: "0.35rem" }}>
-              <div>
-                有 {data.stale.length} 个本地编辑与磁盘不一致(可能被升级覆盖 / install --force / 外部修改):
-              </div>
-              {data.stale.map((s) => (
-                <div key={s.rel} style={{ display: "flex", alignItems: "center", gap: "0.6rem" }}>
-                  <span>
-                    {s.rel}(编辑于 v{s.editVersion})
-                  </span>
-                  <button type="button" className="tool-btn" onClick={() => restore(s.rel)} disabled={restoring === s.rel} style={{ padding: "0.15rem 0.7rem" }}>
-                    {restoring === s.rel ? "恢复中…" : "恢复备份"}
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+          {/* 实时视图=纯净编辑器:完全以当前插件版本(磁盘)为准,不做 stale/本地编辑提示——
+              升级覆盖后的旧内容去「修改后的 skills」查看/恢复 */}
 
-          {/* tab 导航:skill 名为 tab(●=有本地编辑,*=未保存),工具按钮行尾;窄窗口 tab 区横向滚动 */}
+          {/* tab 导航:skill 名为 tab(*=未保存),工具按钮行尾;窄窗口 tab 区横向滚动 */}
           <div className="skill-tabs">
             <div className="skill-tab-scroll">
               {data == null ? null : data.files.map((f) => (
@@ -665,7 +621,6 @@ export function SkillsModule() {
                   onClick={() => void open(f.rel)}
                   title={`${f.rel}${f.useCount ? ` · 近7天调用 ${f.useCount} 次` : ""}`}
                 >
-                  {f.edited && <span className="skill-dot">●</span>}
                   {f.rel.split("/")[0]}
                   {selected === f.rel && dirty && <span className="skill-dot">*</span>}
                 </button>
@@ -704,8 +659,7 @@ export function SkillsModule() {
             <div className="sum-empty" style={{ flex: 1 }}>加载中…</div>
           ) : selected == null ? (
             <div className="sum-empty" style={{ flex: 1 }}>
-              点击上方 tab 编辑对应 SKILL.md;保存即生效——Claude Code 下次执行对应命令就读到新内容。
-              发新版会整目录覆盖本地编辑,保存时自动备份、届时此处提示恢复。
+              点击上方 tab 编辑对应 SKILL.md;保存即生效。旧编辑可在「修改后的 skills」里查看与恢复。
             </div>
           ) : preview ? (
             <div className="sum-section" style={{ overflowY: "auto", flex: 1, minHeight: 0 }}>

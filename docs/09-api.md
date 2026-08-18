@@ -28,7 +28,7 @@
 | GET/PUT | /api/zentao-config | 禅道连接(url/account/password) |
 | GET | /api/zentao-cache | 禅道缓存内容 |
 | POST | /api/zentao-cache/refresh | spawn zentao.ts refresh;in-flight 锁;120s 超时 |
-| GET | /api/skills | skills 下的 Markdown 列表(当前生效插件根 skills/:相对路径/大小/mtime/edited/useCount)+ 版本 + sourceMode + `stale`(本地编辑与磁盘不一致,可能被升级覆盖);仅 `.md`,代码文件不开放;**按近 7 天 `shine-worklog:<name>` 使用次数降序**(源=UserPromptSubmit.prompt 文本,高频靠左),同频按字母序 |
+| GET | /api/skills | skills 下的 Markdown 列表(当前生效插件根 skills/:相对路径/大小/mtime/edited/useCount)+ 版本 + sourceMode + `stale`(本地编辑与磁盘不一致,可能被升级覆盖;实时视图不展示,仅「修改后的 skills」视图消费);仅 `.md`,代码文件不开放;**按近 7 天 `shine-worklog:<name>` 使用次数降序**(源=UserPromptSubmit.prompt 文本,高频靠左),同频按字母序 |
 | GET | /api/skills/file | `?path=<rel>`:读单文件内容;路径两道校验(段白名单+前缀防穿越),仅 `.md`,≤1MB |
 | PUT | /api/skills/file | `{path,content,baseMtimeMs?}`:先备份到 `DATA_DIR/skills-edits/` 再原子写——skill 文件命令触发时从磁盘读,**保存即生效**;备份含首次编辑前 `original` 基线(供 reset);baseMtimeMs 护栏(编辑期间被改→409,确认后去掉重发覆盖) |
 | GET | /api/skills/edits | 「修改后的 skills」tab:编辑备份按 rel 分组列表 `{edits:[{rel,versions[{version,savedAt}]降序,stale}]}`(跨版本留痕+history 保存快照,stale=磁盘≠最新备份) |
