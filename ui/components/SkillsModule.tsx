@@ -519,7 +519,7 @@ export function SkillsModule() {
         <h2>Skills</h2>
         {data && (
           <span className="field-hint" style={{ padding: 0 }}>
-            v{data.version} · {data.files.length} 个文件 · {data.root}
+            v{data.version} · {data.files.length} 个文件 · {data.root} · 编辑保存后需重进 Claude Code(新会话)生效
           </span>
         )}
       </div>
@@ -660,7 +660,7 @@ export function SkillsModule() {
             <div className="sum-empty" style={{ flex: 1 }}>加载中…</div>
           ) : selected == null ? (
             <div className="sum-empty" style={{ flex: 1 }}>
-              点击上方 tab 编辑对应 SKILL.md;保存落盘即时,重进 Claude Code(新会话)后生效。旧编辑可在「备份 skills」里查看与恢复。
+              点击上方 tab 编辑对应 SKILL.md;旧编辑可在「备份 skills」里查看与恢复。
             </div>
           ) : preview ? (
             <div className="sum-section" style={{ overflowY: "auto", flex: 1, minHeight: 0 }}>
