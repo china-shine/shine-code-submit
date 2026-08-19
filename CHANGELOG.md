@@ -2,6 +2,15 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.4.2 — 2026-08-19
+
+Skills 模块「编辑后何时生效」说明的口径修正:经用户实测 + 官方文档查证,统一为 `/reload-skills`。
+
+### 变更(ui/docs)
+- **背景**:1.4.0 宣称「保存即生效」过强——用户在另一台机器实测,dashboard 改完 SKILL.md,已开会话里 `/report` 仍跑旧内容。本机双实验进一步证实:改 Base directory 目录、改当前生效目录,调用注入的都是会话启动时的旧内容——**skill 指令内容是会话启动时的内存快照,调用时不查磁盘**(同 skill 二次调用直接跳过)。
+- **官方依据**([code.claude.com/docs/en/skills](https://code.claude.com/docs/en/skills)「Live change detection」):热重载仅 watch `~/.claude/skills/`、项目 `.claude/skills/`、`--add-dir` 三处,插件 cache 目录不在范围——非 bug 是设计。
+- **统一口径**:已开会话跑 `/reload-skills` 重载(或重进会话)生效;skill 的 scripts(zentao.ts)每次从磁盘执行、即时生效。涉及:Skills 顶部信息行(与版本/文件数/目录同行,hover 放官方依据详情)、保存/恢复提示、按钮 title、README、docs/06。
+
 ## 1.4.1 — 2026-08-19
 
 Skills 模块两处收口:快照下拉日期换行根治 + 「修改后的 skills」更名「备份 skills」。
