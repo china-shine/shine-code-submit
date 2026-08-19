@@ -518,8 +518,12 @@ export function SkillsModule() {
       <div className="panel-header">
         <h2>Skills</h2>
         {data && (
-          <span className="field-hint" style={{ padding: 0 }}>
-            v{data.version} · {data.files.length} 个文件 · {data.root} · 编辑保存后需重进 Claude Code(新会话)生效
+          <span
+            className="field-hint"
+            style={{ padding: 0 }}
+            title="插件 skills 不在 Claude Code 热重载范围内(官方仅 watch ~/.claude/skills、项目 .claude/skills 与 --add-dir 三处),SKILL.md 改动需重进 Claude Code 生效;skill 的 scripts 每次从磁盘执行、即时生效"
+          >
+            v{data.version} · {data.files.length} 个文件 · {data.root} · 编辑 SKILL.md 后需重进 Claude Code 生效(插件 skills 不热重载)
           </span>
         )}
       </div>
