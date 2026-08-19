@@ -2,6 +2,17 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.4.0 — 2026-08-19
+
+dashboard 新增 Skills 编辑模块:直接在查看页编辑当前生效插件根 skills/ 下的 Markdown(SKILL.md 即 AI 的执行逻辑),**保存即生效、无需重装插件**;带备份、保存历史快照、恢复与重置。
+
+### 变更(daemon/ui)
+- **Skills 编辑模块**:侧边栏新增「Skills」——Monaco 编辑器(markdown 专用、细粒度导入无 worker)编辑 skills/*.md,仅放行 Markdown(`.ts` 代码不在 dashboard 动)、路径段白名单防穿越、单文件 ≤1MB;保存先备份(`DATA_DIR/skills-edits/<version>/`,含首次编辑前 original 基线)再 tmp+rename 原子写,skill 命令触发时从磁盘读,保存即生效;Ctrl+S 保存、预览 / 复制 / 下载;文件列表按近 7 天使用次数降序,高频 skill 靠左。
+- **「实时 / 修改后的」双 tab**:后者列本地编辑备份(跨版本留痕)+ 可读 md 镜像(`skills-edits/<version>/md/`,磁盘直接查看);一键恢复写回磁盘并落新备份。
+- **保存历史快照 + DiffEditor 对比**:内容有变的旧备份归档 `history/`,每 (version,rel) 留最近 20 份(savedAt 编码进文件名免读全文);保存点下拉(自绘 SnapshotMenu)可选任意一次保存点读取 / 恢复;DiffEditor 与实时文件对比看改了什么。
+- **升级覆盖 stale 处理**:autoUpdate 升级 = 新目录整拷覆盖(不保留用户改动),磁盘 ≠ 备份 hash 时标 stale——实时视图不展示、修改后视图 ● 标记,提示手动恢复;不自动重放,避免静默覆盖新版改过的同名文件。「重置」只认当前版本基线,守住「不修改 = 与版本一致」不变量。
+- **UI 打磨**:确认弹窗全量统一为通用 React 模态;CodeEditor 响应 readOnly 变化(双 tab 切换后实时视图不再卡只读);快照下拉弹层宽度对齐触发按钮。
+
 ## 1.3.55 — 2026-08-18
 
 修复 AI 代码占比被大幅低估的问题:在子目录里开的会话,AI 编辑的代码此前全部没被计入(实测单日低估约 40 个百分点,如 41.7% → 实际 82.1%);现在只要编辑的文件属于本项目,无论会话在哪个目录下都会统计进去。
