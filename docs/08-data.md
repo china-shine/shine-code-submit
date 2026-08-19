@@ -10,7 +10,7 @@
 DATA_DIR/
 ├─ daemon.pid                 # {pid, port, token, startedAt}:进程标识 + Bearer 鉴权
 ├─ daemon.token               # 持久 token(重启/升级复用,dashboard 链接不失效)
-├─ settings.json              # 行为开关:reportUrl/reportIntervalMin/autoUpdate/
+├─ settings.json              # 行为开关:reportUrl/reportSecret/reportIntervalMin/autoUpdate/
 │                             #   zentaoCacheTtlMin/aiSubmitMark/autoNote(Stop 自动归纳,默认开,false 关)等(与 config.json 分离)
 ├─ db/events.sqlite           # daemon 主库:hook 事件(7 天滚动修剪)+ transcript 会话统计(见 05-daemon)
 ├─ log/daemon.log             # 运行日志(5MB 轮换)

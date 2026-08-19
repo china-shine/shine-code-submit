@@ -168,7 +168,7 @@ export function TopBar({
         {/* 数据说明:新开 /docs(由 scripts/build-docs.ts 从 数据说明.md 渲染,主题同本站) */}
         <button
           type="button"
-          onClick={() => window.open("/docs", "_blank")}
+          onClick={() => window.open("/docs" + location.search, "_blank")}
           title="打开数据说明文档(新标签页)"
           className="flex items-center gap-1.5 px-3 py-1.5 rounded-sm border border-border text-xs text-muted-foreground hover:bg-muted transition-colors"
         >

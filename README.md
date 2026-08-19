@@ -307,7 +307,7 @@ daemon.token        持久化 token（daemon 重启/自动升级复用同一 tok
 spool/*.json        待消费事件（每事件一文件，原子写）
 log/daemon.log      日志（按大小轮转）
 db/events.sqlite    事件库（`events` 幂等去重）+ transcript 中枢（`transcript_files`/`transcript_sessions`），按 cwd 隔离
-settings.json       上报与更新配置（reportUrl/reportIntervalMin/autoUpdate/水位 lastReportAt+lastFullReportAt/禅道缓存 TTL zentaoCacheTtlMin/AI 提交标识 aiSubmitMark/daemon 升级检测 lastDaemonVersion）
+settings.json       上报与更新配置（reportUrl/reportSecret/reportIntervalMin/autoUpdate/水位 lastReportAt+lastFullReportAt/禅道缓存 TTL zentaoCacheTtlMin/AI 提交标识 aiSubmitMark/daemon 升级检测 lastDaemonVersion）
 zenpilot/           禅道工时填报数据（原 ~/.zenpilot/，1.3.0 统一进此；skill 短期工作区，长期台账在 tokenserver worklogs 表）
   config.json         禅道连接（url/account/password/projectIds，明文密码 chmod 600）
   mappings.json       仓库→项目映射（repoToProject 仓库名→禅道项目ID / branchToTask / projectNames；/report commit 时自动学习）
@@ -322,7 +322,9 @@ zenpilot/           禅道工时填报数据（原 ~/.zenpilot/，1.3.0 统一�
 
 ## 报表上报
 
-daemon 默认每 10 分钟（`reportIntervalMin`）或手动（Dashboard「上报」按钮）把会话/token 聚合报表 POST 到 `reportUrl`（默认 `http://47.98.221.20:36667/api/report`，可在「设置」页改）。接收端 [`tokenserver/`](./tokenserver/README.md) 按 **用户 → 项目 → token** 三级展示。
+daemon 默认每 10 分钟（`reportIntervalMin`）或手动（Dashboard「上报」按钮）把会话/token 聚合报表 POST 到 `reportUrl`（**默认空、装完不自动上报**——公开 npm 用户不应默认把数据报到他人服务器；团队内部在「设置」页配地址 + 密钥）。接收端 [`tokenserver/`](./tokenserver/README.md) 按 **用户 → 项目 → token** 三级展示。
+
+**上报鉴权（HMAC）**：daemon 设置页可配 `reportSecret`（与 tokenserver 的 `reportSecret` 一致），配了则上报对实际发送的 gzip 字节签名（`x-report-ts` + `x-report-sig`），服务端先验签再解压；密钥不一致 401、daemon 不推水位不丢数据，配对后自动续传。tokenserver 侧另配 `viewToken` 保护读接口（GET 带 `?t=<viewToken>`，看板链接同款）。详见 tokenserver/README「鉴权」。
 
 **上报身份 = `git config user.name`**：采集不到（机器未配 `user.name`，如部分 CI/容器/新机）时**跳过本次上报**，不再以「未知用户」上传；手动上报按钮会提示「已跳过：未采集到 git user.name,跳过上报(无上报身份)」。配置 `git config --global user.name <名字>` 后即恢复上报。
 

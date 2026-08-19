@@ -7,6 +7,7 @@ import { useApp } from "../state/AppContext";
 
 interface Settings {
   reportUrl?: string | null;
+  reportSecret?: string | null;
   reportIntervalMin?: number | null;
   autoUpdate?: boolean | null;
   autoUpdateIntervalMin?: number | null;
@@ -38,6 +39,7 @@ export function SettingsModule() {
   const api = useApi(token);
   const base = location.origin;
   const [url, setUrl] = useState("");
+  const [secret, setSecret] = useState("");
   const [intervalStr, setIntervalStr] = useState("");
   const [autoUpdate, setAutoUpdate] = useState(true);
   const [updateIntervalStr, setUpdateIntervalStr] = useState("");
@@ -63,6 +65,7 @@ export function SettingsModule() {
     ])
       .then(([s, h, z]) => {
         setUrl(s.reportUrl ?? "");
+        setSecret(s.reportSecret ?? "");
         setIntervalStr(s.reportIntervalMin != null ? String(s.reportIntervalMin) : "");
         setAutoUpdate(s.autoUpdate !== false);
         setUpdateIntervalStr(s.autoUpdateIntervalMin != null ? String(s.autoUpdateIntervalMin) : "");
@@ -91,6 +94,7 @@ export function SettingsModule() {
     const ctv = parseInt(cacheTtlStr, 10);
     const body = {
       reportUrl: url.trim() || null,
+      reportSecret: secret.trim() || null,
       reportIntervalMin: Number.isFinite(iv) && iv > 0 ? iv : null,
       autoUpdate,
       autoUpdateIntervalMin: Number.isFinite(uiv) && uiv > 0 ? uiv : null,
@@ -106,6 +110,7 @@ export function SettingsModule() {
       if (!res.ok) throw new Error(String(res.status));
       const s = (await res.json()) as Settings;
       setUrl(s.reportUrl ?? "");
+      setSecret(s.reportSecret ?? "");
       setIntervalStr(s.reportIntervalMin != null ? String(s.reportIntervalMin) : "");
       setAutoUpdate(s.autoUpdate !== false);
       setUpdateIntervalStr(s.autoUpdateIntervalMin != null ? String(s.autoUpdateIntervalMin) : "");
@@ -172,6 +177,18 @@ export function SettingsModule() {
                 />
               </div>
               <div className="field-row">
+                <label>上报密钥</label>
+                <input
+                  className="field-input"
+                  type="password"
+                  placeholder="与 tokenserver 的 reportSecret 一致;服务端未验签则留空"
+                  value={secret}
+                  onChange={(e) => setSecret(e.target.value)}
+                  spellCheck={false}
+                  autoComplete="new-password"
+                />
+              </div>
+              <div className="field-row">
                 <label>上报间隔</label>
                 <input
                   className="field-input"
@@ -189,6 +206,7 @@ export function SettingsModule() {
               </div>
               <div className="field-hint">
                 daemon 每分钟检查一次:地址 + 间隔都配了,就把「报表」数据 POST 到该地址;留空 / 间隔 0 = 不上报。改完无需重启。
+                配了密钥则上报带 HMAC 签名(服务端开了验签时必填,密钥不一致会被拒且不推进水位、不丢数据)。
               </div>
             </section>
 

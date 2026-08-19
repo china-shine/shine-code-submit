@@ -24,7 +24,7 @@
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET/PUT | /api/settings | settings.json(reportUrl/reportIntervalMin/zentaoCacheTtlMin/autoUpdate/aiSubmitMark...) |
+| GET/PUT | /api/settings | settings.json(reportUrl/reportSecret/reportIntervalMin/zentaoCacheTtlMin/autoUpdate/aiSubmitMark...) |
 | GET/PUT | /api/zentao-config | 禅道连接(url/account/password) |
 | GET | /api/zentao-cache | 禅道缓存内容 |
 | POST | /api/zentao-cache/refresh | spawn zentao.ts refresh;in-flight 锁;120s 超时 |

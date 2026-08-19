@@ -357,14 +357,24 @@ interface GitChangeRow {
 }
 
 /** 读配置(DATA_DIR/config.json,用户手编辑):aiStatsHosts = AI 占比只统计的仓库 host 白名单(空/缺=不过滤=全部)。*/
-function readConfig(): { aiStatsHosts?: string[] } {
+function readConfig(): { aiStatsHosts?: string[]; reportSecret?: string; viewToken?: string } {
   try {
     const f = join(DATA_DIR, "config.json");
     if (!existsSync(f)) return {};
-    return JSON.parse(readFileSync(f, "utf8")) as { aiStatsHosts?: string[] };
+    return JSON.parse(readFileSync(f, "utf8")) as { aiStatsHosts?: string[]; reportSecret?: string; viewToken?: string };
   } catch {
     return {};
   }
+}
+
+/** 鉴权配置:reportSecret = POST /api/report 的 HMAC 密钥;viewToken = 读接口/UI 访问令牌。
+ *  env(TOKENSERVER_REPORT_SECRET / TOKENSERVER_VIEW_TOKEN)优先于 config.json;都空 = 该项未启用。
+ *  每次请求重读(与 readConfig 同口径),改 config 即时生效、无需重启。 */
+export function readAuthConfig(): { reportSecret: string | null; viewToken: string | null } {
+  const cfg = readConfig();
+  const rs = (process.env.TOKENSERVER_REPORT_SECRET ?? cfg.reportSecret ?? "").trim();
+  const vt = (process.env.TOKENSERVER_VIEW_TOKEN ?? cfg.viewToken ?? "").trim();
+  return { reportSecret: rs || null, viewToken: vt || null };
 }
 
 /** 从 git remote URL 提取 host(AI 占比 host 白名单等值比较用):

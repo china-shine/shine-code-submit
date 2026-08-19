@@ -3,6 +3,16 @@ import type { StatsPayload, SessionsPage, MemberDetail, WorklogPage } from "../t
 // 趋势图固定按日聚合（日/周/月切换已移除），URL 始终带 granularity=day。
 const GRANULARITY = "day";
 
+// 访问令牌：服务端配了 viewToken 时 API 需带 ?t=（看板链接 /?t=<令牌> 透传；未配置则空，服务端不校验）。
+const TOKEN = new URLSearchParams(location.search).get("t") ?? "";
+
+export async function apiGet(path: string, p: URLSearchParams): Promise<Response> {
+  if (TOKEN) p.set("t", TOKEN);
+  const r = await fetch(`${path}?${p}`);
+  if (r.status === 401) throw new Error("HTTP 401：缺少访问 token，请用带 ?t=<令牌> 的链接打开");
+  return r;
+}
+
 export async function fetchStats(opts: {
   startDate: string;
   endDate: string;
@@ -10,7 +20,7 @@ export async function fetchStats(opts: {
 }): Promise<StatsPayload> {
   const p = new URLSearchParams({ start: opts.startDate, end: opts.endDate, granularity: GRANULARITY });
   if (opts.members.length) p.set("members", opts.members.join(","));
-  const r = await fetch(`/api/stats?${p}`);
+  const r = await apiGet("/api/stats", p);
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
@@ -31,7 +41,7 @@ export async function fetchSessions(opts: {
   });
   if (opts.members.length) p.set("members", opts.members.join(","));
   if (opts.member) p.set("member", opts.member);
-  const r = await fetch(`/api/sessions?${p}`);
+  const r = await apiGet("/api/sessions", p);
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
@@ -41,7 +51,7 @@ export async function fetchMember(
   opts: { startDate: string; endDate: string },
 ): Promise<MemberDetail> {
   const p = new URLSearchParams({ start: opts.startDate, end: opts.endDate, granularity: GRANULARITY });
-  const r = await fetch(`/api/member/${encodeURIComponent(gitUser)}?${p}`);
+  const r = await apiGet(`/api/member/${encodeURIComponent(gitUser)}`, p);
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }
@@ -56,7 +66,7 @@ export async function fetchMemberWorklogs(
     page: String(opts.page),
     pageSize: String(opts.pageSize),
   });
-  const r = await fetch(`/api/member/${encodeURIComponent(gitUser)}/worklog?${p}`);
+  const r = await apiGet(`/api/member/${encodeURIComponent(gitUser)}/worklog`, p);
   if (!r.ok) throw new Error(`HTTP ${r.status}`);
   return r.json();
 }

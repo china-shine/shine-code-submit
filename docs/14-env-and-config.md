@@ -22,6 +22,7 @@
 |---|---|
 | `LOCALAPPDATA` | DATA_DIR 根(测试 runner 指向临时目录做隔离) |
 | `TOKENSERVER_DATA_DIR` | tokenserver 数据目录(测试指向临时目录,不污染生产库) |
+| `TOKENSERVER_REPORT_SECRET` / `TOKENSERVER_VIEW_TOKEN` | tokenserver 鉴权(优先于 config.json 同名字段;见 docs/07「鉴权」) |
 | `PORT` | tokenserver 端口(默认 36667) |
 
 ## 配置文件
@@ -36,7 +37,8 @@
 
 | 字段 | 默认 | 说明 |
 |---|---|---|
-| reportUrl | 公网 tokenserver 地址 | 上报目标(⚠️ 默认即上报,见安全待办) |
+| reportUrl | 空 | 上报目标地址(默认空=不上报;团队内部装完在设置页配,见 docs/07「鉴权」) |
+| reportSecret | 空 | 上报 HMAC 密钥,与 tokenserver 的 reportSecret 一致(服务端开验签时必填,不一致恒 401 且不推水位) |
 | reportIntervalMin | 10 | 上报间隔 |
 | autoUpdate / autoUpdateIntervalMin | true / 60 | 自动升级 |
 | zentaoCacheTtlMin | 300 | 禅道缓存 TTL(本机常配 30) |

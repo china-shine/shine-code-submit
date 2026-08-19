@@ -4,6 +4,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Modal } from "./Modal";
 import { fmtFull, fmtPct, displayProjectName } from "../../lib/derive";
+import { apiGet } from "../../lib/api";
 import { Database, Bot, FolderGit2 } from "lucide-react";
 
 interface Breakdown {
@@ -52,7 +53,7 @@ function BreakdownBody({ startDate, endDate, members, member }: { startDate: str
     if (member) params.set("member", member);
     else if (members && members.length > 0) params.set("members", members.join(","));
     setData(null);
-    fetch(`/api/denominator-breakdown?${params.toString()}`)
+    apiGet("/api/denominator-breakdown", params)
       .then((r) => r.json())
       .then((d: Breakdown) => setData(d))
       .catch(() => setData(null));

@@ -7,7 +7,8 @@ import { join } from "node:path";
 const SETTINGS_FILE = join(DATA_DIR, "settings.json");
 
 export interface Settings {
-  reportUrl?: string | null; // 上报到服务器的地址(空/缺省=未配置)
+  reportUrl?: string | null; // 上报到服务器的地址(空/缺省=未配置)。默认空:公开 npm 用户不应默认把数据报到别人服务器,团队内部装完在设置页配置
+  reportSecret?: string | null; // 上报 HMAC 密钥(与 tokenserver 的 reportSecret 配对);配了对上报 body 签名,服务端开了验签时必填,否则恒 401
   reportIntervalMin?: number | null; // 自动上报间隔(分钟);>0 启用,空/0=不自动上报
   autoUpdate?: boolean | null; // 自动更新开关;true=启动时+定时查 npm 升级(默认开)
   autoUpdateIntervalMin?: number | null; // 自动更新检测间隔(分钟);默认 60
@@ -19,9 +20,10 @@ export interface Settings {
   aiSubmitMark?: { enabled: boolean; text: string | null } | null; // AI 提交标识(开关+文案):提交禅道工时拼到 work 末尾,/daily /weekly 据此对账统计 AI 代报
 }
 
-/** 默认设置:上报到 tokenserver 公网地址,每 10 分钟一次。 */
+/** 默认设置:不上报(reportUrl 空,团队内部部署再配地址+密钥),自动更新默认开。 */
 const DEFAULTS: Settings = {
-  reportUrl: "http://47.98.221.20:36667/api/report",
+  reportUrl: null,
+  reportSecret: null,
   reportIntervalMin: 10,
   autoUpdate: true,
   autoUpdateIntervalMin: 60,

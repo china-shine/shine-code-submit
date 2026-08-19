@@ -118,17 +118,24 @@ sudo systemctl enable --now tokenserver
 |---|---|---|
 | `PORT` | 36667 | 监听端口 |
 | `TOKENSERVER_DATA_DIR` | 二进制旁 `data/` | sqlite db 目录；二进制目录只读时指向可写路径 |
+| `TOKENSERVER_REPORT_SECRET` | — | POST /api/report 的 HMAC 验签密钥（优先于 config.json 的 reportSecret） |
+| `TOKENSERVER_VIEW_TOKEN` | — | GET /api/* 的访问令牌（优先于 config.json 的 viewToken） |
 
 **运行配置**（`TOKENSERVER_DATA_DIR/config.json`，手编辑）：`aiStatsHosts`（string[]，如 `["8.130.168.121"]`）——AI 占比只统计 `gitRemote` 命中指定 host 的 commit（公司 git 仓库），排除 localhost/个人/无 remote；空或未配 = 不过滤。改后重启生效。
 
+**鉴权**（同文件 `reportSecret` / `viewToken` 两字段，或上表 env；每次请求重读，改后即时生效）：
+
+- `reportSecret`：配了后 POST /api/report 必须带 HMAC 签名（daemon 侧 settings.json 配同名 `reportSecret` 即自动签名）。未配则放行不验签（迁移期兼容），公网部署必须配。
+- `viewToken`：配了后 GET /api/*（health 除外）必须带 `?t=<viewToken>` 或 `Authorization: Bearer`；看板链接形如 `/?t=<viewToken>`（UI 自动透传）。未配则读接口开放。
+
 ## 配 daemon 上报
 
-daemon **默认**已上报到 `http://47.98.221.20:36667/api/report`，间隔 10 分钟（见 `src/daemon/settings.ts` 的 `DEFAULTS`）。如需改地址，在 dashboard「设置」页改 `reportUrl`，或：
+daemon **默认不上报**（`reportUrl` 默认空）。团队内部部署时在 dashboard「设置」页配「上报地址 + 上报密钥」（密钥与本服务 `reportSecret` 一致），或：
 
 ```bash
 curl -X PUT http://127.0.0.1:36666/api/settings \
   -H "Authorization: Bearer <daemon-token>" \
-  -d '{"reportUrl":"http://服务器IP:36667/api/report"}'
+  -d '{"reportUrl":"http://服务器IP:36667/api/report","reportSecret":"<与 reportSecret 一致>"}'
 ```
 
 之后 daemon 每 `reportIntervalMin` 分钟（默认 10）自动上报，也可手动点 dashboard「上报」按钮触发。
@@ -144,7 +151,7 @@ curl -X PUT http://127.0.0.1:36666/api/settings \
 - `GET /api/member/:gitUser/worklog?start=&end=&page=&pageSize=` — 单成员禅道工时台账（日期字符串比较分页）
 - `GET /` — 单页 UI（app.js/style.css 走 gzip + ETag）
 
-> ⚠️ `POST /api/report` 当前无鉴权，局域网/本地用没问题；公网暴露前建议加 token 校验。
+> 🔒 **鉴权**：`reportSecret` 配置后 `POST /api/report` 必须带 HMAC 签名（daemon 配对 `reportSecret` 自动签，密钥不一致 401、daemon 不推水位不丢数据）；`viewToken` 配置后所有 GET 接口（health 除外）要 `?t=` 或 Bearer。两者都未配 = 不鉴权（仅限可信内网），公网部署见「运行配置」。
 
 ## 数据模型
 

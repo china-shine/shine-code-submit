@@ -38,6 +38,11 @@ cd tokenserver && bun run scripts/build.ts
 
 ⚠️ **部署时序铁律(2026-08-17)**:daemon 侧 events 表已改 7 天滚动修剪,超窗老会话行数上报 **NULL**——**旧二进制会把 NULL 洗成 0**,全量校准时清零平台 `sessions` 行数历史。**必须先部署含 COALESCE 的新二进制**(`sessions` upsert 行数三列 `COALESCE(excluded.x, sessions.x)`,接收侧 `l?.added ?? null` 透传),再恢复 daemon 对本服务的自动上报。git_changes 的 aiAdded 用 MAX 天然防降级,不受此约束。
 
-## ⚠️ 已知安全待办(见记忆 tokenserver-auth-todo)
+## 鉴权(2026-08-19 落地,原「全接口无鉴权」待办关闭)
 
-全接口无鉴权绑 0.0.0.0(局域网可 GET 数据、可伪造 POST 覆盖);daemon 默认公网 10min 自动上报。修复方向:共享 token / 限源 / reportUrl 默认空。**接手者优先评估此项**。
+接收端两级鉴权,配置在 `TOKENSERVER_DATA_DIR/config.json`(字段)或 env(优先),**每次请求重读、改后即时生效无需重启**:
+
+- **POST /api/report → HMAC 验签**:`reportSecret`(env `TOKENSERVER_REPORT_SECRET`)。daemon 对实际发送的 gzip 字节签名(`x-report-ts` + `x-report-sig` = HMAC-SHA256(密钥, ts||原始字节)),服务端**先验签再 gunzip/解析**(垃圾请求在解压前被挡)。ts 窗口 ±15min:容忍成员机与服务端时钟偏移;窗口内重放因 upsert 幂等(lastActive 旧值不覆盖)无害,不加 nonce。未配密钥放行(迁移期兼容不带签名的老 daemon),启动日志 + 首条上报打警告——**公网部署必须配**。
+- **GET /api/* → viewToken**(env `TOKENSERVER_VIEW_TOKEN`):配了后除 `/api/health` 外全部读接口要 `?t=<viewToken>` 或 `Authorization: Bearer <viewToken>`;看板链接形如 `/?t=<viewToken>`(UI 从 URL 透传到所有 API 请求,401 时提示用带 token 的链接打开)。静态页(`/`、`/ui/*`、`/docs`)开放。
+- **daemon 侧对应**:settings.json 的 `reportSecret`(dashboard 设置页可配)。密钥不一致 → 401,daemon 返回 skipped 且**不推水位不丢数据**,配对后自动续传。
+- **默认 reportUrl 已改空**:公开 npm 用户装完不再默认报到他人服务器,团队内部装完在设置页配地址+密钥。

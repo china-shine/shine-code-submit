@@ -6,8 +6,8 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { gzipSync, gunzipSync } from "node:zlib";
-import { createHash } from "node:crypto";
-import { saveReport, getStats, getSessions, getMember, getMemberWorklogs, getDenominatorBreakdown, type Granularity } from "./store";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
+import { saveReport, getStats, getSessions, getMember, getMemberWorklogs, getDenominatorBreakdown, readAuthConfig, type Granularity } from "./store";
 import type { ReportResponse } from "./types";
 import { APP_JS, DOCS_MD, INDEX_HTML, STYLE_CSS } from "./ui-assets";
 import { Marked } from "marked";
@@ -83,7 +83,7 @@ ${DOCS_CSS}
 <header class="topbar">
   <h1>数据说明</h1>
   <span class="sub">各项数据的含义与计算口径</span>
-  <a class="back" href="/">返回看板</a>
+  <a class="back" href="/" onclick="this.href='/?'+location.search">返回看板</a>
 </header>
 <article>${body}</article>
 </body>
@@ -162,6 +162,26 @@ function parseDateRange(startStr: string | null, endStr: string | null): { from:
   return { from, to };
 }
 
+// ---------- 鉴权 ----------
+// POST /api/report:HMAC-SHA256(密钥, ts || 原始请求字节)。对 gzip 后的字节签名(=链路上实际传输的字节),
+// 服务端先验签、再解压/解析——垃圾请求在 gunzip 前就被挡掉,且与客户端签名对象严格一致(签未压缩 JSON 而发
+// gzip 字节会永远验不过)。ts 恒 13 位毫秒(2286 年前 update 链无拼接歧义)。
+// 窗口 ±15min:容忍成员机(笔记本)与服务端时钟偏移;窗口内重放因 upsert 幂等(lastActive 旧值不覆盖)无害,不加 nonce。
+const REPORT_TS_WINDOW_MS = 15 * 60_000;
+
+function verifyReportSig(secret: string, tsHeader: string | null, sigHeader: string | null, body: Buffer): boolean {
+  const ts = tsHeader ?? "";
+  if (!/^\d{13}$/.test(ts)) return false; // 格式门:先挡垃圾输入
+  if (Math.abs(Date.now() - Number(ts)) > REPORT_TS_WINDOW_MS) return false;
+  const expect = createHmac("sha256", secret).update(ts).update(body).digest();
+  const got = Buffer.from(sigHeader ?? "", "hex"); // 非法 hex 静默截断,由长度检查兜住
+  if (got.length !== expect.length) return false; // timingSafeEqual 长度不等会 throw,先比长度(长度非秘密)
+  return timingSafeEqual(got, expect);
+}
+
+// 未配 reportSecret 的放行警告只打一次:迁移期兼容老 daemon(不带签名),但不刷屏。
+let warnedNoSecret = false;
+
 // 静态资源 gzip 压缩传输:app.js 647KB / style.css 402KB,不开 gzip 浏览器全程裸传 ~1MB。
 // 生产(inline)内容随二进制固定 → gzip + ETag memoize;开发(读文件)实时 gzip(文件常变不缓存)。
 // 缓存:开发 no-store(改文件即刷);生产 no-cache + ETag(每次条件请求,内容没变 304 无 body、变了自动拿新)。
@@ -220,13 +240,37 @@ export function startServer() {
         return json(req, { service: "tokenserver", ok: true, ts: Date.now() });
       }
 
+      // 读接口鉴权:配了 viewToken 后,/api/*(health 探活除外;report 走下方 HMAC)必须带 ?t= 或 Bearer。
+      // 静态页(/、/ui/*、/docs)保持开放(与 shine-worklog daemon 同口径);看板链接形如 /?t=<viewToken>。
+      {
+        const { viewToken } = readAuthConfig();
+        if (viewToken && path.startsWith("/api/") && path !== "/api/report") {
+          const q = url.searchParams.get("t");
+          const auth = req.headers.get("authorization");
+          if (q !== viewToken && auth !== `Bearer ${viewToken}`) {
+            return json(req, { error: "unauthorized" }, 401);
+          }
+        }
+      }
+
       if (path === "/api/report" && req.method === "POST") {
+        // body 只读一次(Fetch body 是流,消费两次会抛错):先按原始字节验 HMAC,通过后再解压/解析。
+        const raw = Buffer.from(await req.arrayBuffer());
+        const { reportSecret } = readAuthConfig();
+        if (reportSecret) {
+          const ok = verifyReportSig(reportSecret, req.headers.get("x-report-ts"), req.headers.get("x-report-sig"), raw);
+          if (!ok) return json(req, { error: "unauthorized" }, 401);
+        } else if (!warnedNoSecret) {
+          // 迁移期:未配密钥放行(兼容不带签名的老 daemon),但公网部署必须配置,首条打警告提示
+          warnedNoSecret = true;
+          console.warn("[tokenserver] 未配置 reportSecret(config.json 或 env TOKENSERVER_REPORT_SECRET),POST /api/report 不验签,公网部署有被伪造上报风险");
+        }
         let body: ReportResponse;
         try {
           body = JSON.parse(
             (req.headers.get("content-encoding") ?? "").toLowerCase().includes("gzip")
-              ? gunzipSync(Buffer.from(await req.arrayBuffer())).toString("utf8")
-              : await req.text(),
+              ? gunzipSync(raw).toString("utf8")
+              : raw.toString("utf8"),
           ) as ReportResponse;
         } catch {
           return json(req, { error: "bad json" }, 400);

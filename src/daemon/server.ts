@@ -21,6 +21,7 @@ import { deriveStableEventId } from "../shared/id";
 import { checkToken } from "./auth";
 import { readSignalsForApi } from "./signals-store";
 import { gzipSync } from "node:zlib";
+import { createHmac } from "node:crypto";
 import { parseTranscript, sumSessionUsage } from "./transcript";
 // claude-scan 现 only export claudeProjectsRoots/collectJsonl/parentSessionInfo/ScannedSession(供 watcher/consumer/aggregate);scanSessions 系列已删(P3)
 import { getCommits, getGitUser } from "./git";
@@ -682,6 +683,7 @@ export function startServer(deps: ServerDeps) {
         const cur = readSettings();
         const b = (body ?? {}) as Record<string, unknown>;
         if (typeof b.reportUrl === "string") cur.reportUrl = b.reportUrl.trim() || null;
+        if (typeof b.reportSecret === "string") cur.reportSecret = b.reportSecret.trim() || null;
         if (typeof b.reportIntervalMin === "number") {
           cur.reportIntervalMin = Number.isFinite(b.reportIntervalMin) && b.reportIntervalMin > 0
             ? Math.floor(b.reportIntervalMin)
@@ -946,10 +948,19 @@ async function uploadReport(store: Store, opts?: { full?: boolean }): Promise<Up
     writeSettings({ ...readSettings(), lastReportAt: Date.now() });
     return { uploaded: false, reason: "增量无变化" };
   }
+  // 上报 HMAC 签名(与 tokenserver reportSecret 配对):对实际发送的 gzip 字节签名(x-report-ts + x-report-sig),
+  // 服务端先验签再解压。ts 恒 13 位毫秒(2286 年前 update 链无拼接歧义);未配密钥不签名(兼容不开验签的服务端)。
+  const bodyBytes = gzipSync(Buffer.from(JSON.stringify(report), "utf8"));
+  const headers: Record<string, string> = { "content-type": "application/json", "content-encoding": "gzip" };
+  if (s.reportSecret) {
+    const ts = String(Date.now());
+    headers["x-report-ts"] = ts;
+    headers["x-report-sig"] = createHmac("sha256", s.reportSecret).update(ts).update(bodyBytes).digest("hex");
+  }
   const res = await fetch(url, {
     method: "POST",
-    headers: { "content-type": "application/json", "content-encoding": "gzip" },
-    body: gzipSync(Buffer.from(JSON.stringify(report), "utf8")),
+    headers,
+    body: bodyBytes,
     signal: AbortSignal.timeout(60000),
   });
   // fetch 对 4xx/5xx 不抛错:不检查 res.ok 会在失败时也推水位,该增量数据永久丢失(等 24h 全量才补)

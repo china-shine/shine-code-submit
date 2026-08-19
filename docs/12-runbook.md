@@ -21,13 +21,12 @@
 
 ## 遗留待办(接手者优先级)
 
-1. **tokenserver 鉴权**(安全,记忆 tokenserver-auth-todo):全接口裸奔 + daemon 默认公网上报;方向=共享 token/限源/reportUrl 默认空;
-2. `/api/member/%` 非法编码 500(decodeURIComponent 未捕获);
-3. sessions 列表 LIMIT 500 截断、getSessionLines 2000 条截断(长会话 lines 少算);
-4. worklogs 只增不删;collect 全量快照范围=自上次提交日以来(≤14 天),防重靠跨日期水位(跨午夜/漏报补报均兼容);
-5. daemon transcript 全量回扫历史会话补 aiAdded(一次性,~10-30s)。
+1. `/api/member/%` 非法编码 500(decodeURIComponent 未捕获);
+2. sessions 列表 LIMIT 500 截断、getSessionLines 2000 条截断(长会话 lines 少算);
+3. worklogs 只增不删;collect 全量快照范围=自上次提交日以来(≤14 天),防重靠跨日期水位(跨午夜/漏报补报均兼容);
+4. daemon transcript 全量回扫历史会话补 aiAdded(一次性,~10-30s)。
 
-> 已修待办:大小写盘符/子目录 cwd 导致 aiLines 查空、AI 占比被吃 ~40pp(2026-08-18:getProjectAILines 不再按事件 cwd 精确等值,改 file_path 落在项目内判定)。
+> 已修待办:大小写盘符/子目录 cwd 导致 aiLines 查空、AI 占比被吃 ~40pp(2026-08-18:getProjectAILines 不再按事件 cwd 精确等值,改 file_path 落在项目内判定);tokenserver 鉴权(2026-08-19:POST HMAC 验签 + GET viewToken + reportUrl 默认空,见 docs/07「鉴权」)。
 
 ## 测试资产
 
