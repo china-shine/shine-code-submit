@@ -1,5 +1,5 @@
 // 「Skills」模块:编辑当前生效插件根 skills/ 下的 Markdown 文档(各 skill 的 SKILL.md)。
-// skill 指令内容在 Claude Code 会话启动时加载——保存落盘即时,但已开会话需重进(新会话)才用上;
+// skill 指令内容在 Claude Code 会话启动时加载——保存落盘即时,已开会话跑 /reload-skills 重载(或重进会话);
 // skill 的 scripts(如 zentao.ts)每次调用从磁盘跑,不受此限;
 // 保存同时备份到 DATA_DIR/skills-edits/(含 history 快照)。双视图:实时=纯净编辑器(以磁盘为准,
 // 无 stale 提示);备份=编辑备份浏览/对比/按保存点恢复。只开放 .md:.ts 走源码仓库改。
@@ -259,7 +259,7 @@ export function SkillsModule() {
       setLoaded(content);
       setFileMtime(j.mtimeMs);
       setDisk(null); // 磁盘已变,edits 视图 diff 的右侧缓存作废(下次对比重新拉)
-      setMsg({ kind: "ok", text: `已保存到 v${j.version} 目录;重进 Claude Code(新会话)后生效` });
+      setMsg({ kind: "ok", text: `已保存到 v${j.version} 目录;/reload-skills 后生效` });
       setTimeout(() => setMsg(null), 2500);
       void reload(); // edited 圆点亮起
     } catch (e) {
@@ -400,7 +400,7 @@ export function SkillsModule() {
     setConfirmReq({
       title: "确认恢复到实时?",
       body:
-        `将把「${editSelected.split("/")[0]}」v${editVersion}${editSavedAt ? ` · ${fmtTime(editSavedAt)}` : ""} 的快照写回执行目录,立即写回磁盘(新会话生效)。当前磁盘内容(可能是升级后的新版)会被覆盖;恢复本身也会落一条新备份,可再次「重置」。` +
+        `将把「${editSelected.split("/")[0]}」v${editVersion}${editSavedAt ? ` · ${fmtTime(editSavedAt)}` : ""} 的快照写回执行目录,立即写回磁盘(/reload-skills 后生效)。当前磁盘内容(可能是升级后的新版)会被覆盖;恢复本身也会落一条新备份,可再次「重置」。` +
         (dirty ? "⚠ 实时视图当前有未保存的修改,恢复后将被丢弃。" : ""),
       okText: "恢复",
       onOk: () => void restoreNow(),
@@ -430,7 +430,7 @@ export function SkillsModule() {
       setDisk(null); // 磁盘已变,diff 右侧缓存作废
       setDiffMode(false);
       setView("live");
-      setMsg({ kind: "ok", text: `已把 v${j.restoredFrom ?? editVersion} 的备份写回 ${editSelected},立即写回磁盘(新会话生效)` });
+      setMsg({ kind: "ok", text: `已把 v${j.restoredFrom ?? editVersion} 的备份写回 ${editSelected},立即写回磁盘(/reload-skills 后生效)` });
       setTimeout(() => setMsg(null), 3500);
     } catch (e) {
       setEditMsg({ kind: "err", text: e instanceof Error ? e.message : "恢复失败" });
@@ -521,9 +521,9 @@ export function SkillsModule() {
           <span
             className="field-hint"
             style={{ padding: 0 }}
-            title="插件 skills 不在 Claude Code 热重载范围内(官方仅 watch ~/.claude/skills、项目 .claude/skills 与 --add-dir 三处),SKILL.md 改动需重进 Claude Code 生效;skill 的 scripts 每次从磁盘执行、即时生效"
+            title="插件 skills 不在 Claude Code 自动热重载范围内(官方仅 watch ~/.claude/skills、项目 .claude/skills 与 --add-dir 三处),SKILL.md 改动在已开会话跑 /reload-skills 重载(或重进会话);skill 的 scripts 每次从磁盘执行、即时生效"
           >
-            v{data.version} · {data.files.length} 个文件 · {data.root} · 编辑 SKILL.md 后需重进 Claude Code 生效(插件 skills 不热重载)
+            v{data.version} · {data.files.length} 个文件 · {data.root} · 编辑 SKILL.md 后 /reload-skills 生效
           </span>
         )}
       </div>
@@ -584,7 +584,7 @@ export function SkillsModule() {
                     className="tool-btn"
                     onClick={() => void restoreToLive()}
                     disabled={restoringEdit}
-                    title="把这份备份写回执行目录(立即写回磁盘、新会话生效,当前磁盘内容被覆盖;恢复本身也落新备份)"
+                    title="把这份备份写回执行目录(立即写回磁盘、/reload-skills 后生效,当前磁盘内容被覆盖;恢复本身也落新备份)"
                     style={{ background: "#4f8cff", color: "#fff", borderColor: "#4f8cff" }}
                   >
                     {restoringEdit ? "恢复中…" : "⬇ 恢复到实时"}
@@ -650,7 +650,7 @@ export function SkillsModule() {
                   type="button"
                   onClick={() => void doSave(false)}
                   disabled={saving || !dirty}
-                  title="保存落盘即时;skill 内容在新会话生效——已开的 Claude Code 会话需重进"
+                  title="保存落盘即时;/reload-skills 后 skill 内容生效"
                   style={{ ...SAVE_BTN, cursor: saving || !dirty ? "default" : "pointer", opacity: !dirty || saving ? 0.5 : 1 }}
                 >
                   {saving ? "保存中…" : "💾 保存"}

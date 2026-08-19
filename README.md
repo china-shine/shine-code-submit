@@ -181,7 +181,7 @@ daemon 默认绑 `0.0.0.0`（所有网卡），打印的 Dashboard 链接自动�
 
 ### Skills 文档编辑（dashboard「Skills」页，1.4.0）
 
-直接在查看页编辑**当前生效插件根** `skills/` 下的 Markdown（Monaco 编辑器）——SKILL.md 就是 AI 的执行逻辑，**保存落盘即生效，无需重装插件**；⚠️ 但 skill 的指令内容在 Claude Code 会话启动时加载——**已有会话要重进（新会话）才用上新版**，升级插件版本后同理（会话的 skill Base directory 钉在启动时的版本目录）。安全边界：仅放行 `.md`（`.ts` 代码走源码仓库改，不在 dashboard 动）、路径段白名单防穿越、单文件 ≤1MB。
+直接在查看页编辑**当前生效插件根** `skills/` 下的 Markdown（Monaco 编辑器）——SKILL.md 就是 AI 的执行逻辑，**保存落盘即生效，无需重装插件**；⚠️ 但 skill 的指令内容在 Claude Code 会话启动时加载——**已开会话跑 `/reload-skills` 重载后用上新版（或重进会话）**，升级插件版本后同理（会话的 skill Base directory 钉在启动时的版本目录）。安全边界：仅放行 `.md`（`.ts` 代码走源码仓库改，不在 dashboard 动）、路径段白名单防穿越、单文件 ≤1MB。
 
 - **备份先行**：保存先备份到 `DATA_DIR/skills-edits/<version>/`（含首次编辑前 `original` 基线）再原子写；「重置」恢复到当前版本出厂内容
 - **「实时 / 备份」双 tab**：后者列本地编辑备份（跨版本留痕）+ 可读 md 镜像，一键恢复；保存历史快照每文件留最近 20 份，下拉选任意保存点读取 / 恢复，DiffEditor 与实时文件对比
