@@ -2,6 +2,24 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.4.6 — 2026-08-19
+
+tokenserver 接收端两级鉴权(2026-08-15 安全待办收口):POST /api/report HMAC 验签 + GET /api/* viewToken;daemon 上报自动签名,reportSecret 随包默认分发、reportUrl 默认空。
+
+### 变更(tokenserver)
+- **POST /api/report HMAC 验签**:配 `reportSecret`(config.json 或 env `TOKENSERVER_REPORT_SECRET`,每请求重读、改后即时生效)后,上报必须带 `x-report-ts` + `x-report-sig` = HMAC-SHA256(密钥, ts‖实际传输的 gzip 字节)——服务端先验签再解压(垃圾请求解压前被挡);ts 恒 13 位 + ±15min 窗口(容忍成员机时钟偏移;窗口内重放因 upsert 幂等无害,不加 nonce);未配密钥放行 + 启动/首条警告(迁移兼容不带签名的老 daemon)。无签名/错签名/错密钥/篡改 body/过期 ts 全部 401。
+- **GET /api/* viewToken**:配 `viewToken`(env `TOKENSERVER_VIEW_TOKEN`)后除 health 外读接口要 `?t=` 或 Bearer;UI 从 URL 透传到所有 API(含收编 DenominatorBreakdown 的裸 fetch),401 有明确提示;静态页与 /docs 开放,/docs 往返链接保住 ?t=。
+- 修 `build:ui` 残留 build-docs 引用(bb880ce 删文件后脚本一直坏)。
+
+### 变更(daemon)
+- **uploadReport HMAC 签名**:对实际发送的 gzip 字节签名;`settings.json` 加 `reportSecret`(dashboard 设置页「上报密钥」);密钥不一致 401 不推水位不丢数据,配对后自动续传。
+- **reportSecret 随包默认分发**(用户决策):成员机 autoUpdate 升级即自动签名、零配置。⚠️ 该值随公开仓库可见——只挡顺手伪造不挡定向研究;轮换 = 服务端改值重启 + settings.ts 换默认发新版(期间 401 不丢数据);要真私密则清空默认各机单独配。
+- **reportUrl 默认空**:公开 npm 用户装完不再默认把数据报到他人服务器(opt-in);存量机器 settings.json 已持久化不受影响。
+
+### 验证
+- e2e:正反向 10 用例(无签名/错签名/错密钥/篡改 body/过期 ts/垃圾 ts 全 401;gzip+未压缩正向 200)+ daemon→tokenserver 全链路真实上报(9.4M tokens)+ Linux 编译产物实测 + 密钥不一致不推水位;265 测试/typecheck 全过。
+- docs:README/docs 07/08/09/12/14 + tokenserver README 同步;docs/12 鉴权待办关闭。
+
 ## 1.4.5 — 2026-08-19
 
 增量补报的 work 超 10 行被折叠成「…(更早 N 条略)」直接进禅道的问题:折叠时附全量信号,AI 归纳成总结替换,折叠标记不再进禅道。
