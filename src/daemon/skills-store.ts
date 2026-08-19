@@ -13,7 +13,7 @@ import { SERVICE_VERSION } from "../shared/config";
 const EDITS_DIR = join(DATA_DIR, "skills-edits");
 const MAX_DEPTH = 6;
 const MAX_BYTES = 1_048_576; // 1MB 上限:skills 实际文件均 <20KB,纯防御
-// 只开放 markdown 编辑(SKILL.md 是 AI 的执行逻辑、改完即生效);.ts 代码走源码仓库改,不在 dashboard 动
+// 只开放 markdown 编辑(SKILL.md 是 AI 的执行逻辑、改完落盘即时——skill 指令内容在 Claude Code 新会话生效);.ts 代码走源码仓库改,不在 dashboard 动
 const EXT_RE = /\.md$/;
 // 路径段形态白名单:字母/数字开头(挡 "." ".." 与隐藏文件),内容限常见安全字符
 const SEG_RE = /^[A-Za-z0-9][A-Za-z0-9 ._\-()]{0,80}$/;

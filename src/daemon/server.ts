@@ -598,7 +598,7 @@ export function startServer(deps: ServerDeps) {
       }
 
       // Skills 文件编辑(dashboard「Skills」模块):读写当前生效插件根的 skills/。
-      // skill 文件是命令触发时从磁盘读 → 写对位置即生效,无需重启;备份与升级覆盖检测见 skills-store。
+      // skill 指令内容在 Claude Code 会话启动时加载:写对位置落盘即时,但已开会话需重进才用上(scripts 每次从磁盘跑不受限);备份与升级覆盖检测见 skills-store。
       if (path === "/api/skills" && req.method === "GET") {
         const { version, sourceMode } = pluginVersion();
         const latest = latestEditByRel();
