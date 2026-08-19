@@ -324,7 +324,7 @@ zenpilot/           禅道工时填报数据（原 ~/.zenpilot/，1.3.0 统一�
 
 daemon 默认每 10 分钟（`reportIntervalMin`）或手动（Dashboard「上报」按钮）把会话/token 聚合报表 POST 到 `reportUrl`（**默认空、装完不自动上报**——公开 npm 用户不应默认把数据报到他人服务器；团队内部在「设置」页配地址 + 密钥）。接收端 [`tokenserver/`](./tokenserver/README.md) 按 **用户 → 项目 → token** 三级展示。
 
-**上报鉴权（HMAC）**：daemon 设置页可配 `reportSecret`（与 tokenserver 的 `reportSecret` 一致），配了则上报对实际发送的 gzip 字节签名（`x-report-ts` + `x-report-sig`），服务端先验签再解压；密钥不一致 401、daemon 不推水位不丢数据，配对后自动续传。tokenserver 侧另配 `viewToken` 保护读接口（GET 带 `?t=<viewToken>`，看板链接同款）。详见 tokenserver/README「鉴权」。
+**上报鉴权（HMAC）**：daemon 的 `reportSecret` **默认随包分发**（成员机零配置；该值随公开仓库可见，只挡顺手伪造，轮换 = 服务端改值重启 + 发新版），也可在设置页覆盖。上报对实际发送的 gzip 字节签名（`x-report-ts` + `x-report-sig`），服务端先验签再解压；密钥不一致 401、daemon 不推水位不丢数据，配对后自动续传。tokenserver 侧另配 `viewToken`（**不随包分发**）保护读接口（GET 带 `?t=<viewToken>`，看板链接同款）。详见 tokenserver/README「鉴权」。
 
 **上报身份 = `git config user.name`**：采集不到（机器未配 `user.name`，如部分 CI/容器/新机）时**跳过本次上报**，不再以「未知用户」上传；手动上报按钮会提示「已跳过：未采集到 git user.name,跳过上报(无上报身份)」。配置 `git config --global user.name <名字>` 后即恢复上报。
 

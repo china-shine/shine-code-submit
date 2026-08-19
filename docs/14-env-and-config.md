@@ -38,7 +38,7 @@
 | 字段 | 默认 | 说明 |
 |---|---|---|
 | reportUrl | 空 | 上报目标地址(默认空=不上报;团队内部装完在设置页配,见 docs/07「鉴权」) |
-| reportSecret | 空 | 上报 HMAC 密钥,与 tokenserver 的 reportSecret 一致(服务端开验签时必填,不一致恒 401 且不推水位) |
+| reportSecret | 随包默认分发 | 上报 HMAC 密钥,与 tokenserver 的 reportSecret 一致(服务端开验签时不一致恒 401 且不推水位不丢数据)。默认值随公开仓库可见(只挡顺手伪造);轮换 = 服务端改值 + settings.ts 换默认发新版;要真私密则清空默认各机单独配 |
 | reportIntervalMin | 10 | 上报间隔 |
 | autoUpdate / autoUpdateIntervalMin | true / 60 | 自动升级 |
 | zentaoCacheTtlMin | 300 | 禅道缓存 TTL(本机常配 30) |

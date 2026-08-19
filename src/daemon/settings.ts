@@ -20,10 +20,13 @@ export interface Settings {
   aiSubmitMark?: { enabled: boolean; text: string | null } | null; // AI 提交标识(开关+文案):提交禅道工时拼到 work 末尾,/daily /weekly 据此对账统计 AI 代报
 }
 
-/** 默认设置:不上报(reportUrl 空,团队内部部署再配地址+密钥),自动更新默认开。 */
+/** 默认设置:不上报(reportUrl 空,团队内部部署再配地址;reportSecret 随包默认分发,见下),自动更新默认开。 */
 const DEFAULTS: Settings = {
   reportUrl: null,
-  reportSecret: null,
+  // reportSecret 随包默认分发(用户决策 2026-08-19):成员机零配置即签名。
+  // ⚠️ 该值随公开 npm/GitHub 仓库对所有人可见——只挡「顺手扫端口/Postman 乱灌」,挡不住专门研究本项目的人(真要私密就改掉此默认,各机在设置页单独配)。
+  // ⚠️ 轮换 = 服务端改 reportSecret 重启 + 本处换新值发新版(成员机 autoUpdate ~1h 换上);期间旧密钥机器 401 不丢数据。
+  reportSecret: "40b70c5bca0251ac516aaa264ed31d690ee1444ec34dcabc",
   reportIntervalMin: 10,
   autoUpdate: true,
   autoUpdateIntervalMin: 60,
