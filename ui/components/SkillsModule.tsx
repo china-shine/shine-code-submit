@@ -1,7 +1,7 @@
 // 「Skills」模块:编辑当前生效插件根 skills/ 下的 Markdown 文档(各 skill 的 SKILL.md)。
 // skill 文件是命令触发时从磁盘读 → 保存即生效,无需重启 Claude Code 或 daemon;
 // 保存同时备份到 DATA_DIR/skills-edits/(含 history 快照)。双视图:实时=纯净编辑器(以磁盘为准,
-// 无 stale 提示);修改后=备份浏览/对比/按保存点恢复。只开放 .md:.ts 走源码仓库改。
+// 无 stale 提示);备份=编辑备份浏览/对比/按保存点恢复。只开放 .md:.ts 走源码仓库改。
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useApi } from "../hooks/useApi";
 import { useApp } from "../state/AppContext";
@@ -32,7 +32,7 @@ interface FileResponse {
   mtimeMs: number;
 }
 
-// 「修改后的 skills」视图:编辑备份(按插件版本留痕)的分组列表与单份内容
+// 「备份 skills」视图:编辑备份(按插件版本留痕)的分组列表与单份内容
 interface EditGroup {
   rel: string;
   versions: Array<{ version: string; savedAt: number }>; // savedAt 降序
@@ -155,7 +155,7 @@ export function SkillsModule() {
   const [resetting, setResetting] = useState(false);
   const [msg, setMsg] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
 
-  // 「修改后的 skills」视图(备份浏览/恢复):live = 执行目录实时编辑,edits = 备份只读视图
+  // 「备份 skills」视图(备份浏览/恢复):live = 执行目录实时编辑,edits = 备份只读视图
   const [view, setView] = useState<"live" | "edits">("live");
   const [edits, setEdits] = useState<EditGroup[] | null>(null); // null=未加载(进 edits tab 时拉)
   const [editSelected, setEditSelected] = useState<string | null>(null);
@@ -333,7 +333,7 @@ export function SkillsModule() {
     }
   };
 
-  // ---- 「修改后的 skills」视图:备份列表加载 / 单备份读取 / 恢复到实时 ----
+  // ---- 「备份 skills」视图:备份列表加载 / 单备份读取 / 恢复到实时 ----
 
   const loadEdits = useCallback(() => {
     return api<{ edits: EditGroup[] }>("/api/skills/edits")
@@ -524,13 +524,13 @@ export function SkillsModule() {
       </div>
       <div className="stats-body">
         <div style={{ display: "flex", flexDirection: "column", gap: "0.5rem", minHeight: 0, height: "100%" }}>
-          {/* 视图切换:实时(执行目录,可编辑) / 修改后(备份留痕,只读+恢复) */}
+          {/* 视图切换:实时(执行目录,可编辑) / 备份(编辑留痕,只读+恢复) */}
           <div style={{ display: "flex", gap: 2, flex: "0 0 auto", borderBottom: "1px solid var(--border)" }}>
             <button type="button" className={`tab${view === "live" ? " active" : ""}`} onClick={() => setView("live")}>
               实时 skills
             </button>
             <button type="button" className={`tab${view === "edits" ? " active" : ""}`} onClick={() => setView("edits")}>
-              修改后的 skills{edits?.length ? ` (${edits.length})` : ""}
+              备份 skills{edits?.length ? ` (${edits.length})` : ""}
             </button>
           </div>
 
@@ -608,7 +608,7 @@ export function SkillsModule() {
           ) : (
           <>
           {/* 实时视图=纯净编辑器:完全以当前插件版本(磁盘)为准,不做 stale/本地编辑提示——
-              升级覆盖后的旧内容去「修改后的 skills」查看/恢复 */}
+              升级覆盖后的旧内容去「备份 skills」查看/恢复 */}
 
           {/* tab 导航:skill 名为 tab(*=未保存),工具按钮行尾;窄窗口 tab 区横向滚动 */}
           <div className="skill-tabs">
@@ -659,7 +659,7 @@ export function SkillsModule() {
             <div className="sum-empty" style={{ flex: 1 }}>加载中…</div>
           ) : selected == null ? (
             <div className="sum-empty" style={{ flex: 1 }}>
-              点击上方 tab 编辑对应 SKILL.md;保存即生效。旧编辑可在「修改后的 skills」里查看与恢复。
+              点击上方 tab 编辑对应 SKILL.md;保存即生效。旧编辑可在「备份 skills」里查看与恢复。
             </div>
           ) : preview ? (
             <div className="sum-section" style={{ overflowY: "auto", flex: 1, minHeight: 0 }}>

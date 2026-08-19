@@ -80,7 +80,7 @@ daemon 每 10min:`buildReport(since=lastReportAt)` → gzip POST;**失败不推�
 ## ⑧ autoUpdate 自升级
 
 daemon 定期查 npm latest → spawn detached `npx shine-worklog@latest install --silent`(Windows wscript VBS 静默)→ install 部署新版本目录 + 按 startedAt/installedAt 判断重启 daemon → SessionStart hook 清理旧版本目录(保留 5 版本)。版本比较 `versionGt` 数值逐段;hook↔daemon 版本同步只在 **hook 新于 daemon** 方向重启。
-⚠️ 新版本目录整拷会覆盖 dashboard Skills 模块编辑过的 SKILL.md(markdown)——备份在 `DATA_DIR/skills-edits/`,不自动重放(见 06-skills「修改注意」);实时 skills 视图完全以当前插件版本为准、无 stale 提示,旧编辑的查看/恢复全走「修改后的 skills」tab(浏览各版本备份与保存历史快照,只读、DiffEditor 对比实时、复制片段、一键「恢复到实时」按 savedAt 恢复任意保存点);备份目录 `DATA_DIR/skills-edits/` 内含各版本可读 `md/<rel>` 镜像,便于磁盘上直接查看。
+⚠️ 新版本目录整拷会覆盖 dashboard Skills 模块编辑过的 SKILL.md(markdown)——备份在 `DATA_DIR/skills-edits/`,不自动重放(见 06-skills「修改注意」);实时 skills 视图完全以当前插件版本为准、无 stale 提示,旧编辑的查看/恢复全走「备份 skills」tab(浏览各版本备份与保存历史快照,只读、DiffEditor 对比实时、复制片段、一键「恢复到实时」按 savedAt 恢复任意保存点);备份目录 `DATA_DIR/skills-edits/` 内含各版本可读 `md/<rel>` 镜像,便于磁盘上直接查看。
 
 ## ⑨ 安装与迁移(install/)
 

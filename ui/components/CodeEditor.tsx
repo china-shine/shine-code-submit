@@ -38,7 +38,7 @@ monaco.editor.defineTheme("shine-dark", {
 });
 
 /** 受控 Monaco:value 变化仅在外部赋值(切文件/恢复)时重设模型,打字由 onDidChange 回流不构成循环。
- *  readOnly 供备份查看(「修改后的 skills」)——只读下打字被 Monaco 拦截,onDidChange 不触发。 */
+ *  readOnly 供备份查看(「备份 skills」)——只读下打字被 Monaco 拦截,onDidChange 不触发。 */
 export function CodeEditor({ value, onChange, readOnly }: { value: string; onChange: (v: string) => void; readOnly?: boolean }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const editorRef = useRef<monaco.editor.IStandaloneCodeEditor | null>(null);
@@ -90,7 +90,7 @@ export function CodeEditor({ value, onChange, readOnly }: { value: string; onCha
   return <div ref={hostRef} style={{ flex: 1, minHeight: 0, height: "100%" }} />;
 }
 
-/** 只读 Diff 视图(「修改后的 skills」对比实时):左=original(备份),右=modified(磁盘实时)。
+/** 只读 Diff 视图(「备份 skills」对比实时):左=original(备份),右=modified(磁盘实时)。
  *  布局/主题与 CodeEditor 同款;模型随 props 重建(快照/文件切换),旧模型 dispose 防泄漏。 */
 export function DiffEditor({ original, modified }: { original: string; modified: string }) {
   const hostRef = useRef<HTMLDivElement>(null);

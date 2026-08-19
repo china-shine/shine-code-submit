@@ -162,7 +162,7 @@ function readBackup(version: string, rel: string): EditBackup | null {
 
 // ---- 保存历史:<version>/history/<b64url(rel)>.<savedAt>.json ----
 // 同 (version,rel) 的备份 json 每次保存覆盖,中间状态不可回溯;内容有变的旧备份归档到 history,
-// 留最近 MAX_HISTORY 份,「修改后的 skills」下拉可按 savedAt 取任意一次保存点。b64url 无 ".",
+// 留最近 MAX_HISTORY 份,「备份 skills」下拉可按 savedAt 取任意一次保存点。b64url 无 ".",
 // 文件名按 "." 拆出 {rel, savedAt} 无歧义。
 
 const MAX_HISTORY = 20;
@@ -255,7 +255,7 @@ export interface EditGroup {
   stale: boolean; // 最新备份 hash ≠ 当前磁盘内容(可能被升级覆盖 / 外部手改)
 }
 
-/** 按 rel 分组全部编辑备份(跨版本 + history 快照,「修改后的 skills」tab 列表);stale 复用 computeStaleEdits。 */
+/** 按 rel 分组全部编辑备份(跨版本 + history 快照,「备份 skills」tab 列表);stale 复用 computeStaleEdits。 */
 export function listEditsGrouped(): EditGroup[] {
   const byRel = new Map<string, Array<{ version: string; savedAt: number }>>();
   const push = (rel: string, version: string, savedAt: number): void => {
@@ -418,7 +418,7 @@ export type ResetResult =
 /** 重置:把文件恢复到**当前版本**首次编辑前的原始内容(备份 original 字段,saveSkillFile 继承基线可反复用)。
  *  只认当前版本的备份——升级换版本目录后新版本首存会从新磁盘重捕 original,旧版本的 original 不作重置来源,
  *  否则「升级后没在新版本编辑过就点重置」会把旧版内容写进新版磁盘,破坏「不修改=与版本一致」不变量
- *  (2026-08-18 定)。当前版本无备份=磁盘即出厂内容,明确报错;旧编辑走「修改后的 skills」恢复。 */
+ *  (2026-08-18 定)。当前版本无备份=磁盘即出厂内容,明确报错;旧编辑走「备份 skills」恢复。 */
 export function resetEdit(rel: string): ResetResult {
   const err = validateRelPath(rel);
   if (err) return { ok: false, error: err };
@@ -427,7 +427,7 @@ export function resetEdit(rel: string): ResetResult {
   if (!hasAny) return { ok: false, error: "该文件无编辑备份,无需重置" };
   const cur = listEdits().some((e) => e.rel === rel && e.version === version);
   if (!cur) {
-    return { ok: false, error: "当前版本未编辑过该文件——磁盘即出厂内容,无需重置;旧编辑在「修改后的 skills」里查看/恢复" };
+    return { ok: false, error: "当前版本未编辑过该文件——磁盘即出厂内容,无需重置;旧编辑在「备份 skills」里查看/恢复" };
   }
   let blob: EditBackup;
   try {

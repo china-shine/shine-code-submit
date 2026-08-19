@@ -24,12 +24,12 @@ DATA_DIR/
 │  ├─ <version>/<base64url(rel)>.json
 │  │                         #   {rel,version,savedAt,hash:sha1,content,original};original=首次编辑前
 │  │                         #   的原始内容(初始化基线,后续保存继承不改,供「重置」恢复);升级整目录
-│  │                         #   覆盖后磁盘≠hash → stale(实时视图不展示,「修改后的 skills」视图 ● 标记);
+│  │                         #   覆盖后磁盘≠hash → stale(实时视图不展示,「备份 skills」视图 ● 标记);
 │  │                         #   跨版本留痕,同 (version,rel) 重复保存覆盖
 │  ├─ <version>/history/<base64url(rel)>.<savedAt>.json
 │  │                         #   ★保存历史:内容有变的旧备份归档(重复保存同内容不刷快照),
 │  │                         #   每 (version,rel) 留最近 20 份修剪;savedAt 编码进文件名免读全文,
-│  │                         #   「修改后的 skills」下拉按 savedAt 取任意一次保存点(读/恢复)
+│  │                         #   「备份 skills」下拉按 savedAt 取任意一次保存点(读/恢复)
 │  └─ <version>/md/<rel>     # 可读镜像(纯 markdown content),磁盘上直接查看/拷贝;
 │                            #   listEdits 只扫顶层 json,镜像不进备份列表
 ├─ reports/                   # 日报/周报 HTML(日报-YYYY-MM-DD-<姓名>.html,同日覆盖)

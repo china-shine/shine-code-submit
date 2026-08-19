@@ -659,7 +659,7 @@ export function startServer(deps: ServerDeps) {
         const r = resetEdit(rel);
         return r.ok ? json(r) : json({ error: r.error }, 400);
       }
-      // 「修改后的 skills」tab:分组备份列表(跨版本,带 stale 标记)+ 单备份内容读取(只读视图)
+      // 「备份 skills」tab:分组备份列表(跨版本,带 stale 标记)+ 单备份内容读取(只读视图)
       if (path === "/api/skills/edits" && req.method === "GET") {
         return json({ edits: listEditsGrouped() });
       }
