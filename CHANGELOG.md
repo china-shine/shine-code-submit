@@ -2,6 +2,15 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.4.3 — 2026-08-19
+
+修 360 等杀软在安装期误拦 bun.exe 的问题,顺带把版本目录体积砍到 1/7。
+
+### 变更(install)
+- **杀软误拦根因**:用户机器(开 360 极智守护)安装期弹「程序正在创建文件链接,会绕过安全软件的文件防护」,发起来源 bun.exe——bun install 默认用 hardlink/symlink 从全局缓存链接依赖文件,批量建链接触发启发式;叠加 spawn-daemon-hidden.vbs(隐藏拉 daemon)整链像恶意持久化。`bun install` 改 `--backend=copyfile`(纯复制不建链接)消掉最大触发面;vbs 保留(仅 daemon 未运行时写一次,去掉会回退 1.0.21 修掉的控制台弹窗)。
+- **版本目录 108M→16M**:copyfile 审查中发现 install 一直全装 devDependencies(typescript/@types/monaco-editor 共 ~139MB/版本,插件运行完全不需要,monaco 构建期已 bundle 进产物)——此前靠 hardlink 共享缓存数据块、真实增量小未暴露,copyfile 会坐实浪费。补 `--production` 只装 3 个运行依赖(marked/react/react-dom),node_modules 实占 7.9MB。
+- **文档**:docs/15 新增「⑤ 杀毒软件误报」(症状/根因/白名单清单/vbs 被隔离的恢复);docs/10 安装链路、README 安装节同步。
+
 ## 1.4.2 — 2026-08-19
 
 Skills 模块「编辑后何时生效」说明的口径修正:经用户实测 + 官方文档查证,统一为 `/reload-skills`。
