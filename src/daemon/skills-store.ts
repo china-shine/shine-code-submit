@@ -4,7 +4,7 @@
 // /api/skills 标 stale 由前端提示手动恢复;不自动重放,避免静默覆盖新版改过的同名文件。
 // 全同步 fs(文件均 <20KB,daemon 路由直调);写盘一律 tmp+rename 原子写(同 signals-store)。
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, statSync, unlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { DATA_DIR } from "../shared/paths";
@@ -213,6 +213,28 @@ function writeEditBackup(rel: string, content: string): void {
     atomicWrite(historyFile(version, rel, prev.savedAt), JSON.stringify(prev));
   }
   pruneHistory(version, rel);
+  pruneOldEditVersions();
+}
+
+/** 备份版本目录修剪:skills-edits/<version>/ 只保留最近 KEEP_VERSIONS 个——与 hook 清插件
+ *  版本目录同口径(保留 5 个)。跨版本留痕本为升级覆盖后恢复用,插件目录自身只留 5 个版本,
+ *  更老的备份已无对应磁盘,留着只随版本无限积累(~百 KB/版本)。保存时即时修剪;失败忽略下次再删。 */
+const KEEP_VERSIONS = 5;
+function pruneOldEditVersions(): void {
+  let versions: string[];
+  try {
+    versions = readdirSync(EDITS_DIR).filter((n) => /^\d+\.\d+\.\d+$/.test(n));
+  } catch {
+    return;
+  }
+  versions.sort((a, b) => {
+    const [aM = 0, am = 0, ap = 0] = a.split(".").map(Number);
+    const [bM = 0, bm = 0, bp = 0] = b.split(".").map(Number);
+    return bM - aM || bm - am || bp - ap; // 降序(新→旧)
+  });
+  for (const name of versions.slice(KEEP_VERSIONS)) {
+    try { rmSync(join(EDITS_DIR, name), { recursive: true, force: true }); } catch { /* 占用/权限,留下次 */ }
+  }
 }
 
 /** 全部编辑备份(仅 header,不含 content):扫 skills-edits 各版本目录下的备份 json,损坏跳过。 */

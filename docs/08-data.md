@@ -32,6 +32,8 @@ DATA_DIR/
 │  │                         #   「备份 skills」下拉按 savedAt 取任意一次保存点(读/恢复)
 │  └─ <version>/md/<rel>     # 可读镜像(纯 markdown content),磁盘上直接查看/拷贝;
 │                            #   listEdits 只扫顶层 json,镜像不进备份列表
+│                            # <version>/ 目录本身保留最近 5 个(保存时即时修剪,与 hook 清插件
+│                            # 版本目录同口径)——更老的备份无对应磁盘,留着只随版本积累
 ├─ reports/                   # 日报/周报 HTML(日报-YYYY-MM-DD-<姓名>.html,同日覆盖)
 └─ zenpilot/                  # 工时链路数据(原 ZenPilot 目录统一迁入)
    ├─ config.json             # 禅道连接(url/account/password)—— /setup 写
