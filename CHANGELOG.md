@@ -2,6 +2,14 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.4.1 — 2026-08-19
+
+Skills 模块两处收口:快照下拉日期换行根治 + 「修改后的 skills」更名「备份 skills」。
+
+### 变更(ui)
+- **快照下拉弹层按最宽项展开**:`.snap-menu` 此前只设 `min-width:100%` 未设 `width`,absolute 元素 shrink-to-fit 被父容器(触发按钮)卡宽;首项加「最新」badge 后超宽,flex 里日期 span 被压换行。加 `width: max-content` + 项内 `white-space: nowrap` 双保险,任意项不折行。
+- **「修改后的 skills」更名「备份 skills」**:原名指错了地方——该 tab 列的是 `skills-edits/` 备份(浏览/对比/恢复),磁盘实际内容在「实时」tab 看;升级覆盖后这里是旧编辑唯一幸存副本,「备份」语义不拧巴,与「实时」对仗工整。tab 标签、空态提示、docs(06/08/09/10)、daemon 注释与 `/api/skills/reset` 错误文案同步;1.4.0 changelog 历史条目保留原词。
+
 ## 1.4.0 — 2026-08-19
 
 dashboard 新增 Skills 编辑模块:直接在查看页编辑当前生效插件根 skills/ 下的 Markdown(SKILL.md 即 AI 的执行逻辑),**保存即生效、无需重装插件**;带备份、保存历史快照、恢复与重置。
