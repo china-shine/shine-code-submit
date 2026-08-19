@@ -8,7 +8,7 @@
 
 | Skill | 作用 |
 |---|---|
-| `/report` | 工时填报主流程(plan→render→确认→commit;全 resolved 时 work 原样提交不归纳——auto-note 文案即总结,归纳仅在 work 异常/用户要求时,严禁为写文案考古;增量条目 work=水位后全部 note 合并,多行是预期产物不是拼接异常;work 异常快修=凭上下文直接 Edit plan.json,勿照过时的会话标题写) |
+| `/report` | 工时填报主流程(plan→render→确认→commit;全 resolved 时 work 原样提交不归纳——auto-note 文案即总结,归纳仅在 work 异常/用户要求时,严禁为写文案考古;增量条目 work=水位后全部 note 合并,多行是预期产物不是拼接异常;**note 超 10 行被折叠成「…(更早 N 条略)」时,plan 条目附 `incrementAllLines` 全部行,AI 归纳成 ≤6 行总结替换 work,折叠标记不进禅道**;work 异常快修=凭上下文直接 Edit plan.json,勿照过时的会话标题写) |
 | `/prepare` | 提前算好 work+task 写 summary,让 /report 秒级 |
 | `/daily` `/weekly` `/lastweek` | 日报/周报/上周周报(数据=禅道 efforts,HTML 落盘 reports/) |
 | `/refresh` | 全量刷新禅道缓存 |

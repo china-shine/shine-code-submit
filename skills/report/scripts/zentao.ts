@@ -325,6 +325,9 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>, source
             confidence: 95,
             reason: "已提交会话的增量补报,沿用原任务",
             work: incCapped.length ? incCapped.join("\n") : null,
+            // 折叠发生时附全部行:work 里的「…(更早 N 条略)」只是防爆截断,/report 流程的 AI
+            // 据 incrementAllLines 把全部 note 归纳成总结替换 work(折叠标记不进禅道)。
+            ...(incLines.length > MAX_INCREMENT_WORK_LINES ? { incrementAllLines: incLines } : {}),
           },
           await taskInfo(taskId),
         );

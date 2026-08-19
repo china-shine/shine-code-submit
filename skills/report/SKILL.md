@@ -75,6 +75,7 @@ bun "<Base directory>/scripts/zentao.ts" plan [--source zentao]
    - 调 `note --session <id> --work <生成的work> --task <task>` 写 summary
 3. **⚠️ 全 resolved 时跳过归纳,直接 render**:auto-note 的 conclusion 本身就是每轮的总结句(质量已达「总结性 work」标准),**plan 返回的 work 是什么样就怎么提交**——不要为「把 work 归纳得更好」重新组织文案,更**严禁为此额外考古**(git log / 读文件 / 查环境:实测一次多花 90s 思考,零收益)。归纳只在用户明确要求「调整文案」时做。仅当 work 明显异常(引导语/表格残片/截断/明显不连贯)时才按下面规则精简。
    - **增量条目的 work = 水位后全部 note 按时间合并,多行(每行一条成果、render 自动编号)是预期产物**——它就是为了覆盖自上次提交以来的全部关键改动;多行 ≠ 拼接异常,不要合并重写。
+   - **例外:work 首行是「…(更早 N 条略)」**(note 超 10 行被脚本防爆折叠)→ 条目带 `incrementAllLines` 字段(全部行)时,**把全部行归纳成 ≤6 行总结**(合并同类成果、每行一句动宾、按时间先后),直接用 Edit 整体替换该条 work——折叠标记与被折叠行都不进禅道。归纳素材就在 plan.json 该条目的 `incrementAllLines` 里,无需读 summary/考古;无该字段(老 plan)保持原样提交。
 
 4. **work 异常的快修**(引导语/表格残片/草稿引用行/**API Error 残行/草稿标签行(理由:、置信度:)**/**与其它条目逐字重复的回声行**/**对账叙述行**(引用草稿行号的覆盖说明,如「今天 5 个 commit 在草稿里全部有对应行:CLI 测试(行 1)…」——改写为一句话动宾如「核对草稿对今日 5 个提交的覆盖完整性」,不删除)**/截断/明显不连贯/**里程碑状态句**(「…全部生效」「…全部守住」类状态宣告——宣告工具状态非描述成果,信息已被各 commit 行覆盖,直接删除)/多行列表本身**不是**异常,见上):**直接用 Edit 改 plan.json 该条 work**,一句话写出实际成果。**禁止探查**(不跑 prepare、不读 summary 文件、不读源码、不查 git log、不搜路径——实测一通探查多花 2 分钟零信息增量)。两条注意:
    - **plan.json 路径公式**(不用搜):`%LOCALAPPDATA%\shine-worklog\zenpilot\projects\<编码cwd>\plan.json`,编码 = 当前项目 cwd 的非字母数字→`-`(与 `~/.claude/projects/` 同款);mac/linux 前缀换 `~/.local/share/shine-worklog/`

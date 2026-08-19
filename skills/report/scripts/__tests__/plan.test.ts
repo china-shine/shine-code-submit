@@ -247,6 +247,22 @@ describe("cmdPlan — 跨午夜", () => {
       cache: { projects: [{ id: 1, name: "P1" }], tasks: [{ id: 100, name: "T1", project: 1 }], executions: [], taskDetails: {} },
     });
     expect(items[0].work).toBe(`…(更早 2 条略)\n${Array.from({ length: 10 }, (_, i) => `增量W${String(i + 3).padStart(2, "0")}`).join("\n")}`);
+    // 折叠发生时附全部行(incrementAllLines),供 /report 的 AI 归纳替换折叠标记
+    expect(items[0].incrementAllLines).toEqual(Array.from({ length: 12 }, (_, i) => `增量W${String(i + 1).padStart(2, "0")}`));
+  });
+
+  test("增量 note ≤ MAX_INCREMENT_WORK_LINES → 无折叠、不带 incrementAllLines", async () => {
+    const notes = Array.from({ length: 10 }, (_, i) => ({
+      session: "s16", work: `增量V${String(i + 1).padStart(2, "0")}`, task: 100, notedActiveMinutes: 70 + i * 10,
+    }));
+    const items = await runPlan({
+      sessions: [{ id: "s16", repo: "r", branch: "main", activeMinutes: 200, start: "09:00", end: "12:00" }],
+      submitted: { "2026-08-06": { s16: { tasks: [100], hours: 1, minutes: 60 } } },
+      summaries: { "2026-08-06": notes },
+      cache: { projects: [{ id: 1, name: "P1" }], tasks: [{ id: 100, name: "T1", project: 1 }], executions: [], taskDetails: {} },
+    });
+    expect(items[0].incrementAllLines).toBeUndefined();
+    expect(items[0].work).not.toContain("更早");
   });
 });
 
