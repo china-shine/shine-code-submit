@@ -99,13 +99,17 @@ export function deployPlugin(bunPath: string, opts: { force?: boolean } = {}): s
   }
 
   // bun install 装运行时依赖。silent(--silent) 时 stdio:ignore,不喷日志到可能的控制台。
-  // --backend=copyfile:禁用 bun 默认的 hardlink/symlink 缓存链接,改纯复制——依赖仅 3 个包、
-  // 开销可忽略;链接模式会被 360 等杀软启发式判为「程序正在创建文件链接,绕过文件防护」拦截
-  // (2026-08-19 用户机器实测:npm 全局装的 bun.exe 在 install 时弹极智守护进程防护)。
+  // --production:只装 dependencies(marked/react/react-dom ~10MB),跳过 devDependencies
+  //   (typescript/@types/monaco-editor 共 ~139MB,插件运行完全不需要——monaco 构建期已 bundle
+  //   进 ui-assets.ts)。此前全装靠 hardlink 共享缓存数据块、真实增量小;配 copyfile 后若不跳过
+  //   devDeps,139MB 会坐实为每版本目录独立占用。
+  // --backend=copyfile:禁用 bun 默认的 hardlink/symlink 缓存链接,改纯复制——链接模式会被
+  //   360 等杀软启发式判为「程序正在创建文件链接,绕过文件防护」拦截(2026-08-19 用户机器实测:
+  //   npm 全局装的 bun.exe 在 install 时弹极智守护进程防护)。production 裁剪后 copy 开销可忽略。
   info("[shine-worklog] 安装运行时依赖(bun install)...");
   const stdio = isSilent() ? "ignore" : "inherit";
-  const backend = ["--backend=copyfile"];
-  let status = spawnSync(bunPath, ["install", "--frozen-lockfile", ...backend], {
+  const flags = ["--production", "--backend=copyfile"];
+  let status = spawnSync(bunPath, ["install", "--frozen-lockfile", ...flags], {
     cwd: target,
     shell: process.platform === "win32",
     encoding: "utf8",
@@ -113,7 +117,7 @@ export function deployPlugin(bunPath: string, opts: { force?: boolean } = {}): s
   }).status;
   if (status !== 0) {
     info("[shine-worklog] --frozen-lockfile 失败,重试普通 bun install");
-    status = spawnSync(bunPath, ["install", ...backend], {
+    status = spawnSync(bunPath, ["install", ...flags], {
       cwd: target,
       shell: process.platform === "win32",
       encoding: "utf8",

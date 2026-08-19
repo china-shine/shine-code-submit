@@ -151,7 +151,7 @@ hook 设计为**秒退不阻塞** Claude Code,失败事件落 `spool/`。弹 hoo
 
 **症状**(2026-08-19 用户机器实测):安装期弹「极智守护(360 安全大脑)进程防护」——「风险程序:`<DATA_DIR>\spawn-daemon-hidden.vbs`」「程序正在创建文件链接,会绕过安全软件的文件防护」,发起来源为 bun.exe。
 
-**根因**:① bun install 默认用 hardlink/symlink 从全局缓存链接依赖文件,杀软启发式对「批量创建文件链接」敏感;② `spawn-daemon-hidden.vbs`(隐藏窗口拉 daemon,防闪黑框)+ bun 自动安装的组合像恶意软件持久化链。**1.4.3 起 bun install 加 `--backend=copyfile`**(纯复制不建链接,依赖仅 3 个包开销可忽略),消掉最大触发面;vbs 仅在 daemon 未运行时写一次,保留(去掉会回退控制台弹窗问题)。
+**根因**:① bun install 默认用 hardlink/symlink 从全局缓存链接依赖文件,杀软启发式对「批量创建文件链接」敏感;② `spawn-daemon-hidden.vbs`(隐藏窗口拉 daemon,防闪黑框)+ bun 自动安装的组合像恶意软件持久化链。**1.4.3 起 bun install 加 `--production --backend=copyfile`**(只装 3 个运行依赖 ~10MB、纯复制不建链接;此前全装 devDeps 达 139MB/版本,版本目录 108M→16M),消掉最大触发面;vbs 仅在 daemon 未运行时写一次,保留(去掉会回退控制台弹窗问题)。
 
 **处理**:
 
