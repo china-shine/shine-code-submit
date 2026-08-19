@@ -131,6 +131,8 @@ npx shine-worklog install
 
 装完**重启 Claude Code**，`/plugin` 列表会显示 `shine-worklog`（✔ enabled）；开新会话即触发 SessionStart hook，事件出现在 Dashboard。
 
+> 🛡️ **杀毒软件误报**：安装期若弹 360 等杀软「创建文件链接/风险程序」拦截（bun 装依赖 + 隐藏启动 daemon 的组合易触发启发式），选「允许」或把 `%LOCALAPPDATA%\shine-worklog\`、`~/.claude/plugins/cache/shine-worklog/`、bun.exe 加入信任区；1.4.3 起安装已改用纯复制模式（`--backend=copyfile`）大幅降低触发面。详见 docs/15「⑤ 杀毒软件误报」。
+
 卸载：`npx shine-worklog uninstall`（⚠️ 不要 `sudo` —— sudo 没有 nvm 的 PATH，会 `npx: command not found`）。
 
 ### 方式二：`/plugin marketplace add`（从 GitHub）

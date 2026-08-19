@@ -147,6 +147,20 @@ hook 设计为**秒退不阻塞** Claude Code,失败事件落 `spool/`。弹 hoo
 2. hook 改动要**重启 Claude Code** 才生效;
 3. daemon 401 会自动走拉起重试链路(1.3.44+),不需干预。
 
+### ⑤ 杀毒软件误报(360 极智守护等)
+
+**症状**(2026-08-19 用户机器实测):安装期弹「极智守护(360 安全大脑)进程防护」——「风险程序:`<DATA_DIR>\spawn-daemon-hidden.vbs`」「程序正在创建文件链接,会绕过安全软件的文件防护」,发起来源为 bun.exe。
+
+**根因**:① bun install 默认用 hardlink/symlink 从全局缓存链接依赖文件,杀软启发式对「批量创建文件链接」敏感;② `spawn-daemon-hidden.vbs`(隐藏窗口拉 daemon,防闪黑框)+ bun 自动安装的组合像恶意软件持久化链。**1.4.3 起 bun install 加 `--backend=copyfile`**(纯复制不建链接,依赖仅 3 个包开销可忽略),消掉最大触发面;vbs 仅在 daemon 未运行时写一次,保留(去掉会回退控制台弹窗问题)。
+
+**处理**:
+
+1. 弹窗选「允许」/「误报反馈」;反复弹则把以下加入杀软**信任区/白名单**:
+   - `DATA_DIR` 整目录(Windows:`%LOCALAPPDATA%\shine-worklog\`)
+   - 插件缓存 `~/.claude/plugins/cache/shine-worklog/`
+   - bun.exe 本体(如 `D:\soft\nvm\<ver>\node_modules\bun\bin\bun.exe`)
+2. 若 vbs 已被隔离:从隔离区恢复并加白,否则 daemon 无法隐藏自启(功能不受损——hook 会重新拉起,只是窗口可见/手动触发)。
+
 ### 通用武器
 
 - **SQLite 直查**:`bun -e "const db=require('bun:sqlite');..."` 免装 sqlite3;
