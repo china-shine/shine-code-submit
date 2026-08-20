@@ -2,6 +2,27 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.4.7 — 2026-08-20
+
+工时归属日机制收口(点名日期防呆 + 报工时动作不计入工时)+ 会话查询 limit 截断与禅道提交重复双写两处数据完整性修复 + tokenserver 查询分页优化。
+
+### 变更(skills)
+- **报工时动作占用时间不计入工时**:分步 /report 的「执行 shine-worklog 工时填报流程」聚合条由 SKILL 规则删除、auto 一键内置排除——报工时这个动作本身的时间不再被当成工时报上去。
+- **/report 点名日期防呆**:用户点名日期(如「上报昨天的工时」)一律走分步流程、render 后核对归属日,不走 auto(不经确认直接提交、归属日偏差无从拦截)。
+- **归属日机制测试固化**:独立昨天会话归昨天、跨天会话归今天(已拍板)两条行为测试锁定(attribution.test.ts 新增)。
+
+### 变更(daemon)
+- **limit 截断修复**:`getTranscriptSessions` 去掉 2000 上限钳制——报表/上报/项目汇总传 100000 即「全量聚合」,钳到 2000 会静默截断最老会话;server 5 处 10000 上限统一提为 `ALL_SESSIONS_LIMIT` 常量。
+
+### 变更(skills)
+- **禅道提交防双写**:client.ts 错误挂结构化 status,`submitEffort`/`createTask` 的 legacy 降级只在 HTTP 非 2xx(旧版禅道 500)时触发;2xx 但响应非 JSON(HTML 错误页/空体/截断)→ 服务器很可能已成功记录,一律 rethrow 绝不重发——消除「禅道已记录又被当失败重发」的双写。
+
+### 变更(tokenserver)
+- **查询分页改 SQL LIMIT/OFFSET**:sessions/worklogs 列表不再全表拉内存,改数据库分页,大库下响应更快。
+
+### 验证
+- 新增「2xx 非 JSON → rethrow 绝不 legacy 重发」用例 + 归属日机制用例,全量 270 pass;docs 05/06/07/09/10/12 同步。
+
 ## 1.4.6 — 2026-08-19
 
 tokenserver 接收端两级鉴权(2026-08-15 安全待办收口):POST /api/report HMAC 验签 + GET /api/* viewToken;daemon 上报自动签名,reportSecret 随包默认分发、reportUrl 默认空。
