@@ -2,7 +2,7 @@ import { describe, test, expect, beforeEach, afterEach, mock, spyOn } from "bun:
 import { Client } from "../lib/client";
 
 const realFetch = globalThis.fetch;
-type Handler = (url: string, init: any) => { status: number; body: any };
+type Handler = (url: string, init: any) => { status: number; body?: any; text?: string };
 let handler: Handler | null = null;
 
 beforeEach(() => {
@@ -10,7 +10,8 @@ beforeEach(() => {
   globalThis.fetch = mock(async (input: any, init: any) => {
     const url = typeof input === "string" ? input : (input?.url ?? String(input));
     if (!handler) throw new Error("no mock handler set");
-    const { status, body } = handler(url, init || {});
+    const { status, body, text } = handler(url, init || {});
+    if (text !== undefined) return new Response(text, { status }); // 模拟 2xx 但响应非 JSON
     return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
   }) as any;
 });
@@ -218,5 +219,19 @@ describe("submitEffort", () => {
     const r = await cli().submitEffort(100, "2026-08-06", 1.5, "w", null, false);
     expect(r.submitted).toBe(true);
     expect(r.consumed).toBe(1.5);
+  });
+  test("2xx 但 body 非 JSON → rethrow,绝不 legacy 重发(防双写)", async () => {
+    let estimatePosts = 0;
+    use((url, init) => {
+      if (url.includes("/tasks/100") && !url.includes("estimate"))
+        return { status: 200, body: { name: "T1", left: 3 } };
+      if (url.includes("/estimate") && init.method === "POST") {
+        estimatePosts++;
+        return { status: 200, text: "<html>维护页</html>" }; // 服务器已成功记录,但响应不可解析
+      }
+      throw new Error("nope");
+    });
+    await expect(cli().submitEffort(100, "2026-08-06", 1.5, "w", null, false)).rejects.toThrow(/非 JSON/);
+    expect(estimatePosts).toBe(1); // 只发了一次,没有 legacy 重发
   });
 });

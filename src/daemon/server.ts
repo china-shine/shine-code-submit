@@ -62,6 +62,10 @@ import type { EventBus } from "./bus";
 import type { Stats } from "./stats";
 import type { Logger } from "./logger";
 
+/** 全量聚合扫描的会话上限:报表/上报/项目汇总想取「全部」,传给 getTranscriptSessions 的 limit。
+ *  store 侧不做 2000 级防御钳制(会静默截断最老会话);此值对可预见成员机累积均足够。 */
+const ALL_SESSIONS_LIMIT = 100_000;
+
 export interface ServerDeps {
   pid: PidFile;
   startedAt: number;
@@ -489,7 +493,7 @@ export function startServer(deps: ServerDeps) {
         }
         // 旧行为(无 cwd):全量 SessionSummary[],P3 前端不再用,保留向后兼容。
         const hookMap = buildHookCwdMap(store.sessions());
-        const sessions: SessionSummary[] = store.getTranscriptSessions({ since, limit: 10000 })
+        const sessions: SessionSummary[] = store.getTranscriptSessions({ since, limit: ALL_SESSIONS_LIMIT })
           .map(rowToScannedSession)
           .map((sc) => {
             const h = hookMap.get(sc.sessionId);
@@ -783,7 +787,7 @@ function findTranscriptPath(store: Store, sessionId: string): string | null {
  *  同名项目消歧 + sort 是 /api/report 专属展示上报逻辑(L1 项目表不消歧,用 cwd 列区分)。 */
 async function buildReport(store: Store, since: number): Promise<ReportResponse> {
   const hookCwd = buildHookCwdMap(store.sessions());
-  const scanned = store.getTranscriptSessions({ since, limit: 10000 }).map(rowToScannedSession);
+  const scanned = store.getTranscriptSessions({ since, limit: ALL_SESSIONS_LIMIT }).map(rowToScannedSession);
   const byCwd = groupScannedByCwd(scanned, hookCwd);
 
   const projects = await Promise.all(
@@ -811,7 +815,7 @@ async function buildReport(store: Store, since: number): Promise<ReportResponse>
   // (getGitUser 读全局 user.name,任何 cwd 都行;全量 since=0 时 scanned 已全量,不重复查)
   let gitUser = projects.find((p) => p.gitUser)?.gitUser ?? null;
   if (!gitUser) {
-    const allForGit = since > 0 ? store.getTranscriptSessions({ limit: 10000 }).map(rowToScannedSession) : scanned;
+    const allForGit = since > 0 ? store.getTranscriptSessions({ limit: ALL_SESSIONS_LIMIT }).map(rowToScannedSession) : scanned;
     for (const s of allForGit) {
       const cwd = hookCwd.get(s.sessionId)?.cwd ?? s.cwd ?? decodeProjectCwd(s.project);
       if (cwd) {
@@ -841,7 +845,7 @@ async function buildReport(store: Store, since: number): Promise<ReportResponse>
  *  项目数通常几十,先全算再 slice(totals 需全量);git/lines 走缓存,稳态快。 */
 async function getProjects(store: Store, since: number, page: number, pageSize: number): Promise<ProjectsResponse> {
   const hookCwd = buildHookCwdMap(store.sessions());
-  const scanned = store.getTranscriptSessions({ since, limit: 10000 }).map(rowToScannedSession);
+  const scanned = store.getTranscriptSessions({ since, limit: ALL_SESSIONS_LIMIT }).map(rowToScannedSession);
   const byCwd = groupScannedByCwd(scanned, hookCwd);
 
   const all = await Promise.all(
@@ -891,7 +895,7 @@ async function getProjectSessions(
     if (normCwd(s.cwd) === normCwd(cwd) && !hookBySid.has(s.sessionId)) hookBySid.set(s.sessionId, s);
   }
   // 该 cwd 的 scanned sessions(真实 cwd:hookMap 优先,无则解码项目名),按 lastActive 倒序
-  const all = store.getTranscriptSessions({ since, limit: 10000 })
+  const all = store.getTranscriptSessions({ since, limit: ALL_SESSIONS_LIMIT })
     .map(rowToScannedSession)
     .filter((s) => normCwd(hookMap.get(s.sessionId)?.cwd ?? s.cwd ?? decodeProjectCwd(s.project)) === normCwd(cwd))
     .sort((a, b) => b.lastActivity - a.lastActivity);

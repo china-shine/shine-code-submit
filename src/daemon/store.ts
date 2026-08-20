@@ -305,7 +305,9 @@ export class Store {
     const params: Array<string | number> = [];
     if (opts.cwd) { where.push("cwd = ?"); params.push(opts.cwd); }
     if (typeof opts.since === "number") { where.push("last_activity >= ?"); params.push(opts.since); }
-    const limit = Math.min(Math.max(opts.limit ?? 200, 1), 2000);
+    // 不做上限钳制:调用方(报表/上报/项目汇总)传 100000 就是要「全量聚合」,钳到 2000 会静默截断最老会话。
+    // 只保留下界防御(不传时默认 200、>=1)。events 表 query() 的 2000 钳制是另一链路,勿照搬。
+    const limit = Math.max(opts.limit ?? 200, 1);
     const offset = Math.max(opts.offset ?? 0, 0);
     return this.db
       .prepare(

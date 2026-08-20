@@ -41,9 +41,19 @@ export class Client {
     }
     const text = await resp.text();
     if (!resp.ok) {
-      throw new Error(`${method} ${p} -> HTTP ${resp.status}: ${text.slice(0, 300)}`);
+      // 挂结构化 status:供调用方区分「HTTP 拒绝(未成功处理,可安全重试)」vs「2xx 已成功但解析失败(重试会双写)」。
+      const err = new Error(`${method} ${p} -> HTTP ${resp.status}: ${text.slice(0, 300)}`) as Error & { status?: number };
+      err.status = resp.status;
+      throw err;
     }
-    return JSON.parse(text);
+    try {
+      return JSON.parse(text);
+    } catch {
+      // 2xx 但 body 非 JSON(HTML 错误页/空体/截断):服务器很可能已成功处理——绝不能在调用方按「旧版不兼容」重发。
+      const err = new Error(`${method} ${p} -> 2xx 但响应非 JSON: ${text.slice(0, 100)}`) as Error & { status?: number };
+      err.status = resp.status; // 2xx,<400
+      throw err;
+    }
   }
 
   async get(p: string): Promise<any> {
@@ -149,7 +159,10 @@ export class Client {
     let resp: any;
     try {
       resp = await this._request("POST", `/executions/${executionId}/tasks`, payload);
-    } catch {
+    } catch (e) {
+      // 仅 HTTP 非 2xx(部分版本 assignedTo 只接受字符串→500)才降级;2xx 解析失败=服务器已创建,重发会双写。
+      const status = (e as { status?: number })?.status;
+      if (typeof status !== "number" || status < 400) throw e;
       payload.assignedTo = this.account; // 部分版本 assignedTo 只接受字符串
       resp = await this._request("POST", `/executions/${executionId}/tasks`, payload);
     }
@@ -187,7 +200,10 @@ export class Client {
     let resp: any;
     try {
       resp = await this._request("POST", `/tasks/${taskId}/estimate`, payload);
-    } catch {
+    } catch (e) {
+      // 仅 HTTP 非 2xx(旧版禅道对新 body 返回 500)才降级 legacy;2xx 解析失败=服务器已记录,重发会双写,必须 rethrow。
+      const status = (e as { status?: number })?.status;
+      if (typeof status !== "number" || status < 400) throw e;
       resp = await this._request("POST", `/tasks/${taskId}/estimate`, legacy); // 禅道 < 20.7 旧版请求体
     }
     return {

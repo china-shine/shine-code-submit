@@ -50,7 +50,7 @@
 ## lib 四模块
 
 - **shared.ts**:路径常量(`DATA_DIR/zenpilot/...`,与 src/shared/paths.ts 内联复刻、改动两边同步)+ helpers(roundPy 银行家舍入/hoursFromMinutes 向上取 0.5h/applyMark·isAiWork 标识三件套/**writeJSON 原子写** tmp+rename);
-- **client.ts**:禅道 REST v1 客户端(三分错误:网络 die/HTTP throw 供重试/2xx→JSON;新请求体失败自动降级 legacy)+ **getCache 缓存层**(20 天滚动窗口,见 10-mechanisms);
+- **client.ts**:禅道 REST v1 客户端(三分错误:网络 die/**HTTP 非 2xx throw 供重试/2xx→JSON**;错误挂结构化 `status`(2026-08-20):`submitEffort`/`createTask` 的 catch **只对 HTTP 非 2xx 降级 legacy**(旧版禅道对新 body 返回 500)、**2xx 但响应非 JSON 一律 rethrow 防双写**——服务器已成功记录但响应不可解析时绝不重发)+ **getCache 缓存层**(20 天滚动窗口,见 10-mechanisms);
 - **transcript.ts**:collect(daemon /api/sessions → sessions.json,自上次提交日以来多天范围)+ transcript 信号提取;
 - **report.ts**:日报/周报装配(gatherReport 纯数据)+ HTML/文本渲染(worksHtml:`\n`→`<br>`;renderReportText 逐条分行)+ **报表侧按需刷新**(cacheStaleVsSubmissions 检测,1.3.46)。
 

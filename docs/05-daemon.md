@@ -59,7 +59,7 @@ consumer 消费父 transcript 时顺带提取「决定性内容」(每行已读�
 | transcript_files | path | 每个 transcript jsonl 一行:offset/entries_blob/dirty(增量读取游标) |
 | transcript_sessions | session_id | 会话聚合结果:token 四项/active_ms/last_activity/title/cwd/dirty |
 
-WAL 模式;查询 `store.query({cwd, sessionId, type, since, limit≤2000, offset})`。
+WAL 模式;查询 `store.query({cwd, sessionId, type, since, limit≤2000, offset})`(events 表,**limit 钳到 2000 是防御默认,防一次拉爆**)。`getTranscriptSessions`(transcript_sessions 表)**不做上限钳制**:调用方(报表/上报/项目汇总)传 100000 就是要「全量聚合」,钳到 2000 会静默截断最老会话——server 侧统一走 `ALL_SESSIONS_LIMIT = 100_000`(2026-08-20 改),只保留下界(不传默认 200、≥1)。两链路钳制口径不同,勿混用。
 
 ## HTTP/WS 服务(server.ts)
 
