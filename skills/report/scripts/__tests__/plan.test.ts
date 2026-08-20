@@ -308,6 +308,19 @@ describe("cmdPlan — 多天补报(自上次提交以来)", () => {
     expect(td.work).toBe("今天的note"); // 归今天的 session,不是 end 22:00 的昨天会话
   });
 
+  test("跨天会话(昨天延续到今早,date=今天)→ 整体归今天(2026-08-20 已拍板)", async () => {
+    // daemon toZenSession 已按 lastActive=今早 10:00 把跨天会话 date 归今天(昨天 19:00→今早 10:00,15h)
+    const items = await runPlan({
+      date: "2026-08-20",
+      sessions: [{ id: "s25", repo: "r", branch: "main", date: "2026-08-20", activeMinutes: 900, start: "19:00", end: "10:00" }],
+      submitted: {},
+      summaries: { "2026-08-20": [{ session: "s25", work: "跨天完成Z", task: 100, notedActiveMinutes: 900 }] },
+      cache: { projects: [{ id: 1, name: "P1" }], tasks: [{ id: 100, name: "T1", project: 1 }], executions: [], taskDetails: {} },
+    });
+    expect(items[0].date).toBe("2026-08-20"); // 整体归最后活跃日(今天),不拆昨天
+    expect(items[0].hours).toBe(15); // 900min 全量计今天
+  });
+
   test("老数据:会话无 date 字段 → item.date 兜底采集日", async () => {
     const items = await runPlan({
       date: "2026-08-06",
