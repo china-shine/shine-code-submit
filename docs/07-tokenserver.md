@@ -21,6 +21,7 @@ flowchart LR
 - **AI 占比口径**:分子=行级匹配(aiAdded+aiDeleted),分母=commit added+deleted;只统计「有 transcript 覆盖(aiAdded/aiDeleted 任一>0)」的 commit(纯删除型 1.3.44 起不再丢弃);`getDenominatorBreakdown` 按 cwd/有无 AI 覆盖拆分(no-ai 桶 1.3.44 修复);
 - **迁移**:worklogs 重建迁移单事务(rename→拷→drop→重建索引);残留 `worklogs_old` 表会让启动崩(罕见);
 - **只增不删**:禅道侧删除/改小的记录在平台永久残留(已知设计缺口,全量上报无法收敛)。
+- **分页**:`getSessions`/`getMemberWorklogs` 用 SQL `LIMIT/OFFSET` + `COUNT(*)` + `SUM(hours)`,不再全表拉内存 slice(2026-08-20 改,新旧实现对拍等价);排序固定 `lastActive DESC, sessionId` / `date DESC, sessionId`,次级键防碰撞值跨页重复/漏行。
 
 ## UI(tokenserver/ui/)
 

@@ -781,24 +781,38 @@ export interface SessionRowOut extends SessionRow {
   name: string;
 }
 
-/** 会话明细分页(等价 RecentSessionsTable 的 flattenSessions.filter(token>0).sort(lastActive desc))。*/
+/** 会话明细分页(等价 RecentSessionsTable 的 flattenSessions.filter(token>0).sort(lastActive desc))。
+ *  SQL 分页:token>0 过滤 + 排序 + LIMIT/OFFSET 全进 SQL,total 用 COUNT(*) 单独查。
+ *  (原内存版每次翻页全表拉 + 全量排序 O(n log n),行数涨到几十万后翻页会变慢。) */
 export function getSessions(
   opts: FilterOpts & { member?: string },
   page: number,
   pageSize: number,
 ): { rows: SessionRowOut[]; total: number; page: number; pageSize: number } {
   const o: FilterOpts = opts.member ? { from: opts.from, to: opts.to, members: [opts.member] } : opts;
-  const rows = querySessions(o)
-    .filter((r) => r.input + r.output + r.cacheCreation + r.cacheRead > 0)
-    .sort((a, b) => b.lastActive - a.lastActive);
+  // token 四列 schema 里 INTEGER DEFAULT 0、从未置 null,COALESCE 仅为防御性兜底
+  const where = ["lastActive >= ?", "lastActive <= ?"];
+  const params: (number | string)[] = [o.from, o.to];
+  if (o.members.length > 0) {
+    where.push(`gitUser IN (${o.members.map(() => "?").join(",")})`);
+    params.push(...o.members);
+  }
+  where.push(`(COALESCE(input,0) + COALESCE(output,0) + COALESCE(cacheCreation,0) + COALESCE(cacheRead,0) > 0)`);
+  const cond = where.join(" AND ");
+  const total = (
+    db.prepare(`SELECT COUNT(*) AS n FROM sessions WHERE ${cond}`).get(...params) as { n: number }
+  ).n;
+  const rows = db.prepare(`
+    SELECT sessionId, gitUser, cwd, lastActive, input, output, cacheCreation, cacheRead, added, deleted, modified, activeMs, title
+    FROM sessions WHERE ${cond} ORDER BY lastActive DESC, sessionId LIMIT ? OFFSET ?
+  `).all(...params, pageSize, (page - 1) * pageSize) as SessionRow[];
   const names = projectNameMap();
-  const total = rows.length;
-  const start = (page - 1) * pageSize;
-  const sliced = rows.slice(start, start + pageSize).map((r) => ({
-    ...r,
-    name: names.get(r.gitUser + "\0" + r.cwd) ?? r.cwd,
-  }));
-  return { rows: sliced, total, page, pageSize };
+  return {
+    rows: rows.map((r) => ({ ...r, name: names.get(r.gitUser + "\0" + r.cwd) ?? r.cwd })),
+    total,
+    page,
+    pageSize,
+  };
 }
 
 export interface MemberDetail {
@@ -921,27 +935,35 @@ export interface WorklogRowOut {
 }
 
 /** 成员禅道工时分页(已提交 resolved;date YYYY-MM-DD 字符串比较过滤,词法序正确)。
- *  按 date DESC, sessionId 排序;taskId=0(无任务兜底)前端按空显示。 */
+ *  按 date DESC, sessionId 排序;taskId=0(无任务兜底)前端按空显示。
+ *  SQL 分页:LIMIT/OFFSET 只取当前页,total 用 COUNT(*)、totalHours 用 SUM(hours) 单独查(全量口径,非当前页)。 */
 export function getMemberWorklogs(
   gitUser: string,
   opts: { start: string; end: string },
   page: number,
   pageSize: number,
 ): { rows: WorklogRowOut[]; total: number; page: number; pageSize: number } {
-  let sql = `SELECT date, sessionId, repo, branch, "start", "end", minutes, hours, taskId, taskName, projectId, projectName, work, zentaoUrl FROM worklogs WHERE gitUser = ?`;
+  const where = ["gitUser = ?"];
   const params: (string | number)[] = [gitUser];
   if (opts.start) {
-    sql += ` AND date >= ?`;
+    where.push(`date >= ?`);
     params.push(opts.start);
   }
   if (opts.end) {
-    sql += ` AND date <= ?`;
+    where.push(`date <= ?`);
     params.push(opts.end);
   }
-  sql += ` ORDER BY date DESC, sessionId`;
-  const all = db.prepare(sql).all(...params) as WorklogRowOut[];
-  const total = all.length;
-  const totalHours = all.reduce((s, r) => s + (r.hours || 0), 0); // 全量总工时(给前端合计行,非当前页)
-  const startIdx = (page - 1) * pageSize;
-  return { rows: all.slice(startIdx, startIdx + pageSize), total, totalHours, page, pageSize };
+  const cond = where.join(" AND ");
+  const total = (
+    db.prepare(`SELECT COUNT(*) AS n FROM worklogs WHERE ${cond}`).get(...params) as { n: number }
+  ).n;
+  // 全量总工时(给前端合计行,非当前页);SUM 忽略 NULL,hours 缺失时 COALESCE 兜 0
+  const totalHours = (
+    db.prepare(`SELECT COALESCE(SUM(hours), 0) AS s FROM worklogs WHERE ${cond}`).get(...params) as { s: number }
+  ).s;
+  const rows = db.prepare(`
+    SELECT date, sessionId, repo, branch, "start", "end", minutes, hours, taskId, taskName, projectId, projectName, work, zentaoUrl
+    FROM worklogs WHERE ${cond} ORDER BY date DESC, sessionId LIMIT ? OFFSET ?
+  `).all(...params, pageSize, (page - 1) * pageSize) as WorklogRowOut[];
+  return { rows, total, totalHours, page, pageSize };
 }
