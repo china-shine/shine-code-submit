@@ -788,6 +788,12 @@ async function cmdAuto(client: Client, cfg: Record<string, any>, a: Args): Promi
   const collected = await cmdCollect();
   if (collected.error) return { action: "abort", step: "collect", error: collected.error };
   const plan = await cmdPlan(client, cfg);
+  // 填报流程会话(报工时动作本身)不计入工时:auto 无 AI 核对草稿,直接排除 meta 条目并回写 plan.json
+  //(cmdRender/cmdCommit 读盘;分步流程由 SKILL 规则删除,auto 只能靠这里兜底)
+  if (plan.items.some((i: any) => i.meta)) {
+    plan.items = plan.items.filter((i: any) => !i.meta);
+    writeJSON(PLAN_PATH, plan);
+  }
   const items = plan.items;
   const pending = [...new Set(items.filter((i: any) => i.status === "needs_semantic" || i.status === "unmatched").map((i: any) => i.session))];
   const unmatched = items

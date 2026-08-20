@@ -25,7 +25,7 @@ description: 汇总当天及上次提交以来未提交的 Claude Code 会话统
 
 ### auto 一键(追求速度、work 不归纳)
 
-> auto 直接 commit 用 join 的 note 原文(work 是结论拼接、不归纳)。**要总结性 work 走下面的分步(collect → plan → AI 综合 → render → commit)**;只在不在意 work 文案、追求秒级时用 auto。**用户点名日期(如「上报昨天的工时」)也不用 auto**——auto 不经确认直接提交,归属日偏差无从拦截;点名日期一律走分步,并在 render 后核对归属日(见第 3 步)。
+> auto 直接 commit 用 join 的 note 原文(work 是结论拼接、不归纳)。**要总结性 work 走下面的分步(collect → plan → AI 综合 → render → commit)**;只在不在意 work 文案、追求秒级时用 auto。**用户点名日期(如「上报昨天的工时」)也不用 auto**——auto 不经确认直接提交,归属日偏差无从拦截;点名日期一律走分步,并在 render 后核对归属日(见第 3 步)。**auto 已内置排除填报会话本身**(报工时动作占用的时间不计入工时,见第 3 步),分步流程需 AI 手动删。
 
 summary 记全时,/report 可一步跑完,不用分步:
 
@@ -56,7 +56,7 @@ bun "<Base directory>/scripts/zentao.ts" plan [--source zentao]
 ```
 (选"先刷新"则先跑 `bun "<Base directory>/scripts/zentao.ts" refresh`,再 plan)
 
-一步读 `sessions.json`(Stop hook 每轮自动 collect 写入,范围=**自上次提交日以来**含今天,上限 14 天,**不需主动 collect**)+ summary + submitted,输出 `plan.json` + 返回 `cooldown`。**填报流程会话已自动聚合**:跑 /report//prepare//amend 产生的 skill 会话(识别:标题含 `skills\report|prepare|amend` 且活跃<45min)同日合并为一条「执行 shine-worklog 工时填报流程」,工时按时间区间并集去重——**AI 无需再手动合并同类条目**。按返回分三个分支:
+一步读 `sessions.json`(Stop hook 每轮自动 collect 写入,范围=**自上次提交日以来**含今天,上限 14 天,**不需主动 collect**)+ summary + submitted,输出 `plan.json` + 返回 `cooldown`。**填报流程会话已自动聚合**:跑 /report//prepare//amend 产生的 skill 会话(识别:标题含 `skills\report|prepare|amend` 且活跃<45min)同日合并为一条「执行 shine-worklog 工时填报流程」,工时按时间区间并集去重——**AI 无需再手动合并同类条目,但要删掉它**:聚合条就是报工时动作本身占用的时间,**不计入工时**,见第 3 步删除规则(auto 已内置排除)。按返回分三个分支:
 
 - **`cooldown` 非空**(距上次提交<30min):告知用户"距上次提交需等 `waitMinutes` 分钟",**停止,不 render/commit**。
 - **`items` 为空**(全部已提交,增量均<15min):plan **不含已提交条目**(仅 `alreadyCount` 计数),render 会提示"本次无可提交条目"——无需提交,**也不要向用户复述已提交明细/条数**。
@@ -99,6 +99,8 @@ bun "<Base directory>/scripts/zentao.ts" render
 把 render 输出**原样**放进代码块展示给用户,随后立刻用 AskUserQuestion 请用户确认整批提交(提交 / 调整 / 取消)。**未经确认绝不 commit**。
 
 - **⚠️ 用户点名日期时(如「上报昨天的工时」「补昨天的」)必须逐条核对归属日**:草稿里补报条目带 `[补 MM-DD]` 标记、今天的无标记。两个易错点:①流程语义是「今天+所有漏报一起补」,点名日之外的条目也会一并提交;②跨天会话整体归属**最后活跃日**——今早在昨天延续下来的会话里说「报昨天」,该会话(含昨天全部工时)会整条落**今天**且无 [补] 标记。发现与用户点名不符时,确认前明确指出差异并问怎么处理(照报/剔除/调整归属),不要照单全收
+
+- **草稿含「执行 shine-worklog 工时填报流程」条目时直接删掉**:该条目是**报工时动作本身占用的时间**(识别:work 为固定文案「执行 shine-worklog 工时填报流程」,或 reason 含「填报流程会话自动聚合」;活跃<45min 的 report/prepare/amend 会话聚合而成),**不计入工时**——直接用 Edit 删掉 plan.json 里该 item(整条删除,含 sourceSessions),重新 render 再确认。auto 已内置排除,只有分步流程需要这一步;不删就会把报工时的时间当成 0.5h 工时报上去
 
 - 用户要求调整(改归属/改工时/改文案/按比例拆分/剔除)→ 改 plan.json 对应字段 → 重新 render → 再确认。拆分 = 复制条目,同 session 不同 task,工时按比例分
 - ⚠️ 改**已 resolved 条目**的 work 文案:**直接用 Edit 工具改 plan.json 对应条目的 work 字段**——render 只在还有 pending 时才重 plan,全 resolved 时直改不会被覆盖。**不要用 `note` 改文案**:note 是**追加**语义(会多出一条,plan 把新旧 join 成两行),只适合给缺素材的会话补记录;用内联脚本(bun -e)直改 plan.json 也要避免——JS 单引号里的 `\n` 是真换行,要字面 `\n` 须写 `\\n`

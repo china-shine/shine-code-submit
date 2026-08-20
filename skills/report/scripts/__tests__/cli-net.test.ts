@@ -284,6 +284,32 @@ describe("auto 命令(4 分支)", () => {
     expect(r.json.waitMinutes).toBeGreaterThanOrEqual(30);
     expect(noBizPost(mock.requests.slice(before))).toBe(true);
   }, 20000);
+
+  test("填报流程会话(auto 无 AI 核对)→ 排除 meta 条目,只提交正常工作会话(报工时时间不计入)", async () => {
+    const s = sb();
+    s.write("cache", CACHE());
+    s.write("sessions", SESSIONS([
+      { id: "s1", repo: "r1", branch: "main", activeMinutes: 60, start: "09:00", end: "10:00" },
+      // 填报元会话:标题含 skills\report、活跃<45min(aggregateMetaItems 会并成「执行 shine-worklog 工时填报流程」)
+      { id: "m1", repo: "r1", branch: "main", activeMinutes: 20, start: "11:00", end: "11:20", summary: "Base directory for this skill: C:\\x\\shine-worklog\\1.3.50\\skills\\report # 工时填报" },
+    ]));
+    s.write("summary:2026-08-06", [
+      { session: "s1", work: "做A", task: 100, notedActiveMinutes: 60, taskName: "T100", project: 1, projectName: "P1" },
+      { session: "m1", work: "执行填报", task: 100, notedActiveMinutes: 20, taskName: "T100", project: 1, projectName: "P1" },
+    ]);
+    mock.setRoutes(withLogin(OK_ESTIMATE));
+    const beforePosts = mock.requests.filter((x) => x.method === "POST" && x.p.endsWith("/tasks/100/estimate")).length;
+    const r = await s.run(["auto"]);
+    expect(r.code).toBe(0);
+    expect(r.json.action).toBe("committed");
+    expect(r.json.result.submitted).toBe(1); // 只提交 s1,m1(填报会话)被排除
+    expect(r.json.draft).not.toContain("执行 shine-worklog 工时填报流程"); // 草稿不含填报条目
+    const posts = mock.requests.filter((x) => x.method === "POST" && x.p.endsWith("/tasks/100/estimate"));
+    expect(posts.length - beforePosts).toBe(1); // 只发一次提交请求
+    expect(posts[posts.length - 1].body.work[0]).toContain("做A");
+    expect(s.read("submitted")["2026-08-06"].s1).toBeDefined();
+    expect(s.read("submitted")["2026-08-06"].m1).toBeUndefined(); // 填报会话不记台账
+  }, 20000);
 });
 
 describe("amend 命令", () => {

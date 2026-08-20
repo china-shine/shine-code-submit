@@ -50,7 +50,7 @@ Claude Code 共 9 个 hook 事件（[官方清单](https://docs.claude.com/en/do
 
 工时从"开发时零打扰"到"`/report` 提交时自动汇总"的闭环：
 - **开发时零负担**：不注入提示词、正常写代码即可——**auto-note**（1.3.50）在每轮对话结束（Stop hook）后台自动把最新一轮结论精简成 work + 推断 task 写入 summary（零 LLM、毫秒级、完全无感；10min 节流，`settings.json` 的 `autoNote:false` 可关）
-- **`/report`**：提交时对有 summary 的会话直读秒级；对没有 work 记录的会话，**自动读 Claude transcript 日志提取信号**（最近 AI 汇报 + 改动文件 + 工具计数），AI 归纳成一句话 work + 归属任务，汇总前提示「正在汇总日志」。task 不确定时从候选任务选，匹配好后统一提交。**填报流程会话自动聚合**（跑 /report//prepare//amend 产生的 skill 会话同日合并一条「执行工时填报流程」、时间区间并集去重——不自我繁殖、不产生重复标题）
+- **`/report`**：提交时对有 summary 的会话直读秒级；对没有 work 记录的会话，**自动读 Claude transcript 日志提取信号**（最近 AI 汇报 + 改动文件 + 工具计数），AI 归纳成一句话 work + 归属任务，汇总前提示「正在汇总日志」。task 不确定时从候选任务选，匹配好后统一提交。**填报流程会话自动聚合**（跑 /report//prepare//amend 产生的 skill 会话同日合并一条「执行工时填报流程」、时间区间并集去重——不自我繁殖、不产生重复标题；**聚合条不计入工时**：报工时动作本身占用的时间不算工时，分步流程 SKILL 第 3 步删除、auto 内置排除，报工时的时间不进禅道/台账）
 - **`/prepare`**：手动补漏/重归纳（auto-note 没覆盖的：新项目首会话、想要更精炼文案、老会话无信号）
 - **`/daily` `/weekly` `/amend`**：日报 / 周报 / 修正最后一次提交
 - **`/mark`**：配置 **AI 提交标识**（开关 + 文案）——提交禅道工时在 work 末尾追加一行标识（默认「本次内容由AI填报」），`/daily` `/weekly` 据此对账统计「AI 代报 N h」；dashboard「设置 → AI 提交标识」区块配同一处（`settings.json` 的 `aiSubmitMark`）
