@@ -429,6 +429,32 @@ describe("cmdPlan — 元会话聚合(填报流程会话合并)", () => {
     expect(items[0].task).toBe(100);
     expect(items[0].reason).toContain("自动聚合"); // 归属语义体现在 task,reason 是聚合的
   });
+
+  test("盲区兜底:summary=(无文本提示)(斜杠命令会话抓不到标题)但 signals 有填报系 skill 标签 → 仍并入聚合", async () => {
+    const items = await runPlan({
+      date: "2026-08-06",
+      sessions: [
+        { id: "cmd1", repo: "r", branch: "main", date: "2026-08-06", start: "09:00", end: "09:12", activeMinutes: 12, summary: "(无文本提示)" },
+        // 对照组:同样无标题,但 signals 无填报系标签(如 weekly)→ 不聚合
+        { id: "w1", repo: "r", branch: "main", date: "2026-08-06", start: "13:00", end: "13:20", activeMinutes: 18, summary: "(无文本提示)" },
+      ],
+      signals: { "2026-08-06": [
+        { id: "cmd1", signals: { aiTitle: "禅道工时提交流程", turns: [{ skills: ["shine-worklog:report"] }] } },
+        { id: "w1", signals: { aiTitle: "生成周报", turns: [{ skills: ["shine-worklog:weekly"] }] } },
+      ] },
+      submitted: {},
+      summaries: { "2026-08-06": [{ session: "w1", work: "生成周报", task: 100, notedActiveMinutes: 15 }] },
+      cache: { projects: [{ id: 1, name: "P1" }], tasks: [{ id: 100, name: "T1", project: 1 }], executions: [], taskDetails: {} },
+    });
+    expect(items.length).toBe(2); // cmd1 聚合条 + w1 正常条目,各独立
+    const meta = items.find((i: any) => Array.isArray(i.sourceSessions));
+    expect(meta).toBeDefined();
+    expect(meta.sourceSessions.map((x: any) => x.session)).toEqual(["cmd1"]); // cmd1 被并入聚合
+    expect(meta.work).toBe("执行 shine-worklog 工时填报流程");
+    const w = items.find((i: any) => i.session === "w1");
+    expect(w).toBeDefined(); // w1(weekly 标签)不聚合
+    expect(w.meta).toBe(false);
+  });
 });
 
 describe("cmdPlan — task=-1 unmatched", () => {

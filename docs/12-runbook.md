@@ -30,11 +30,11 @@
 
 ## 测试资产
 
-- `skills/report/scripts/__tests__/`:262 用例(plan 增量/水位/拆段/多天补报/元会话聚合/增量 work 合并、commit 流水/numberWork、mark 幂等、client REST——含 **2xx 非 JSON rethrow 不 legacy 重发防双写**、auto-note 归纳/水位/节流/垃圾文案过滤/窗口全量 join、**auto 排除填报会话**);
+- `skills/report/scripts/__tests__/`:254 用例(plan 增量/水位/拆段/多天补报/元会话聚合/增量 work 合并、commit 流水/numberWork、mark 幂等、client REST——含 **2xx 非 JSON rethrow 不 legacy 重发防双写**、auto-note 归纳/水位/节流/垃圾文案过滤/窗口全量 join、**auto 排除填报会话**);
 - runner 子进程模式(plan-runner/commit-runner/attribution-runner):env LOCALAPPDATA 指临时目录真隔离(attribution-runner 所有本地时间运算在 runner 侧做,规避 bun test TZ=UTC 差 8h);
 - `tokenserver/src/__tests__/server.test.ts`:38 用例(**HTTP 层全功能**,2026-08-21 新增;零测试→全覆盖)。真起服务(TOKENSERVER_DATA_DIR 临时目录 + PORT=0 随机端口),覆盖:health / HMAC 验签(x-report-ts 13 位 + ±15min 窗口 + gzip 先验签再解压 + 错签/错 ts/超窗 401 + 坏 JSON/缺 projects 400 + 幂等重放)/ viewToken 鉴权(?t= 与 Bearer、401 负例、豁免范围)/ stats 聚合(totals/trend/daily/composition/tokenRank/codeRank/sizeBuckets/members+version 取最新上报版本)/ denominator-breakdown(**host 白名单过滤**)/ sessions 分页(token>0 过滤)/ member 详情 + worklog 分页(totalHours + date 范围)/ 静态页 /docs / 配置热更新(删 viewToken 读接口开放、删 reportSecret 上报放行)。**不用 tsc**(基线噪音),验证靠 build:ui + HTTP。
 - `scripts/verify-daemon-endpoints.ts`:**运行中 daemon 全端点验证**(2026-08-21 新增)。读 daemon.pid 拿 token,逐个打 40 项:鉴权豁免(health/静态/favicon)/ 鉴权负例(无 token/错 token/reports 无 ?t= 401)/ 全 GET 端点(stats/events/projects/sessions/signals/transcript/commits/report/zentao-config/settings/zentao-cache/skills 五端点/reports 列表与单文件)/ 安全写(zentao-config+settings 原样回写、hook 插无害事件);破坏性端点(shutdown/update/report-upload/refresh/DELETE/skills 写)盘点但不触发。改 daemon 路由后跑 `bun scripts/verify-daemon-endpoints.ts` 回归。
-- 全量:`bun test` 17 文件 321 用例全绿(2026-08-21 实测)。
+- 全量:`bun test` 17 文件 322 用例全绿(2026-08-21 实测)。
 
 ## 交接清单(Checklist)
 

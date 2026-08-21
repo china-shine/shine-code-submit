@@ -8,7 +8,7 @@
 
 | Skill | 作用 |
 |---|---|
-| `/report` | 工时填报主流程(plan→render→确认→commit;全 resolved 时 work 原样提交不归纳——auto-note 文案即总结,归纳仅在 work 异常/用户要求时,严禁为写文案考古;增量条目 work=水位后全部 note 合并,多行是预期产物不是拼接异常;**note 超 10 行被折叠成「…(更早 N 条略)」时,plan 条目附 `incrementAllLines` 全部行,AI 归纳成 ≤6 行总结替换 work,折叠标记不进禅道**;work 异常快修=凭上下文直接 Edit plan.json,勿照过时的会话标题写;**点名日期(如「报昨天的工时」)不走 auto,render 后逐条核对归属日([补 MM-DD] 标记),与点名不符的确认前指出——跨天会话整体归最后活跃日,在昨天会话里说「报昨天」会整条落今天**;**报工时动作本身占用的时间不计入工时**:plan 聚合的「执行 shine-worklog 工时填报流程」条目(识别:work 固定文案/reason 含「填报流程会话自动聚合」)分步流程第 3 步删掉、auto 已内置排除 |
+| `/report` | 工时填报主流程(plan→render→确认→commit;全 resolved 时 work 原样提交不归纳——auto-note 文案即总结,归纳仅在 work 异常/用户要求时,严禁为写文案考古;增量条目 work=水位后全部 note 合并,多行是预期产物不是拼接异常;**work 含折叠标记(「…(更早/前 N 条/轮略)」)或行尾截断符(`…`) → AI 强制归纳成 ≤6 行总结替换 work**(有 `incrementAllLines` 用其全部行,无则用 work 现有行,折叠标记/截断残行不进禅道;覆盖普通长会话,不要求「首行折叠标记+incrementAllLines」两前提);work 异常快修=凭上下文直接 Edit plan.json,勿照过时的会话标题写;**点名日期(如「报昨天的工时」)不走 auto,render 后逐条核对归属日([补 MM-DD] 标记),与点名不符的确认前指出——跨天会话整体归最后活跃日,在昨天会话里说「报昨天」会整条落今天**;**报工时动作本身占用的时间不计入工时**:plan 聚合的「执行 shine-worklog 工时填报流程」条目(识别:work 固定文案/reason 含「填报流程会话自动聚合」)分步流程第 3 步删掉、auto 已内置排除 |
 | `/prepare` | 提前算好 work+task 写 summary,让 /report 秒级 |
 | `/daily` `/weekly` `/lastweek` | 日报/周报/上周周报(数据=禅道 efforts,HTML 落盘 reports/;`/daily` 支持 `--from/--to` 回看某天,跨天区间按天分区逐日渲染不丢天、合计为区间累计) |
 | `/refresh` | 全量刷新禅道缓存 |

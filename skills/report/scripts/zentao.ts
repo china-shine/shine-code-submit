@@ -17,7 +17,7 @@
  *   会话采集+transcript → ./lib/transcript;日报/周报 → ./lib/report。本文件只留命令实现 + 入口分发。 */
 import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import * as path from "node:path";
-import { Args, die, loadJSON, writeJSON, roundPy, todayISO, nowISOSeconds, minutesSinceISO, hoursFromMinutes, fmtHours, isObj, loadConfig, loadMarkSetting, applyMark, requireStr, requireInt, summaryPathFor, CONFIG_PATH, CACHE_PATH, MAPPINGS_PATH, SETTINGS_PATH, SESSIONS_PATH, SUBMITTED_PATH, PLAN_PATH, PROJECT_DIR, PROJECT_CWD, SUBMITTED_LOG_DIR, COMMIT_COOLDOWN_MINUTES, lastSubmitSinceEpoch, num } from "./lib/shared";
+import { Args, die, loadJSON, writeJSON, roundPy, todayISO, nowISOSeconds, minutesSinceISO, hoursFromMinutes, fmtHours, isObj, loadConfig, loadMarkSetting, applyMark, requireStr, requireInt, summaryPathFor, CONFIG_PATH, CACHE_PATH, MAPPINGS_PATH, SETTINGS_PATH, SESSIONS_PATH, SUBMITTED_PATH, PLAN_PATH, PROJECT_DIR, PROJECT_CWD, SUBMITTED_LOG_DIR, COMMIT_COOLDOWN_MINUTES, lastSubmitSinceEpoch, num, DATA_DIR, encodeProject } from "./lib/shared";
 import { Client, getCache, getCacheLocal } from "./lib/client";
 import { cmdCollect, extractTranscriptSignals, fetchDaemonSignalsMap, fetchDaemonSignals } from "./lib/transcript";
 import { writeReport, weekStart, lastWeekRange } from "./lib/report";
@@ -97,12 +97,37 @@ function candidatesFor(repo: string, mappings: any, tasks: any[], projectNames: 
 
 /** 填报系 skill 的路径段(daemon title=首条 user 消息含 skill 展开路径)。weekly/daily 报表会话不算(是正常工作)。 */
 const META_SKILL_RE = /skills[\\/](report|prepare|amend)\b/;
+/** 填报系 skill 标签(daemon attributionSkill 值,如 "shine-worklog:report";斜杠命令会话 daemon 抓不到标题时的盲区兜底)。 */
+const META_SKILL_TAG_RE = /^shine-worklog:(report|prepare|amend)$/;
 /** 活跃超过此分钟数的会话不并入聚合:可能在 skill 会话里干了真开发(如 weekly 开头的主开发会话),双保险。 */
 const META_MAX_MINUTES = 45;
 const META_WORK = "执行 shine-worklog 工时填报流程";
 
-function isMetaSkillSession(s: any): boolean {
-  return META_SKILL_RE.test(String(s?.summary ?? "")) && num(s?.activeMinutes) < META_MAX_MINUTES;
+/** 该会话 daemon 预提取 signals(磁盘 DATA_DIR/signals/<编码项目>/<date>/<sid>.json)里出现的 skill 标签(去重)。
+ *  盲区场景:斜杠命令会话(summary="(无文本提示)")标题抓不到 skill 路径,但 signals.turns[].skills 有 attributionSkill。 */
+function sessionSkills(s: any, date: string): string[] {
+  const out = new Set<string>();
+  for (const d of new Set([String(s?.date || date), date])) {
+    try {
+      const f = path.join(DATA_DIR, "signals", encodeProject(PROJECT_CWD), d, String(s?.id) + ".json");
+      if (!existsSync(f)) continue;
+      const sig = JSON.parse(readFileSync(f, "utf8"));
+      for (const t of Array.isArray(sig?.turns) ? sig.turns : []) {
+        if (Array.isArray(t?.skills)) for (const k of t.skills) if (typeof k === "string") out.add(k);
+      }
+    } catch {
+      /* 缺文件/损坏 → 忽略,退化标题匹配 */
+    }
+  }
+  return [...out];
+}
+
+/** 填报流程元会话识别:标题含 skill 路径段(常规)∪ 盲区兜底(signals 有填报系 skill 标签的斜杠命令会话)。
+ *  weekly/daily 报表会话不匹配两路 → 正常工作,不聚合。 */
+function isMetaSkillSession(s: any, date: string): boolean {
+  if (num(s?.activeMinutes) >= META_MAX_MINUTES) return false;
+  if (META_SKILL_RE.test(String(s?.summary ?? ""))) return true;
+  return sessionSkills(s, date).some((k) => META_SKILL_TAG_RE.test(k));
 }
 
 /** "HH:MM" → 当日分钟数;不合法 → NaN。 */
@@ -291,7 +316,7 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>, source
       end: s.end,
       minutes: s.activeMinutes,
       summary: s.summary ?? "",
-      meta: isMetaSkillSession(s), // 填报流程元会话(见 aggregateMetaItems):聚合用
+      meta: isMetaSkillSession(s, date), // 填报流程元会话(见 aggregateMetaItems):聚合用
       increment: false,
       work: null,
     };

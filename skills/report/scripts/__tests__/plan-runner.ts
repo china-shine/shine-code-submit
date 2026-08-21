@@ -20,6 +20,14 @@ writeFileSync(shared.CACHE_PATH, JSON.stringify(fx.cache ?? { projects: [{ id: 1
 for (const [d, notes] of Object.entries(fx.summaries ?? {})) {
   writeFileSync(path.join(shared.PROJECT_DIR, `summary-${d}.json`), JSON.stringify(notes));
 }
+// daemon 预提取 signals fixture:DATA_DIR/signals/<编码项目>/<date>/<sid>.json(聚合盲区兜底读这里)
+for (const [d, entries] of Object.entries(fx.signals ?? {})) {
+  for (const ent of entries) {
+    const dir = path.join(shared.DATA_DIR, "signals", shared.encodeProject(shared.PROJECT_CWD), d);
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, `${ent.id}.json`), JSON.stringify(ent.signals));
+  }
+}
 
 try {
   const plan = await cmdPlan(undefined, undefined);
