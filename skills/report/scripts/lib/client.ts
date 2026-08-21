@@ -219,12 +219,19 @@ export class Client {
  *  缓存大小恒定(daily/weekly cache 源足够,覆盖 lastweek 回看);更早历史用禅道实时源。 */
 const EFFORT_FRESH_DAYS = 20;
 
-/** 纯读本地禅道缓存,不传 client/不联网。prepare 用它保证「绝不联网」契约;返回 null 表示尚未缓存。 */
+/** 纯读本地禅道缓存,不传 client/不联网。prepare 用它保证「绝不联网」契约;返回 null 表示尚未缓存。
+ *  缓存文件损坏(手改/磁盘异常/写一半截断)时 loadJSON 的 JSON.parse 会 throw——在此按 null 处理。
+ *  上层在线时(getCache / refresh / 各命令)自然走 refresh 联网重建自愈;离线(cache 源 client=undefined)
+ *  时由 getCache 明确报错提示联网,而非全线命令崩溃或静默产出缺数报表。 */
 export function getCacheLocal(): any | null {
-  return loadJSON<any>(CACHE_PATH, null);
+  try {
+    return loadJSON<any>(CACHE_PATH, null);
+  } catch {
+    return null;
+  }
 }
 
-async function getCache(client: Client, cfg: Record<string, any>, refresh = false): Promise<any> {
+async function getCache(client: Client | undefined, cfg: Record<string, any>, refresh = false): Promise<any> {
   // 有本地缓存就直接复用(不管是否过期)——/report/daily/weekly 读本地秒回,绝不拉禅道;
   // 禅道更新由 dashboard「更新禅道」按钮(POST /api/zentao-cache/refresh)或显式 refresh 触发。
   // 仅首次(无缓存)或 refresh=true 才拉禅道。
@@ -236,6 +243,10 @@ async function getCache(client: Client, cfg: Record<string, any>, refresh = fals
     const expired = ttl > 0 && (typeof fa !== "string" || (Date.now() - new Date(fa).getTime()) / 60000 > ttl);
     if (!expired) return existing;
     // TTL 过期:继续往下联网拉(自动刷新)
+  }
+  // 离线(cache 源真离线,daily/weekly/plan 传 client=undefined)且缓存缺失/过期/损坏 → 明确报错,不硬闯联网段
+  if (!client) {
+    die("本地缓存缺失、过期或已损坏,离线状态下无法联网刷新。请先恢复禅道连接(或 --source zentao 实时源)再重试。");
   }
   // 滚动窗口基准:近 EFFORT_FRESH_DAYS 天。项目/执行/任务/记录四层同窗口——
   // 「与近 20 天工时关联的都要拉」:项目按状态/最近编辑、执行按状态/计划结束、任务按状态/最近编辑、记录按日期。
@@ -285,12 +296,19 @@ async function getCache(client: Client, cfg: Record<string, any>, refresh = fals
   }
   for (const t of doneTasks) taskDetails[String(t.id)] = { name: t.name, project: t.project };
   // 主 cache(元数据,稳定小):不含 taskEfforts(增长大头,拆到 efforts/<taskId>.json)
+  // 禅道中文名(realname)随缓存存一份:cache 源真离线(client=undefined)时报表仍能显示禅道中文名
+  // (否则退化英文 account);拉取失败(网络抖动)忽略,本次缓存不带 realname,下次 refresh 补齐。
+  let realname: string | null = null;
+  try {
+    realname = ((await client.get("/user")).profile || {}).realname || null;
+  } catch { /* 拉 /user 失败不影响 refresh 主流程 */ }
   const cache = {
     fetchedAt: nowISOSeconds(),
     projects,
     tasks,
     executions,
     taskDetails,
+    ...(realname ? { realname } : {}),
   };
   writeJSON(CACHE_PATH, cache);
   // 工时记录按任务拆分存(每任务独立文件,增长隔离,避免 cache.json 越来越大)

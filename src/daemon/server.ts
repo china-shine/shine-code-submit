@@ -24,6 +24,7 @@ import { gzipSync } from "node:zlib";
 import { createHmac } from "node:crypto";
 import { parseTranscript, sumSessionUsage } from "./transcript";
 // claude-scan 现 only export claudeProjectsRoots/collectJsonl/parentSessionInfo/ScannedSession(供 watcher/consumer/aggregate);scanSessions 系列已删(P3)
+import { claudeProjectsRoots } from "./claude-scan";
 import { getCommits, getGitUser } from "./git";
 import { collectWorklogs } from "./worklog";
 import { getSessionLines, sumLines } from "./lines";
@@ -54,7 +55,7 @@ import {
 } from "./skills-store";
 import { DATA_DIR } from "../shared/paths";
 import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, unlinkSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { autoUpdateIfNeeded } from "../shared/updater";
 import type { Store } from "./store";
@@ -229,10 +230,13 @@ async function refreshZentaoCacheInner(): Promise<
     "zentao.ts",
   );
   if (!existsSync(zentaoTs)) return { ok: false, error: `zentao.ts 未找到: ${zentaoTs}` };
+  // 二进制模式(process.execPath=daemon.exe)没有 `run` 子命令,spawn 出的是第二个 daemon 实例(秒退+空 stdout→refresh 恒失败);
+  // 源码模式 execPath=bun 正常。统一:execPath 是 bun 就用它,否则回退 PATH 上的 bun(没有则 spawn 抛,下面 catch 返回 ok:false)。
+  const exec = basename(process.execPath).toLowerCase().replace(/\.exe$/, "") === "bun" ? process.execPath : "bun";
   let proc: ReturnType<typeof Bun.spawn>;
   try {
     proc = Bun.spawn({
-      cmd: [process.execPath, "run", zentaoTs, "refresh"],
+      cmd: [exec, "run", zentaoTs, "refresh"],
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -563,7 +567,9 @@ export function startServer(deps: ServerDeps) {
       if (path === "/api/zentao-config" && req.method === "PUT") {
         const cp = join(DATA_DIR, "zenpilot", "config.json");
         const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
-        const cur = existsSync(cp) ? (JSON.parse(readFileSync(cp, "utf8")) as Record<string, unknown>) : {};
+        // 既有 config.json 损坏时按空对象覆盖写(曾 JSON.parse 直接 throw → 500,前端拿不到改写机会)
+        let cur: Record<string, unknown> = {};
+        try { cur = existsSync(cp) ? (JSON.parse(readFileSync(cp, "utf8")) as Record<string, unknown>) : {}; } catch { /* 损坏 → 全量覆盖 */ }
         if (typeof body.url === "string") cur.url = body.url.replace(/\/+$/, "");
         if (typeof body.account === "string") cur.account = body.account;
         if (typeof body.password === "string" && body.password) cur.password = body.password; // 非空才更新(留空=不改)
@@ -773,13 +779,31 @@ function num(v: string | null): number | undefined {
 }
 
 /** 从某 session 的事件 payload 里找 transcript_path（取最近 50 条里第一个带值的）。 */
+/** 校验 transcript 绝对路径在某个 Claude projects 根内且为 .jsonl——防经事件 payload 注入的 transcript_path 读任意文件(token 门控内的任意 JSONL 读面)。
+ *  Windows 盘符大小写不敏感(历史踩过「小写盘符」数据类坑):win32 下比较前统一小写,防合法路径被误拒 404。 */
+function isTranscriptPathSafe(tp: string): boolean {
+  if (!tp.endsWith(".jsonl")) return false;
+  const norm = resolve(tp);
+  const ci = process.platform === "win32"; // case-insensitive 比较
+  for (const root of claudeProjectsRoots()) {
+    const base = resolve(root, "projects");
+    if (ci ? norm.toLowerCase().startsWith(base.toLowerCase() + sep) : norm.startsWith(base + sep)) return true;
+  }
+  return false;
+}
+
 function findTranscriptPath(store: Store, sessionId: string): string | null {
   for (const e of store.query({ sessionId, limit: 50 })) {
     const p = e.payload as Record<string, unknown> | null;
-    if (p && typeof p.transcript_path === "string") return p.transcript_path;
+    if (p && typeof p.transcript_path === "string") {
+      const tp = p.transcript_path;
+      if (isTranscriptPathSafe(tp)) return tp;
+      continue; // 该事件路径越出 projects 根/非 .jsonl → 跳过继续找安全的,不短路后面的 SQLite 兜底
+    }
   }
   // hook 未提供 transcript_path 时查 SQLite(消费者已发现);冷启动消费者未跑完 fullScanBackstop 时可能 null,前端重试即可
-  return store.getTranscriptSession(sessionId)?.parent_path ?? null;
+  const fallback = store.getTranscriptSession(sessionId)?.parent_path ?? null;
+  return fallback && isTranscriptPathSafe(fallback) ? fallback : null;
 }
 
 /** 构建 /api/report:token 扫所有 transcript(ccusage 口径),按项目聚合。

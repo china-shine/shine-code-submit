@@ -392,6 +392,8 @@ describe("refresh 命令(四层 20 天滚动窗口)", () => {
     s.write("efforts:555", { taskId: 555, efforts: [{ date: "2020-01-01", consumed: 1, work: "老" }] });
     s.write("efforts:666", { taskId: 666, efforts: [{ date: "2020-01-01", consumed: 1, work: "老" }, { date: near, consumed: 2, work: "新" }] });
     mock.setRoutes(withLogin((c) => {
+      if (c.p.endsWith("/user"))
+        return { status: 200, body: { profile: { account: "me", realname: "张三", role: {} } } }; // refresh 把中文名写进缓存
       if (c.p.includes("/projects") && !c.p.includes("/executions") && c.method === "GET")
         return { status: 200, body: { projects: [
           { id: 1, name: "P1", status: "doing", left: 5 },
@@ -417,6 +419,7 @@ describe("refresh 命令(四层 20 天滚动窗口)", () => {
     expect(r.code).toBe(0);
     expect(r.json).toMatchObject({ projects: 2, tasks: 1, executions: 1 });
     const cache = s.read("cache");
+    expect(cache.realname).toBe("张三"); // refresh 把禅道中文名写进缓存,cache 源离线显示用
     expect(cache.projects.map((p: any) => p.id)).toEqual([1, 2]);
     expect(cache.tasks.map((t: any) => t.id)).toEqual([100]); // 只留未完成
     expect(cache.taskDetails["200"]).toEqual({ name: "T200", project: 1 }); // 已完成进 details

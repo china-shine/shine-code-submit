@@ -170,6 +170,16 @@ describe("cmdPlan — 分支/映射/语义", () => {
     expect(items[0].candidates.map((c: any) => c.id)).toEqual([100]);
     expect(items[0].reason).toContain("仓库映射到项目 1");
   });
+
+  test("mappings 缺失 key(历史 `{}` 残留)→ loadMappings 补默认不崩", async () => {
+    const items = await runPlan({
+      sessions: [{ id: "s9", repo: "r", branch: "main", activeMinutes: 60, start: "09:00", end: "10:00" }],
+      mappings: {}, // 缺 repoToProject/branchToTask:loadMappings 必须补默认而不是读 undefined 崩
+      cache: { projects: [{ id: 1, name: "P1" }], tasks: [{ id: 100, name: "T1", project: 1 }], executions: [], taskDetails: {} },
+    });
+    expect(items[0].status).toBe("needs_semantic");
+    expect(items[0].candidates.map((c: any) => c.id)).toEqual([100]); // 空 repoToProject → 不收窄,候选=全部
+  });
 });
 
 describe("cmdPlan — 跨午夜", () => {

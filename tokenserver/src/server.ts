@@ -314,7 +314,8 @@ export function startServer() {
       {
         const m = path.match(/^\/api\/member\/([^/]+)\/worklog$/);
         if (m && req.method === "GET") {
-          const gitUser = decodeURIComponent(m[1]);
+          let gitUser: string;
+          try { gitUser = decodeURIComponent(m[1]); } catch { return json(req, { error: "bad encoding" }, 400); } // 畸形 % 编码 → 400 非 500
           const start = url.searchParams.get("start") ?? ""; // YYYY-MM-DD 或空(不限)
           const end = url.searchParams.get("end") ?? "";
           const page = Math.max(1, parseInt(url.searchParams.get("page") ?? "1", 10) || 1);
@@ -325,7 +326,8 @@ export function startServer() {
 
       // 单成员 KPI + 趋势(MemberDetailPage;团队均值复用 /api/stats)
       if (path.startsWith("/api/member/") && req.method === "GET") {
-        const gitUser = decodeURIComponent(path.slice("/api/member/".length));
+        let gitUser: string;
+        try { gitUser = decodeURIComponent(path.slice("/api/member/".length)); } catch { return json(req, { error: "bad encoding" }, 400); } // 畸形 % 编码 → 400 非 500
         const { from, to } = parseDateRange(url.searchParams.get("start"), url.searchParams.get("end"));
         const gRaw = url.searchParams.get("granularity");
         const granularity: Granularity = gRaw === "week" || gRaw === "month" ? gRaw : "day";

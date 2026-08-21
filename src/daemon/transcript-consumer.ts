@@ -2,7 +2,7 @@
 // 写回 transcript_sessions。2s tick + 5min 兜底全扫(fs.watch 漏事件补救)。
 // 算法走 sessionUsageAndActiveFromEntries(与 sessionUsageAndActiveFromRaws 同一 dedupe 链),与 scanSessions 口径逐字节等价。
 // 父文件顺带提取关键信号(turns/commits/... 写 DATA_DIR/signals 文件,见 signals.ts;不碰 token/activeMs 链路)。
-import { openSync, readSync, fstatSync, closeSync, statSync } from "node:fs";
+import { openSync, readSync, fstatSync, closeSync, statSync, existsSync } from "node:fs";
 import { join } from "node:path";
 import type { Store, TranscriptFileRow } from "./store";
 import { claudeProjectsRoots, collectJsonl } from "./claude-scan";
@@ -68,8 +68,14 @@ export class TranscriptConsumer {
     setTimeout(() => {
       try { this.fullScanBackstop(); this.tick(); } catch (e) { this.log.info("startup scan failed", e); }
     }, 1000);
-    this.tickTimer = setInterval(() => this.tick(), TICK_MS);
-    this.fullTimer = setInterval(() => this.fullScanBackstop(), FULL_SCAN_MS);
+    // 定时回调包 try/catch:SQLite 瞬时错误(磁盘满/锁)绝不能升级成未捕获异常猝死 daemon——
+    // 其余 interval(prune/report/update/cache/spool)都包了,此处原不对称。
+    this.tickTimer = setInterval(() => {
+      try { this.tick(); } catch (e) { this.log.info("tick error (kept alive)", e); }
+    }, TICK_MS);
+    this.fullTimer = setInterval(() => {
+      try { this.fullScanBackstop(); } catch (e) { this.log.info("fullScan error (kept alive)", e); }
+    }, FULL_SCAN_MS);
   }
 
   stop(): void {
@@ -201,6 +207,17 @@ export class TranscriptConsumer {
           });
         }
       }
+    }
+    // 对账:SQLite 记录过但磁盘已不存在的文件(daemon 停机/崩溃期间 transcript 被 Claude 清理或手动删除)。
+    // 正常路径的级联删除只走「watcher 观察到删除 → 消费 ENOENT」,停机窗口会永久漏——这里逐行 existsSync 核对:
+    // 删残留文件行并标 session 重算(父文件全没了 → recomputeSession 整 session 剔除),杜绝幽灵会话永久计入上报。
+    for (const row of this.store.allTranscriptFiles()) {
+      try {
+        if (!existsSync(row.path)) {
+          this.store.deleteFile(row.path);
+          this.store.markSessionDirty(row.session_id, row.project_id, row.parent_path);
+        }
+      } catch { /* stat 异常(权限/瞬时)跳过,下轮全扫再试 */ }
     }
   }
 }

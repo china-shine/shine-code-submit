@@ -73,6 +73,10 @@ async function main(): Promise<void> {
     if (ownsPidFile()) removePidFile();
     try { store.close(); } catch { /* noop */ }
   });
+  // 最后一道防线:未捕获异常/未处理 rejection 不让 daemon 猝死(SQLite 事务性 + spool 缓冲事件,瞬时错误可自愈;
+  // 正常路径失败已由各 interval/路由 try/catch 拦截,这里兜意外)。真反复崩由 hook ensureDaemon 自愈重启。
+  process.on("uncaughtException", (err) => log.info("uncaughtException (kept running)", err));
+  process.on("unhandledRejection", (err) => log.info("unhandledRejection (kept running)", err));
 
   server = startServer({
     pid,
@@ -90,7 +94,13 @@ async function main(): Promise<void> {
   // 端口绑定成功后才写 pid 文件：hook 与 cli 可能并发拉起 daemon，isOursAlive 存在竞态，
   // 若先写 pid 文件再 bind，bind 失败的实例会覆盖/删除 pid 文件，导致 listening 实例与 pid 文件
   // 不一致（cli stop/restart/ui 据此取 token 会失效）。bind 成功才意味着本实例胜出。
-  writePidFile(pid);
+  try {
+    writePidFile(pid);
+  } catch (e) {
+    // 磁盘满/权限异常:写失败不退出——daemon 已绑端口正常服务,pid 缺失会让 hook 下次再拉一个实例 EADDRINUSE,
+    // 但记日志留痕,至少本实例不白崩。下次启动会再尝试。
+    log.info("writePidFile failed (daemon still serving)", e);
+  }
 
   // 升级检测:version 变了 → 重置 lastFullReportAt=0,下次上报 tick 自动 dueFull 全量,
   // 回填历史 gitCommits(git log --since=0 拉本项目全量 commit)。hash PK 幂等,失败重试(水位不推进)。
@@ -120,7 +130,7 @@ async function main(): Promise<void> {
     setInterval(prune, EVENTS_PRUNE_INTERVAL_MS);
   }
 
-  log.info(`${SERVICE_NAME} v${SERVICE_VERSION} listening http://${LISTEN_HOST}:${PORT} pid=${process.pid} token=${pid.token}`);
+  log.info(`${SERVICE_NAME} v${SERVICE_VERSION} listening http://${LISTEN_HOST}:${PORT} pid=${process.pid} token=${pid.token.slice(0, 4)}…(指纹;完整 token 仅存 pid 文件,不落日志)`);
 }
 
 try {

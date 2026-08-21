@@ -38,7 +38,9 @@ DATA_DIR/
 └─ zenpilot/                  # 工时链路数据(原 ZenPilot 目录统一迁入)
    ├─ config.json             # 禅道连接(url/account/password)—— /setup 写
    ├─ cache.json              # 禅道元数据缓存:{fetchedAt,projects[],tasks[](仅未完成),
-   │                          #   executions[],taskDetails{已完成任务(报表聚合也读它)}}(不含 efforts,增长大头拆出)
+   │                          #   executions[],taskDetails{已完成任务(报表聚合也读它)},
+   │                          #   realname(禅道中文名,refresh 时拉 /user 随缓存存一份,
+   │                          #   cache 源真离线时报表显示用,不退化英文 account)}(不含 efforts,增长大头拆出)
    ├─ efforts/<taskId>.json   # 按任务拆分的工时记录(近 20 天滚动窗口,过期修剪)
    ├─ mappings.json           # 仓库→项目 / 分支→任务 映射(提交时学习)
    ├─ submitted/<date>.jsonl  # ★提交流水逐笔 append-only(行号即 subId=<date>:<行号>),

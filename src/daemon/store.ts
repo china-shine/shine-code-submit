@@ -257,6 +257,16 @@ export class Store {
     return r?.mtime_ms ?? null;
   }
 
+  /** 全部已记录的 transcript_files 行(fullScanBackstop 对账用:磁盘已删的残留记录据此清理,杜绝停机期幽灵会话)。 */
+  allTranscriptFiles(): TranscriptFileRow[] {
+    return this.db
+      .prepare(
+        `SELECT path, session_id, project_id, parent_path, is_subagent, mtime_ms, size_bytes, read_offset, entries_blob, dirty, discovered_at, last_read_at
+         FROM transcript_files`,
+      )
+      .all() as TranscriptFileRow[];
+  }
+
   // ---- transcript 会话级(消费者重算写,API 读) ----
 
   /** 标 session dirty(文件消费后调)。行不存在则插(脏)。 */

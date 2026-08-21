@@ -1,10 +1,10 @@
 /** 报表命令端到端:daily / weekly / lastweek(子进程 + mock 禅道)。
- *  覆盖:实时源(zentao)与缓存源(cache,0 网络)、HTML 落盘命名(日报/周报/realname)、
- *  AI 代报工时对账(aiHours)、空区间、cache 源发现旧于最后一笔提交时的同步自动刷新(autoRefreshed)。 */
+ *  覆盖:实时源(zentao)与缓存源(cache,真离线 0 网络、跳过登录)、HTML 落盘命名(日报/周报/realname)、
+ *  AI 代报工时对账(aiHours)、空区间、cache 源缓存旧于最后一笔提交时的明确报错(不静默产出缺数报表)。 */
 import { describe, test, expect, beforeAll, afterAll } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import * as path from "node:path";
-import { sandbox, cleanupSandboxes, startMockZentao, withLogin, nearDate, type Route } from "./cli-harness";
+import { sandbox, cleanupSandboxes, startMockZentao, withLogin, type Route } from "./cli-harness";
 
 const REAL_PROJ = "C:/Users/ren/AppData/Local/shine-worklog/zenpilot/projects/C--Users-ren-Desktop-workspace-livesetting";
 afterAll(() => {
@@ -20,7 +20,6 @@ const mock = startMockZentao();
 beforeAll(() => { mock.setRoutes(withLogin(() => null)); });
 afterAll(() => { mock.stop(); });
 
-const near = nearDate();
 const sb = () => sandbox({ url: mock.url, account: "me", password: "p" });
 
 /** 报表侧标准 cache(含未完成任务,供 pendingTasks 与任务名解析)。 */
@@ -56,7 +55,7 @@ describe("daily 命令", () => {
     expect(r.json.pendingTasks[0]).toMatchObject({ id: 100, name: "T100", left: 8 }); // 未完成任务透出(供 AI 写总结)
   }, 30000);
 
-  test("缓存源:读 efforts/ 目录,0 网络拉记录(仅登录+/user)", async () => {
+  test("缓存源:读 efforts/ 目录,真离线 0 网络(连登录+/user 都不发)", async () => {
     const s = sb();
     s.write("cache", CACHE());
     s.write("efforts:100", { taskId: 100, fetchedAt: "2026-08-06T00:00:00", efforts: [{ date: "2026-08-06", consumed: 2, work: "缓存里的记录" }] });
@@ -69,30 +68,47 @@ describe("daily 命令", () => {
     expect(mock.requests.slice(before).some((x) => x.p.includes("/estimate"))).toBe(false); // 不实时拉记录
   }, 30000);
 
-  test("缓存旧于最后一笔提交 → 同步自动刷新(cacheStaleVsSubmissions → autoRefreshed)", async () => {
+  test("缓存源:realname 从缓存读(禅道中文名),不退化英文 account", async () => {
     const s = sb();
-    s.write("cache", { ...CACHE(), fetchedAt: "2026-01-01T00:00:00" }); // 缓存极旧
-    s.write("submittedLog:2026-08-06", JSON.stringify({ ts: "2026-08-06T12:00:00", date: "2026-08-06", session: "s1", hours: 1, task: 100, work: "刚提交的" }) + "\n");
-    // 自动刷新会走完整 refresh 链:项目→执行→任务→工时
-    mock.setRoutes(withLogin((c) => {
-      if (USER(c)) return USER(c);
-      if (c.p.includes("/projects") && !c.p.includes("/executions") && c.method === "GET")
-        return { status: 200, body: { projects: [{ id: 1, name: "P1", status: "doing", left: 5, lastEditedDate: near }] } };
-      if (c.p.includes("/projects/1/executions"))
-        return { status: 200, body: { executions: [{ id: 20, status: "doing", name: "E1", end: "2030-01-01" }] } };
-      if (c.p.includes("/executions/20/tasks"))
-        return { status: 200, body: { tasks: [{ id: 100, name: "T100", status: "doing", assignedTo: { account: "me" }, estimate: 10, consumed: 2, left: 8, lastEditedDate: near }] } };
-      if (c.p.endsWith("/tasks/100/estimate"))
-        return { status: 200, body: { effort: { a: { account: "me", deleted: "0", date: "2026-08-06", consumed: "1.5", work: "刷新后的记录" } } } };
-      return null;
-    }));
+    s.write("cache", { ...CACHE(), realname: "李四" }); // refresh 存进缓存的禅道中文名
+    s.write("efforts:100", { taskId: 100, fetchedAt: "2026-08-06T00:00:00", efforts: [{ date: "2026-08-06", consumed: 2, work: "缓存里的记录" }] });
+    mock.setRoutes(withLogin(USER)); // /user 返回张三——但离线 cache 源不该发请求,应显示缓存里的李四
     const before = mock.requests.length;
     const r = await s.run(["daily", "--from", "2026-08-06", "--to", "2026-08-06", "--source", "cache"]);
     expect(r.code).toBe(0);
-    expect(r.json.autoRefreshed).toBe(true);
-    expect(mock.requests.slice(before).some((x) => x.p.endsWith("/projects") && x.q.includes("involved=1"))).toBe(true); // 真的去刷新了
-    expect(r.json.text).toContain("刷新后的记录"); // 报表读的是刷新后的缓存
-    expect(s.read("cache").fetchedAt).not.toBe("2026-01-01T00:00:00"); // cache.json 已被覆盖
+    expect(r.json.text).toContain("李四");
+    expect(path.basename(r.json.file)).toBe("日报-2026-08-06-李四.html"); // 文件名也用中文名
+    expect(mock.requests.slice(before).length).toBe(0); // 0 网络:不因取 realname 联网
+  }, 30000);
+
+  test("缓存缺失 + cache 源(真离线)→ 明确报错提示联网,不静默产出空报表", async () => {
+    const s = sb(); // 不写 cache → getCacheLocal() 为 null,离线无法联网刷新
+    const before = mock.requests.length;
+    const r = await s.run(["daily", "--from", "2026-08-06", "--to", "2026-08-06", "--source", "cache"]);
+    expect(r.code).not.toBe(0);
+    expect(r.json.error).toContain("离线");
+    expect(mock.requests.slice(before).length).toBe(0); // 0 网络:缺失也不联网拉
+  }, 30000);
+
+  test("缓存损坏(JSON 截断)+ cache 源(真离线)→ getCacheLocal 退化 null → 明确报错", async () => {
+    const s = sb();
+    s.write("cache", '{"fetchedAt":"2026-08-06T00:00:00","projects":[{'); // 手改/写一半截断 → JSON.parse throw
+    const before = mock.requests.length;
+    const r = await s.run(["daily", "--from", "2026-08-06", "--to", "2026-08-06", "--source", "cache"]);
+    expect(r.code).not.toBe(0);
+    expect(r.json.error).toContain("离线");
+    expect(mock.requests.slice(before).length).toBe(0);
+  }, 30000);
+
+  test("缓存旧于最后一笔提交 + cache 源(真离线)→ 明确报错提示联网,不静默产出缺数报表", async () => {
+    const s = sb();
+    s.write("cache", { ...CACHE(), fetchedAt: "2026-01-01T00:00:00" }); // 缓存极旧(旧于区间内最后一笔提交)
+    s.write("submittedLog:2026-08-06", JSON.stringify({ ts: "2026-08-06T12:00:00", date: "2026-08-06", session: "s1", hours: 1, task: 100, work: "刚提交的" }) + "\n");
+    const before = mock.requests.length;
+    const r = await s.run(["daily", "--from", "2026-08-06", "--to", "2026-08-06", "--source", "cache"]);
+    expect(r.code).not.toBe(0); // 离线无法联网刷新 → 明确报错,不静默产出缺数报表
+    expect(r.json.error).toContain("离线"); // 报错明确提示离线/需联网
+    expect(mock.requests.slice(before).length).toBe(0); // 0 网络请求:cache 源真离线,连 login 都不发
   }, 30000);
 
   test("区间内无记录 → empty:true + 空态文案,文件照常落盘", async () => {
@@ -128,6 +144,35 @@ describe("weekly 命令", () => {
     expect(html).toContain("08-04"); // 同任务跨天 day-row
     expect(html).toContain("08-06");
   }, 30000);
+
+  test("缓存源:真离线 0 网络,读 efforts/ 聚合,任务名从缓存解析", async () => {
+    const s = sb();
+    s.write("cache", CACHE());
+    s.write("efforts:100", { taskId: 100, fetchedAt: "2026-08-06T00:00:00", efforts: [
+      { date: "2026-08-04", consumed: 1.5, work: "周一缓存记录" },
+      { date: "2026-08-05", consumed: 1.5, work: "周二缓存记录" },
+      { date: "2026-08-06", consumed: 1.5, work: "周三缓存记录" },
+    ] });
+    mock.setRoutes(withLogin(USER));
+    const before = mock.requests.length;
+    const r = await s.run(["weekly", "--from", "2026-08-04", "--to", "2026-08-06", "--source", "cache"]);
+    expect(r.code).toBe(0);
+    expect(r.json.text).toContain("周一缓存记录");
+    expect(r.json.text).toContain("本周合计 4.5h");
+    expect(r.json.text).toContain("T100"); // 任务名来自 cache.tasks,不联网
+    expect(mock.requests.slice(before).length).toBe(0); // 0 网络:连 login 都不发
+  }, 30000);
+
+  test("缓存旧于最近提交 + cache 源(真离线)→ 明确报错,不静默产出缺数周报", async () => {
+    const s = sb();
+    s.write("cache", { ...CACHE(), fetchedAt: "2026-01-01T00:00:00" });
+    s.write("submittedLog:2026-08-06", JSON.stringify({ ts: "2026-08-06T12:00:00", date: "2026-08-06", session: "s1", hours: 1, task: 100, work: "刚提交的" }) + "\n");
+    const before = mock.requests.length;
+    const r = await s.run(["weekly", "--from", "2026-08-04", "--to", "2026-08-06", "--source", "cache"]);
+    expect(r.code).not.toBe(0);
+    expect(r.json.error).toContain("离线");
+    expect(mock.requests.slice(before).length).toBe(0);
+  }, 30000);
 });
 
 describe("lastweek 命令", () => {
@@ -147,5 +192,38 @@ describe("lastweek 命令", () => {
     expect(path.basename(r.json.file)).toMatch(/^周报-\d{4}-\d{2}-\d{2}~\d{4}-\d{2}-\d{2}-张三\.html$/);
     expect(r.json.empty).toBe(false);
     expect(r.json.text).toContain("本周合计 7h"); // 上周整周 7 天 × 1h
+  }, 30000);
+
+  test("缓存源:真离线 0 网络,自动算上周窗口读 efforts/", async () => {
+    const s = sb();
+    s.write("cache", CACHE());
+    // 与 zentao 源版同样铺满近 16 天(覆盖任意上周窗口),断言不依赖具体日期
+    s.write("efforts:100", { taskId: 100, fetchedAt: "2026-08-06T00:00:00", efforts: Array.from({ length: 16 }, (_, i) => {
+      const d = new Date(Date.now() - i * 86400e3).toISOString().slice(0, 10);
+      return { date: d, consumed: 1, work: `缓存day-${d}` };
+    }) });
+    mock.setRoutes(withLogin(USER));
+    const before = mock.requests.length;
+    const r = await s.run(["lastweek", "--source", "cache"]);
+    expect(r.code).toBe(0);
+    expect(r.json.title).toMatch(/^周报 \d{4}-\d{2}-\d{2} ~ \d{4}-\d{2}-\d{2}$/);
+    expect(r.json.empty).toBe(false);
+    expect(r.json.text).toContain("本周合计 7h"); // 上周整周 7 天 × 1h,读缓存
+    expect(mock.requests.slice(before).length).toBe(0); // 0 网络
+  }, 30000);
+
+  test("缓存旧于最近提交 + cache 源(真离线)→ 明确报错", async () => {
+    const s = sb();
+    s.write("cache", { ...CACHE(), fetchedAt: "2026-01-01T00:00:00" });
+    // 与铺 16 天 efforts 同理:近 16 天每天都写一笔流水 → 任意上周窗口必命中 stale(日期生成在 runner 侧,跨进程时区差 8h 也不偏)
+    for (let i = 0; i < 16; i++) {
+      const d = new Date(Date.now() - i * 86400e3).toISOString().slice(0, 10);
+      s.write(`submittedLog:${d}`, JSON.stringify({ ts: `${d}T23:59:00`, date: d, session: "s1", hours: 1, task: 100, work: "刚提交的" }) + "\n");
+    }
+    const before = mock.requests.length;
+    const r = await s.run(["lastweek", "--source", "cache"]);
+    expect(r.code).not.toBe(0);
+    expect(r.json.error).toContain("离线");
+    expect(mock.requests.slice(before).length).toBe(0);
   }, 30000);
 });

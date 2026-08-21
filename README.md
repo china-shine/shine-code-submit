@@ -101,7 +101,7 @@ plan 按 session 产出 item，commit **按 item 粒度**逐条提交——每�
 
 #### 禅道数据缓存（`cache.json`）
 
-禅道项目/任务/执行本地缓存于 `zenpilot/cache.json`（全局），`plan` 默认读缓存不联网。设了 `zentaoCacheTtlMin`（设置页「禅道 → 刷新间隔」）后**过期自动重拉**——下次 `/report`/`/daily`/`/weekly` 时若缓存超过 TTL 自动联网刷新，无需手动 refresh。
+禅道项目/任务/执行本地缓存于 `zenpilot/cache.json`（全局），`plan`/`daily --source cache`/`weekly --source cache` **真离线读缓存不联网**（跳过登录）。daemon 在线时按 `zentaoCacheTtlMin`（设置页「禅道 → 刷新间隔」，默认 300min）后台定时刷新缓存；CLI 缓存源在缓存缺失/过期/旧于最近提交时**明确报错提示联网**，刷新改走 `--source zentao` 实时源、`/refresh` 命令或 dashboard「更新禅道」。
 
 #### Dashboard 禅道模块（与 skill 数据同源，非 skill）
 
@@ -142,7 +142,7 @@ npx shine-worklog install
 **从 GitHub：**
 
 ```
-/plugin marketplace add  china-shine/shine-worklog
+/plugin marketplace add  china-shine/shine-code-submit
 /plugin install shine-worklog@shine-worklog
 ```
 

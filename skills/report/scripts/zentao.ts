@@ -24,6 +24,16 @@ import { writeReport, weekStart, lastWeekRange } from "./lib/report";
 
 // ---------- 命令实现 ----------
 
+/** 加载仓库→禅道项目映射:文件缺失或缺 key(旧版残留/手改)都补齐默认,写回前对 repoToProject 判空不再崩。
+ *  loadJSON 只在文件不存在时给默认;文件存在但缺 repoToProject(如历史 `{}` 残留)会拿到 undefined key。 */
+function loadMappings(): any {
+  const m = loadJSON<any>(MAPPINGS_PATH, {});
+  if (!m || typeof m !== "object") return { repoToProject: {}, branchToTask: {} };
+  if (!m.repoToProject || typeof m.repoToProject !== "object") m.repoToProject = {};
+  if (!m.branchToTask || typeof m.branchToTask !== "object") m.branchToTask = {};
+  return m;
+}
+
 function cmdConfig(a: Args): any {
   const cfg = existsSync(CONFIG_PATH) ? JSON.parse(readFileSync(CONFIG_PATH, "utf8")) : {};
   if (a.url !== undefined) cfg.url = String(a.url).replace(/\/+$/, "");
@@ -189,7 +199,7 @@ export async function cmdPlan(client?: Client, cfg?: Record<string, any>, source
   const data = loadJSON<any>(SESSIONS_PATH, null);
   if (data === null) die(`会话数据不存在: ${SESSIONS_PATH}`);
   const date = data.date;
-  const mappings = loadJSON<any>(MAPPINGS_PATH, { repoToProject: {}, branchToTask: {} });
+  const mappings = loadMappings();
   const submittedAll = loadJSON<any>(SUBMITTED_PATH, {});
   // 跨日期按 session id 查最近提交水位:长会话跨午夜时,提交记录在昨天的日期 key 下,
   // 仅按"今天 date"查会漏 → 当成全新会话(8h needs_semantic)。取所有日期里该 session 的
@@ -679,7 +689,7 @@ export async function cmdCommit(client: Client, opts: { dryRun?: boolean; amend?
       );
     }
   }
-  const mappings = loadJSON<any>(MAPPINGS_PATH, { repoToProject: {}, branchToTask: {} });
+  const mappings = loadMappings();
   const mark = loadMarkSetting(); // AI 提交标识(开关+文案),循环外读一次
   const results: any[] = [];
   for (const i of toSubmit) {
@@ -1122,7 +1132,7 @@ async function cmdPrepare(): Promise<any> {
 }
 
 function cmdMappings(a: Args): any {
-  const mappings = loadJSON<any>(MAPPINGS_PATH, { repoToProject: {} });
+  const mappings = loadMappings();
   const names = mappings.projectNames || {};
   if (a["forget-repo"] !== undefined) {
     const repo = String(a["forget-repo"]);
@@ -1141,9 +1151,7 @@ function cmdMappings(a: Args): any {
 }
 
 function cmdLearn(a: Args): any {
-  const mappings = existsSync(MAPPINGS_PATH)
-    ? JSON.parse(readFileSync(MAPPINGS_PATH, "utf8"))
-    : { repoToProject: {}, branchToTask: {} };
+  const mappings = loadMappings();
   if (a.repo && a.project) mappings.repoToProject[a.repo] = parseInt(String(a.project), 10);
   if (a.branch && a.task) mappings.branchToTask[`${a.repo}:${a.branch}`] = parseInt(String(a.task), 10);
   writeJSON(MAPPINGS_PATH, mappings);
@@ -1230,12 +1238,13 @@ async function main(): Promise<void> {
     return;
   }
 
-  // 走网络的命令
+  // 走网络的命令——但 cache 源(daily/weekly/lastweek/plan --source cache)真离线:
+  // 不登录、client 传 undefined;缓存新鲜齐全即离线出报表,缓存缺失/过期才明确报错提示联网。
   const cfg = loadConfig();
-  const client = new Client(cfg);
-  await client.login(cfg);
-
   const source: "zentao" | "cache" = a.source === "cache" ? "cache" : "zentao";
+  const cacheOfflineCmd = cmd === "daily" || cmd === "weekly" || cmd === "lastweek" || cmd === "plan";
+  const client: Client | undefined = source === "zentao" || !cacheOfflineCmd ? new Client(cfg) : undefined;
+  if (client) await client.login(cfg);
   let out: any;
   if (cmd === "daily") {
     const from = (a.from as string) || todayISO();
@@ -1252,7 +1261,7 @@ async function main(): Promise<void> {
     return;
   }
   if (cmd === "check") {
-    const user = (await client.get("/user")).profile || {};
+    const user = (await client!.get("/user")).profile || {};
     out = {
       ok: true,
       account: user.account ?? null,
@@ -1262,7 +1271,7 @@ async function main(): Promise<void> {
   } else if (cmd === "projects") {
     const limit = a.limit !== undefined ? parseInt(String(a.limit), 10) : 100;
     // 默认只看进行中(left>0,剔除任务全完成的);--all 显示全部 involved(含已关闭)
-    let list = await client.myProjects(limit);
+    let list = await client!.myProjects(limit);
     if (!a.all) list = list.filter((p: any) => p.status === "doing" && p.left > 0);
     if (a.search !== undefined) {
       const kw = String(a.search).toLowerCase();
@@ -1277,10 +1286,10 @@ async function main(): Promise<void> {
       pids =
         cfg.projectIds && cfg.projectIds.length
           ? cfg.projectIds
-          : (await client.myProjects()).filter((p: any) => p.status === "doing").slice(0, 10).map((p: any) => p.id);
+          : (await client!.myProjects()).filter((p: any) => p.status === "doing").slice(0, 10).map((p: any) => p.id);
     }
     const statuses = a["all-status"] ? null : new Set(["doing", "wait"]);
-    out = await client.myTasks(pids, statuses);
+    out = await client!.myTasks(pids, statuses);
   } else if (cmd === "plan") {
     out = await cmdPlan(client, cfg, a.source === "zentao" ? "zentao" : "cache");
   } else if (cmd === "refresh") {
@@ -1292,17 +1301,17 @@ async function main(): Promise<void> {
       executions: c.executions.length,
     };
   } else if (cmd === "commit") {
-    out = await cmdCommit(client, { dryRun: !!a["dry-run"] });
+    out = await cmdCommit(client!, { dryRun: !!a["dry-run"] });
   } else if (cmd === "auto") {
-    out = await cmdAuto(client, cfg, a);
+    out = await cmdAuto(client!, cfg, a);
   } else if (cmd === "amend") {
-    out = await cmdCommit(client, { dryRun: !!a["dry-run"], amend: true });
+    out = await cmdCommit(client!, { dryRun: !!a["dry-run"], amend: true });
   } else if (cmd === "efforts") {
     const taskId = requireInt(a, "task");
-    const data = (await client.get(`/tasks/${taskId}/estimate`)).effort || {};
+    const data = (await client!.get(`/tasks/${taskId}/estimate`)).effort || {};
     const records: any[] = Array.isArray(data) ? data : Object.values(data);
     out = records
-      .filter((r: any) => r.account === client.account && r.deleted === "0")
+      .filter((r: any) => r.account === client!.account && r.deleted === "0")
       .map((r: any) => ({
         effortId: r.id,
         date: r.date ?? null,
@@ -1312,7 +1321,7 @@ async function main(): Promise<void> {
       }));
   } else if (cmd === "executions") {
     if (a.projects) {
-      out = await client.executions(String(a.projects).split(",").map((x: string) => parseInt(x, 10)));
+      out = await client!.executions(String(a.projects).split(",").map((x: string) => parseInt(x, 10)));
     } else {
       out = (await getCache(client, cfg)).executions;
     }
@@ -1320,7 +1329,7 @@ async function main(): Promise<void> {
     const executionId = requireInt(a, "execution");
     const name = requireStr(a, "name");
     const estimate = parseFloat(String(a.estimate));
-    out = await client.createTask(
+    out = await client!.createTask(
       executionId,
       name,
       estimate,
@@ -1349,7 +1358,7 @@ async function main(): Promise<void> {
     const hours = parseFloat(String(a.hours));
     const work = applyMark(requireStr(a, "work"), loadMarkSetting());
     const left = a.left !== undefined ? parseFloat(String(a.left)) : null;
-    out = await client.submitEffort(taskId, date, hours, work, left, !!a["dry-run"]);
+    out = await client!.submitEffort(taskId, date, hours, work, left, !!a["dry-run"]);
     if (out.submitted) {
       if (a.session !== undefined) {
         out.recorded = recordSubmission(

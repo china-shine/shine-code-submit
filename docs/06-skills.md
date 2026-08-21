@@ -10,7 +10,7 @@
 |---|---|
 | `/report` | 工时填报主流程(plan→render→确认→commit;全 resolved 时 work 原样提交不归纳——auto-note 文案即总结,归纳仅在 work 异常/用户要求时,严禁为写文案考古;增量条目 work=水位后全部 note 合并,多行是预期产物不是拼接异常;**note 超 10 行被折叠成「…(更早 N 条略)」时,plan 条目附 `incrementAllLines` 全部行,AI 归纳成 ≤6 行总结替换 work,折叠标记不进禅道**;work 异常快修=凭上下文直接 Edit plan.json,勿照过时的会话标题写;**点名日期(如「报昨天的工时」)不走 auto,render 后逐条核对归属日([补 MM-DD] 标记),与点名不符的确认前指出——跨天会话整体归最后活跃日,在昨天会话里说「报昨天」会整条落今天**;**报工时动作本身占用的时间不计入工时**:plan 聚合的「执行 shine-worklog 工时填报流程」条目(识别:work 固定文案/reason 含「填报流程会话自动聚合」)分步流程第 3 步删掉、auto 已内置排除 |
 | `/prepare` | 提前算好 work+task 写 summary,让 /report 秒级 |
-| `/daily` `/weekly` `/lastweek` | 日报/周报/上周周报(数据=禅道 efforts,HTML 落盘 reports/) |
+| `/daily` `/weekly` `/lastweek` | 日报/周报/上周周报(数据=禅道 efforts,HTML 落盘 reports/;`/daily` 支持 `--from/--to` 回看某天,跨天区间按天分区逐日渲染不丢天、合计为区间累计) |
 | `/refresh` | 全量刷新禅道缓存 |
 | `/setup` | 配禅道连接(url/account/password)+ 选常用项目 |
 | `/amend` | 修正最后一次提交(禅道只能追加,补差额) |
@@ -41,7 +41,7 @@
 | `amend` | 修正最后一次提交(禅道只能追加,补差额;独立命令) | — |
 | `submit --task --date --hours --work` | 手工单条提交(计划外修正) | — |
 | `auto [--dry-run]` | collect→plan→(全 resolved)commit 一键(已排除填报流程会话——报工时时间不计入,见 plan 行) | action 分支 |
-| `daily` / `weekly` / `lastweek` | ★ 报表(公共参数 `--source cache 或 zentao`;stdout JSON:text/file/pendingTasks/dashboardUrl/autoRefreshed) | HTML 落盘 |
+| `daily` / `weekly` / `lastweek` | ★ 报表(公共参数 `--source cache 或 zentao`;cache 源真离线跳过登录,缓存缺失/过期/旧于提交时明确报错;stdout JSON:text/file/pendingTasks/dashboardUrl) | HTML 落盘 |
 | `learn` | 学习仓库→项目映射 | — |
 | `mappings` | 查看/维护映射缓存(列表/新增/修改/删除,等同 /mappings skill) | 映射表 |
 

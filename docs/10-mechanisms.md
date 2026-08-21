@@ -42,11 +42,12 @@ flowchart LR
 
 「与近 20 天工时关联的都拉」;更早历史/已关闭执行 → 禅道实时源兜底(靠 submitted.json 收集任务 id)。
 报表聚合任务集合 = submitted.json ∪ cache.tasks(未完成)∪ cache.taskDetails(已完成)——任务转 done 只是换库不丢工时(#78363 修:曾因聚合集合漏 taskDetails,任务当天完成后其当日工时从日报 cache/zentao 两源同时消失)。
+- **日报 `--from`/`--to` 跨天区间**:按天分区逐日渲染(`day-block` 分区标题),合计为区间累计——不丢天(2026-08-21 修:旧实现只渲染首日静默丢天)。
 
-## ④ 报表侧按需刷新(1.3.46)
+## ④ 报表侧按需刷新(1.3.46 → cache 源真离线)
 
-daily/weekly `--source cache` 时:`cacheStaleVsSubmissions`(cache.fetchedAt vs submitted/<date>.jsonl 末行 ts)发现缓存旧于最后一笔提交 → **先同步刷新再读**,输出 `autoRefreshed:true`。
-> 历史:1.3.45 曾做「commit 后 detached spawn 刷新」,Windows 跨进程三连坑(Bun.spawn 无 detached / unref 拖慢 commit / ignore stdio 子进程被父进程带掉)后废弃。**教训:Bun 下要后台存活子进程必须 node:child_process 的 detached:true。**
+daily/weekly/lastweek `--source cache` 为**真离线**:跳过禅道登录、0 网络(daily/weekly/lastweek/plan 传 client=undefined;getCache 对缺失/过期/损坏缓存明确报错提示联网,不硬闯联网段)。`cacheStaleVsSubmissions`(cache.fetchedAt vs submitted/<date>.jsonl 末行 ts)发现缓存旧于最后一笔提交 = 已知有更新的数据却无法联网刷新 → **明确报错**,不静默产出缺数报表。刷新不再收拢到 cache 源,改走:①`--source zentao` 实时源 ②`refresh` 命令 / dashboard「更新禅道」 ③daemon 后台定时刷新(`zentaoCacheTtlMin`,默认 300min)。**报表姓名**:refresh 时拉 `/user` 把禅道中文名 `realname` 存进 cache.json;cache 源真离线(client=undefined)时报表从缓存读中文名(文件名 + hero 姓名),**不退化英文 account**(2026-08-21 修:真离线化曾让 realname 一律回退 account)。
+> 历史:1.3.45 曾做「commit 后 detached spawn 刷新」,Windows 跨进程三连坑后废弃;1.3.46-1.4.7 做「cache 源发现 stale → 同步自动刷新(autoRefreshed:true)」,2026-08-21 因与 SKILL「本地缓存不联网」承诺矛盾改为真离线(用户拍板:缓存源不再自动联网刷新)。
 
 ## ⑤ 提交格式与 AI 标识
 

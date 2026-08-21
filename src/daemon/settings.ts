@@ -1,6 +1,6 @@
 // 用户设置(持久化到 DATA_DIR/settings.json)。daemon 与查看页共用。
 // 目前只有 reportUrl(上报到服务器的地址);后期「报表」模块的上报按钮读它。
-import { readFileSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, renameSync } from "node:fs";
 import { DATA_DIR } from "../shared/paths";
 import { join } from "node:path";
 
@@ -49,11 +49,15 @@ export function readSettings(): Settings {
   return { ...DEFAULTS, ...s };
 }
 
-/** 写设置(整体覆盖)。写失败静默——GET 仍返回上次成功写入的值。 */
+/** 写设置(整体覆盖)。写失败静默——GET 仍返回上次成功写入的值。
+ *  tmp+rename 原子替换:多写者(report tick 推 lastReportAt / update tick 写 latestVersion / PUT /api/settings)
+ *  读改写并发时读者不会读到半截 JSON,也不会有旧快照整文件回退把别人字段冲掉。 */
 export function writeSettings(s: Settings): void {
   try {
     mkdirSync(DATA_DIR, { recursive: true });
-    writeFileSync(SETTINGS_FILE, JSON.stringify(s, null, 2), "utf8");
+    const tmp = SETTINGS_FILE + ".tmp";
+    writeFileSync(tmp, JSON.stringify(s, null, 2), "utf8");
+    renameSync(tmp, SETTINGS_FILE);
   } catch {
     /* 容错 */
   }

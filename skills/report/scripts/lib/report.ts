@@ -2,7 +2,7 @@
  *  纯渲染层:gatherReport 装配数据 → renderReportHtml/Text 渲染 → writeReport 落盘。 */
 import { readdirSync, readFileSync } from "node:fs";
 import * as path from "node:path";
-import { esc, writeText, loadJSON, isObj, pad2, DATA_DIR, ZENPILOT_HOME, EFFORTS_DIR, loadMarkSetting, isAiWork, dashboardUrl, CACHE_PATH, SUBMITTED_LOG_DIR } from "./shared";
+import { esc, writeText, loadJSON, isObj, pad2, die, DATA_DIR, ZENPILOT_HOME, EFFORTS_DIR, loadMarkSetting, isAiWork, dashboardUrl, CACHE_PATH, SUBMITTED_LOG_DIR } from "./shared";
 import { getCache, type Client } from "./client";
 
 export function weekStart(): string {
@@ -66,18 +66,23 @@ export function reportTaskIds(cache: any, from: string, to: string): Set<number>
 }
 
 /** 任务名 + 项目名(优先 cache,缺则 GET /tasks/{id}) */
-async function taskNameInfo(client: Client, cache: any, taskId: number): Promise<{ taskName: string; projectName: string }> {
+async function taskNameInfo(client: Client | undefined, cache: any, taskId: number): Promise<{ taskName: string; projectName: string }> {
   const taskById: any = {};
   for (const t of cache.tasks) taskById[t.id] = t;
   let t = taskById[taskId] || cache.taskDetails?.[String(taskId)];
   if (!t) {
-    try {
-      const raw = await client.get(`/tasks/${taskId}`);
-      const ex = raw.execution;
-      const pid = isObj(ex) ? (ex as any).project : raw.project;
-      t = { name: raw.name ?? null, project: pid ?? null };
-    } catch {
+    if (!client) {
+      // 离线(cache 源真离线):cache 缺该任务时不联网 GET,退化 #id 占位(调用方 catch 兜底成 #id)
       t = { name: null, project: null };
+    } else {
+      try {
+        const raw = await client.get(`/tasks/${taskId}`);
+        const ex = raw.execution;
+        const pid = isObj(ex) ? (ex as any).project : raw.project;
+        t = { name: raw.name ?? null, project: pid ?? null };
+      } catch {
+        t = { name: null, project: null };
+      }
     }
   }
   const projectNames: any = {};
@@ -105,7 +110,9 @@ type ReportData = {
 };
 
 /** 装配日报/周报数据:从禅道 efforts 汇总日期范围内的提交记录(纯数据,不含渲染)。 */
-async function gatherReport(client: Client, cfg: Record<string, any>, from: string, to: string, kind?: "daily" | "weekly", source: "zentao" | "cache" = "zentao"): Promise<ReportData> {
+async function gatherReport(client: Client | undefined, cfg: Record<string, any>, from: string, to: string, kind?: "daily" | "weekly", source: "zentao" | "cache" = "zentao"): Promise<ReportData> {
+  // zentao 源实时拉 client.myEfforts,必须已登录;cache 源真离线可无 client(dispatch 已保证该不变量)
+  if (source === "zentao" && !client) throw new Error("内部错误: source=zentao 必须带已登录 client");
   const cache = await getCache(client, cfg);
   const idList = [...reportTaskIds(cache, from, to)];
 
@@ -155,14 +162,21 @@ async function gatherReport(client: Client, cfg: Record<string, any>, from: stri
   }
 
   let realname = cfg.account;
-  try {
-    realname = ((await client.get("/user")).profile || {}).realname || realname;
-  } catch {}
+  if (client) {
+    try {
+      realname = ((await client.get("/user")).profile || {}).realname || realname;
+    } catch {}
+  } else if (cache && typeof cache.realname === "string" && cache.realname) {
+    // cache 源真离线(client=undefined):禅道中文名取自 refresh 时存进缓存的 realname,
+    // 不退化英文 account;旧版缓存无该字段时仍回退 account。
+    realname = cache.realname;
+  }
 
   const dates = Object.keys(byDate).sort();
   // 报告类型由调用方显式传入;kind 缺省(测试/老调用)才回退 from===to。避免 /weekly 在周一(from===to)被误判成日报
   const daily = kind === "daily" ? true : kind === "weekly" ? false : from === to;
-  const title = daily ? `日报 ${from}` : `周报 ${from} ~ ${to}`;
+  // 多日区间(日报 --from≠--to)标题带完整区间——内容按天分区显示,标题只写起点会误导归档/分享
+  const title = daily ? (from !== to ? `日报 ${from} ~ ${to}` : `日报 ${from}`) : `周报 ${from} ~ ${to}`;
   // 未完成任务(禅道 doing/wait/pause,排除 done/closed/cancel)→ 供 AI 写「下周计划」(数据驱动,非主观推测)
   const projNames: Record<number, string> = {};
   for (const p of cache.projects) projNames[p.id] = p.name;
@@ -236,6 +250,11 @@ const REPORT_CSS = `
   .day-hours { color:var(--accent); font-weight:700; min-width:42px; font-variant-numeric:tabular-nums; }
   .day-works { flex:1; }
 
+  /* 日报多天区间:按天分区标题(day-head) */
+  .day-block { margin:14px 0 4px; }
+  .day-block .day-head { font-weight:800; font-size:13.5px; color:var(--ink); padding:8px 4px 4px;
+                  border-bottom:1px solid var(--line-soft); letter-spacing:.02em; }
+
   .tid { color:#94a3b8; font-weight:400; font-size:13px; margin-left:4px; }
   .cell-task { font-weight:700; color:var(--ink); text-decoration:none; }
   a.cell-task:hover { color:var(--accent); text-decoration:underline; }
@@ -276,7 +295,7 @@ const REPORT_CSS = `
 /** 把报告数据渲染成自包含 HTML(内联 CSS,无外部依赖)。 */
 export function renderReportHtml(d: ReportData): string {
   const daily = d.daily ?? (d.from === d.to);
-  const dateText = daily ? d.from : `${d.from} ~ ${d.to}`;
+  const dateText = daily ? (d.from !== d.to ? `${d.from} ~ ${d.to}` : d.from) : `${d.from} ~ ${d.to}`;
   const reportType = daily ? "日报" : "周报";
 
   // 任务折叠块 summary:任务名(禅道链接)+ #ID + 工时。<details> 默认折叠,点击 summary 展开工作内容
@@ -294,15 +313,30 @@ export function renderReportHtml(d: ReportData): string {
   if (d.dates.length === 0) {
     body = `<div class="empty"><div class="empty-icon">📭</div><div class="empty-text">该范围内没有禅道提交记录</div></div>`;
   } else if (daily) {
-    // 日报:每任务一个折叠块,默认收起,展开看工作内容
-    const day = d.byDate[d.dates[0]];
-    const blocks: string[] = [];
-    for (const id of Object.keys(day)) {
-      total += day[id].hours; taskCount++;
-      const info = d.infoMap.get(Number(id)); if (info?.projectName) projects.add(info.projectName);
-      blocks.push(`<details class="task">${summary(Number(id), day[id].hours)}<div class="task-body">${worksHtml(day[id].works)}</div></details>`);
+    // 日报:每任务一个折叠块,默认收起,展开看工作内容。
+    // 支持 --from/--to 区间回看:多天时按天分区(每天一个 day-block 带日期标题),不再只渲染首日静默丢天
+    const multiDay = d.dates.length > 1;
+    const parts: string[] = [];
+    const taskIds = new Set<string>(); // 跨天同一任务只计一次,口径与周报 groups.length 一致(单天也恒等于 Object.keys(day).length)
+    for (const date of d.dates) {
+      const day = d.byDate[date];
+      const blocks: string[] = [];
+      for (const id of Object.keys(day)) {
+        taskIds.add(id);
+        total += day[id].hours;
+        const info = d.infoMap.get(Number(id)); if (info?.projectName) projects.add(info.projectName);
+        blocks.push(`<details class="task">${summary(Number(id), day[id].hours)}<div class="task-body">${worksHtml(day[id].works)}</div></details>`);
+      }
+      if (!blocks.length) continue; // 该日无记录(dates 由 byDate 键生成,理论上必有,防御)
+      if (multiDay) {
+        const wd = WEEKDAYS[new Date(date + "T00:00:00").getDay()];
+        parts.push(`<div class="day-block"><div class="day-head">${esc(date.slice(5))} ${wd}</div>${blocks.join("\n")}</div>`);
+      } else {
+        parts.push(blocks.join("\n"));
+      }
     }
-    body = `${blocks.join("\n")}\n<div class="report-total"><span>本日合计</span><span class="total-num">${round1(total)}h</span><span class="total-sub">${taskCount} 个任务</span></div>`;
+    taskCount = taskIds.size; // 顶部 chips 读全局 taskCount,daily 分支在此同步,否则恒显 0
+    body = `${parts.join("\n")}\n<div class="report-total"><span>${multiDay ? "区间合计" : "本日合计"}</span><span class="total-num">${round1(total)}h</span><span class="total-sub">${taskIds.size} 个任务</span></div>`;
   } else {
     // 周报:按任务分组,每任务一个折叠块,块内列各日期记录(日期 + 工时 + 工作内容)
     const groups: { id: number; rows: { date: string; r: ReportRow }[] }[] = [];
@@ -385,13 +419,23 @@ export function renderReportText(d: ReportData): string {
   const worksLines = (works: string[]): string[] =>
     works.flatMap((w) => w.replace(/\r/g, "").split("\n").map((l) => `    ${l}`));
   if (daily) {
-    const day = d.byDate[d.dates[0]];
-    for (const id of Object.keys(day)) {
-      total += day[id].hours;
-      lines.push(head(id, day[id]));
-      lines.push(...worksLines(day[id].works)); // 原始 effort,不排版(AI 在 SKILL 流程统一排版)
+    // 支持 --from/--to 区间回看:多天时逐日列出(日期头 + 该日任务),不再只渲染首日静默丢天
+    const multiDay = d.dates.length > 1;
+    const taskIds = new Set<string>(); // 跨天同一任务只计一次,口径与 HTML 一致
+    for (const date of d.dates) {
+      const day = d.byDate[date];
+      if (multiDay) {
+        const wd = WEEKDAYS[new Date(date + "T00:00:00").getDay()];
+        lines.push(`[${date.slice(5)} ${wd}]`);
+      }
+      for (const id of Object.keys(day)) {
+        taskIds.add(id);
+        total += day[id].hours;
+        lines.push(head(id, day[id]));
+        lines.push(...worksLines(day[id].works)); // 原始 effort,不排版(AI 在 SKILL 流程统一排版)
+      }
     }
-    lines.push(`合计 ${round1(total)}h · ${Object.keys(day).length} 个任务${d.aiHours > 0 ? `(其中 AI 代报 ${round1(d.aiHours)}h)` : ""}`);
+    lines.push(`合计 ${round1(total)}h · ${taskIds.size} 个任务${d.aiHours > 0 ? `(其中 AI 代报 ${round1(d.aiHours)}h)` : ""}`);
   } else {
     for (const date of d.dates) {
       const day = d.byDate[date];
@@ -418,10 +462,14 @@ export function reportFilename(from: string, to: string, realname: string, kind?
 /** 缓存旧于区间内最后一笔提交 → true(报表侧据此先自动刷新再读)。
  *  比 cache.fetchedAt 与 submitted/<date>.jsonl 末行 ts(同 ISO 无时区格式,字符串可比)。
  *  仅检测自己工具的提交(手动在禅道页面录入的无法感知,靠实时源)。 */
-function cacheStaleVsSubmissions(from: string, to: string): boolean {
+export function cacheStaleVsSubmissions(from: string, to: string): boolean {
   try {
     const cache = loadJSON<any>(CACHE_PATH, null);
     if (!cache?.fetchedAt) return false;
+    // 非法日期(自然语言「昨天」/乱码经 new Date 成 Invalid → "NaN-NaN-NaN" 字符串恒 ≤ 多数 to,循环永不推进)在此直接短路,
+    // 报表数据侧自会出空报告,这里绝不能挂死进程。
+    if (!Number.isFinite(new Date(from + "T00:00:00").getTime())) return false;
+    if (!Number.isFinite(new Date(to + "T00:00:00").getTime())) return false;
     let lastTs: string | null = null;
     for (let d = from; d <= to; ) { // 区间内逐日找最后一笔流水(文件按日,末行即最新)
       try {
@@ -440,19 +488,16 @@ function cacheStaleVsSubmissions(from: string, to: string): boolean {
 }
 
 /** 生成日报/周报 HTML 并落盘到 DATA_DIR/reports/(daemon 可稳定访问,dashboard 日报/周报模块查看),返回文件路径与文本摘要。 */
-export async function writeReport(client: Client, cfg: Record<string, any>, from: string, to: string, kind?: "daily" | "weekly", source: "zentao" | "cache" = "zentao") {
-  // cache 源且缓存旧于区间内最后一笔提交 → 先同步刷新再读(提交后的笔立即进缓存,报表不缺数)。
-  // 替代原「commit 后 detached spawn 刷新」方案——Windows 跨进程坑多(10-15 三次迭代:
-  // unref 拖慢/ignore stdio 子进程被杀),同进程同步刷新零此类问题,代价仅 stale 时报表多几秒。
-  let autoRefreshed = false;
+export async function writeReport(client: Client | undefined, cfg: Record<string, any>, from: string, to: string, kind?: "daily" | "weekly", source: "zentao" | "cache" = "zentao") {
+  // cache 源真离线(dispatch 保证 client=undefined):缓存旧于区间内最后一笔提交 = 已知有更新的数据却无法联网刷新,
+  // 明确报错而非静默产出缺数报表。缓存源不再收拢自动刷新——刷新改走 --source zentao 实时源或 dashboard「更新禅道」。
   if (source === "cache" && cacheStaleVsSubmissions(from, to)) {
-    await getCache(client, cfg, true);
-    autoRefreshed = true;
+    die("本地缓存旧于最近一笔提交,离线状态下无法联网刷新。请先联网运行 --source zentao 实时源或 dashboard「更新禅道」后重试。");
   }
   const data = await gatherReport(client, cfg, from, to, kind, source);
   const html = renderReportHtml(data);
   const dir = path.join(DATA_DIR, "reports");
   const file = path.join(dir, reportFilename(from, to, data.realname, kind));
   writeText(file, html);
-  return { ok: true, file, title: data.title, empty: data.dates.length === 0, text: renderReportText(data), pendingTasks: data.pendingTasks, dashboardUrl: dashboardUrl(), ...(autoRefreshed ? { autoRefreshed: true } : {}) };
+  return { ok: true, file, title: data.title, empty: data.dates.length === 0, text: renderReportText(data), pendingTasks: data.pendingTasks, dashboardUrl: dashboardUrl() };
 }
