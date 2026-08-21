@@ -2,6 +2,18 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.4.9 — 2026-08-21
+
+/report 填报流程识别盲区兜底 + work 折叠标记强制快修:斜杠命令报工时会话(标题抓不到 skill 路径)不再漏网混进待报列表;含折叠/截断标记的脏 work 一律归纳后再提交。
+
+### 变更(skills)
+- **填报流程元会话识别盲区兜底**(fix):斜杠命令会话 `summary="(无文本提示)"` 时标题抓不到 `skills\report|prepare|amend` 路径段,报工时会话曾漏进待报列表被当成正常工时;新增 signals 兜底——读 `DATA_DIR/signals/<编码项目>/<date>/<sid>.json` 的 `turns[].skills` 里 `shine-worklog:(report|prepare|amend)` 标签;weekly/daily 报表会话两路都不匹配,仍不聚合。
+- **work 折叠/截断标记强制快修**(fix):work 含折叠标记(「…(更早/前 N 条/轮略)」)或行尾截断符(`…`) → 强制归纳成 ≤6 行总结替换再提交,不再要求「首行折叠标记 + incrementAllLines」两个前提——普通长会话折叠标记常在列表中部、无 incrementAllLines,旧例外不触发会致几十行脏 work(含折叠标记/截断残行)原样进禅道(2026-08-21 实测 38 行)。
+
+### 测试
+- 聚合盲区兜底用例:summary=(无文本提示)但 signals 有填报系标签 → 仍并入聚合;weekly 标签 → 不聚合。
+- 全量 **322 pass / 0 fail**(17 文件);docs/06/10/12 同步。
+
 ## 1.4.8 — 2026-08-21
 
 cache 源真离线化 + 安全加固(transcript 防任意文件读 / HTML 注入防护 / 畸形编码容错)+ 禅道缓存自动刷新失败重试 + tokenserver/daemon 测试全覆盖。
