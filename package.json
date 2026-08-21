@@ -8,11 +8,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/china-shine/shine-worklog.git"
+    "url": "https://github.com/china-shine/shine-code-submit.git"
   },
-  "homepage": "https://github.com/china-shine/shine-worklog",
+  "homepage": "https://github.com/china-shine/shine-code-submit",
   "bugs": {
-    "url": "https://github.com/china-shine/shine-worklog/issues"
+    "url": "https://github.com/china-shine/shine-code-submit/issues"
   },
   "keywords": [
     "claude",

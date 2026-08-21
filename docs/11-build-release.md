@@ -6,7 +6,7 @@
 
 ```bash
 bun run typecheck          # tsc --noEmit(注意:skills/ 不在 tsconfig,签名改动要手动 grep 调用方)
-bun test                   # 全部测试(264 用例/15 文件:skills CLI 端到端 + runner 深测 + src 含 src/cli/main.test.ts、src/daemon 归属判定)
+bun test                   # 全部测试(321 用例/17 文件:skills CLI 端到端 + runner 深测 + src 含 src/cli/main.test.ts、src/daemon 归属判定 + tokenserver HTTP 全功能)
 cd skills/report/scripts/__tests__ && bun test .   # 单跑 skills 层
 bun run daemon             # 源码跑 daemon(36666)
 bun run tokenserver/src/main.ts   # 源码跑 tokenserver(36667,数据在 tokenserver/data/)
