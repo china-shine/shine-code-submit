@@ -353,12 +353,20 @@ export function startServer(deps: ServerDeps) {
     }
     if (!intervalMin || intervalMin <= 0) return;
     if (Date.now() - lastCacheRefreshAt < intervalMin * 60_000) return;
-    lastCacheRefreshAt = Date.now();
     try {
       const r: any = await refreshZentaoCache();
-      if (r?.ok) log.info(`zentao cache refreshed: ${r.tasks ?? 0} tasks`);
+      if (r?.ok) {
+        // 水位只在刷新成功后才推进;失败不推 → 下个 60s tick 立即重试(不再傻等一个 TTL)
+        lastCacheRefreshAt = Date.now();
+        log.info(`zentao cache refreshed: ${r.tasks ?? 0} tasks`);
+      } else {
+        // in-flight 锁命中(并发刷新进行中)不算失败,静默跳过即可(成功那次会推水位);
+        // 其余失败(禅道 exit≠0 / 启动失败 / 输出解析失败)打 warn,方便从日志定位"为何没刷"。
+        const err = r?.error ?? "unknown";
+        if (!err.startsWith("刷新进行中")) log.warn(`zentao cache refresh failed: ${err}`);
+      }
     } catch (e) {
-      log.info(`zentao cache refresh failed: ${e instanceof Error ? e.message : String(e)}`);
+      log.warn(`zentao cache refresh error: ${e instanceof Error ? e.message : String(e)}`);
     }
   };
   setInterval(cacheTick, 60_000);

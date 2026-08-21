@@ -46,7 +46,7 @@ flowchart LR
 
 ## ④ 报表侧按需刷新(1.3.46 → cache 源真离线)
 
-daily/weekly/lastweek `--source cache` 为**真离线**:跳过禅道登录、0 网络(daily/weekly/lastweek/plan 传 client=undefined;getCache 对缺失/过期/损坏缓存明确报错提示联网,不硬闯联网段)。`cacheStaleVsSubmissions`(cache.fetchedAt vs submitted/<date>.jsonl 末行 ts)发现缓存旧于最后一笔提交 = 已知有更新的数据却无法联网刷新 → **明确报错**,不静默产出缺数报表。刷新不再收拢到 cache 源,改走:①`--source zentao` 实时源 ②`refresh` 命令 / dashboard「更新禅道」 ③daemon 后台定时刷新(`zentaoCacheTtlMin`,默认 300min)。**报表姓名**:refresh 时拉 `/user` 把禅道中文名 `realname` 存进 cache.json;cache 源真离线(client=undefined)时报表从缓存读中文名(文件名 + hero 姓名),**不退化英文 account**(2026-08-21 修:真离线化曾让 realname 一律回退 account)。
+daily/weekly/lastweek `--source cache` 为**真离线**:跳过禅道登录、0 网络(daily/weekly/lastweek/plan 传 client=undefined;getCache 对缺失/过期/损坏缓存明确报错提示联网,不硬闯联网段)。`cacheStaleVsSubmissions`(cache.fetchedAt vs submitted/<date>.jsonl 末行 ts)发现缓存旧于最后一笔提交 = 已知有更新的数据却无法联网刷新 → **明确报错**,不静默产出缺数报表。刷新不再收拢到 cache 源,改走:①`--source zentao` 实时源 ②`refresh` 命令 / dashboard「更新禅道」 ③daemon 后台定时刷新(`zentaoCacheTtlMin`,默认 300min)。**daemon 定时刷新水位**:刷新**成功才推进** `lastCacheRefreshAt`,失败不推 → 下个 60s tick 立即重试(避免「过期了但一直不更新」);失败打 warn 日志(in-flight 锁命中静默跳过,不算失败),从日志可定位「为何没刷」(2026-08-21 修:原实现刷新前就推水位+失败静默,静默失败后要再等一个 TTL)。**报表姓名**:refresh 时拉 `/user` 把禅道中文名 `realname` 存进 cache.json;cache 源真离线(client=undefined)时报表从缓存读中文名(文件名 + hero 姓名),**不退化英文 account**(2026-08-21 修:真离线化曾让 realname 一律回退 account)。
 > 历史:1.3.45 曾做「commit 后 detached spawn 刷新」,Windows 跨进程三连坑后废弃;1.3.46-1.4.7 做「cache 源发现 stale → 同步自动刷新(autoRefreshed:true)」,2026-08-21 因与 SKILL「本地缓存不联网」承诺矛盾改为真离线(用户拍板:缓存源不再自动联网刷新)。
 
 ## ⑤ 提交格式与 AI 标识
