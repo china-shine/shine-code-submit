@@ -2,6 +2,30 @@
 
 遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## 1.4.8 — 2026-08-21
+
+cache 源真离线化 + 安全加固(transcript 防任意文件读 / HTML 注入防护 / 畸形编码容错)+ 禅道缓存自动刷新失败重试 + tokenserver/daemon 测试全覆盖。
+
+### 变更(skills)
+- **cache 源真离线**:daily/weekly/lastweek/plan 的 `--source cache` 跳过禅道登录、0 网络;缺失/过期/损坏缓存明确报错提示联网,不硬闯联网段;发现缓存旧于最后一笔提交(有更新数据却无法联网刷新)→ 明确报错,不静默产出缺数报表。
+- **报表姓名读中文名**:refresh 拉 `/user` 存 `cache.realname`,报表文件名 + hero 姓名读中文名,不退化英文 account。
+
+### 变更(daemon)
+- **transcript_path 路径校验**:限制在 Claude projects 根内(防任意文件读)。
+- **禅道刷新健壮性**:二进制模式回退系统 bun;config.json 损坏容错;settings 改 tmp+rename 原子写;未捕获异常兜底不猝死;token 日志只留指纹(不落明文)。
+- **禅道缓存自动刷新失败重试**(fix):水位改为**刷新成功才推进**,失败不推 → 下个 60s tick 立即重试(此前刷新前就推水位+失败静默,静默失败后要再等一个 TTL,表现为「缓存已过期却迟迟不自动更新」);`refreshZentaoCache` 返回 `ok:false` 打 warn 日志,日志可定位「为何没刷」;in-flight 锁命中静默跳过(并发正常情况)。
+
+### 变更(tokenserver)
+- **畸形 % 编码 → 400 非 500**:member/worklog 路由的 `decodeURIComponent` 加 try/catch,坏编码请求不再 500。
+
+### 变更(ui)
+- **Markdown 渲染转义 raw HTML**:防 dashboard 注入。
+
+### 测试全覆盖
+- **tokenserver 零测试→38 例**(server.test.ts):HMAC 验签(13 位 ts / ±15min 窗口 / gzip 先验签再解压 / 错签超窗 401 / 坏 JSON 缺 projects 400 / 幂等)、viewToken 鉴权(?t=/Bearer/401 负例/豁免范围)、stats 聚合(version 取最新上报)、denominator host 白名单过滤、sessions/worklog 分页、配置热更新(删 key 即时开放)。
+- **daemon 端点验证脚本**(verify-daemon-endpoints.ts 40 项):鉴权豁免/负例/全 GET/安全写原样回写;破坏性端点盘点不触发。
+- 全量 **321 pass / 0 fail**(17 文件);docs/09/11/12 同步。
+
 ## 1.4.7 — 2026-08-20
 
 工时归属日机制收口(点名日期防呆 + 报工时动作不计入工时)+ 会话查询 limit 截断与禅道提交重复双写两处数据完整性修复 + tokenserver 查询分页优化。
